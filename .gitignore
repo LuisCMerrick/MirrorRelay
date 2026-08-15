@@ -1,0 +1,8 @@
+/bin/
+/dev-data/
+/dist/
+/AGENTS.md
+*.log
+*.db
+*.db-shm
+*.db-wal

@@ -1,0 +1,243 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional package version without a leading v
+        required: false
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  metadata:
+    name: Resolve release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      source_date_epoch: ${{ steps.release.outputs.source_date_epoch }}
+      build_timestamp: ${{ steps.release.outputs.build_timestamp }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Resolve version and timestamp
+        id: release
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
+          if [[ -n "${REQUESTED_VERSION}" ]]; then
+            version="${REQUESTED_VERSION#v}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            # The commit epoch keeps development snapshots monotonically upgradeable.
+            version="0.0.1.git.${source_date_epoch}.${GITHUB_SHA:0:12}"
+          fi
+          if [[ ! "${version}" =~ ^[0-9][0-9A-Za-z.+~-]{0,63}$ ]]; then
+            echo "Invalid release version: ${version}" >&2
+            exit 1
+          fi
+
+          build_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            printf 'version=%s\n' "${version}"
+            printf 'source_date_epoch=%s\n' "${source_date_epoch}"
+            printf 'build_timestamp=%s\n' "${build_timestamp}"
+          } >> "${GITHUB_OUTPUT}"
+
+  package:
+    name: Package linux/${{ matrix.architecture }}
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture:
+          - amd64
+          - arm64
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Enable arm64 runtime probes
+        if: matrix.architecture == 'arm64'
+        uses: docker/setup-qemu-action@v4.2.0
+        with:
+          platforms: arm64
+
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@v4.2.0
+
+      - name: Install package inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends binutils cpio file rpm
+
+      - name: Verify source and unit tests
+        run: |
+          set -euo pipefail
+          go mod verify
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Build pinned musl Managed Upstream Nginx
+        run: |
+          ./scripts/build-upstream-nginx-musl.sh \
+            "${{ matrix.architecture }}" \
+            "dist/upstream-nginx-linux-${{ matrix.architecture }}"
+
+      - name: Verify static dependencies and generated configuration
+        env:
+          REPOGATE_TEST_UPSTREAM_NGINX: ${{ github.workspace }}/dist/upstream-nginx-linux-${{ matrix.architecture }}/nginx
+        run: |
+          set -euo pipefail
+          nginx_binary="${REPOGATE_TEST_UPSTREAM_NGINX}"
+          ldd "${nginx_binary}" > /tmp/upstream-nginx-ldd.txt 2>&1 || true
+          cat /tmp/upstream-nginx-ldd.txt
+          if grep -Eq '=>|ld-linux|ld-musl|libc\.so|libssl\.so|libcrypto\.so|libpcre[^ ]*\.so|libz\.so' /tmp/upstream-nginx-ldd.txt; then
+            echo 'Managed Upstream Nginx has an unexpected runtime dependency.' >&2
+            exit 1
+          fi
+          if readelf -l "${nginx_binary}" | grep -q INTERP; then
+            echo 'Managed Upstream Nginx has a dynamic interpreter.' >&2
+            exit 1
+          fi
+          go test ./internal/upstreamnginx \
+            -run '^TestRealManagedUpstreamNginx' \
+            -count=1
+
+      - name: Run repository, registry and streaming checks
+        run: |
+          go test ./internal/proxy ./internal/mirror ./internal/cachectl -count=1
+
+      - name: Build RepoGate and create release packages
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          ARCH: ${{ matrix.architecture }}
+          GIT_COMMIT: ${{ github.sha }}
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.source_date_epoch }}
+          BUILD_TIMESTAMP: ${{ needs.metadata.outputs.build_timestamp }}
+          BUILD_ID: repogate-${{ needs.metadata.outputs.version }}-linux-${{ matrix.architecture }}-${{ github.sha }}
+          UPSTREAM_NGINX_DIR: dist/upstream-nginx-linux-${{ matrix.architecture }}
+          RELEASE_DIR: dist/release
+        run: |
+          make package
+          make verify-package
+
+      - name: Upload architecture packages
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-${{ matrix.architecture }}
+          path: dist/release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  release-bundle:
+    name: Assemble release bundle
+    needs: [metadata, package]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-*
+          path: dist/staging
+          merge-multiple: true
+
+      - name: Verify matrix and create SHA256SUMS
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected=(
+            "repogate_${VERSION}_amd64.deb"
+            "repogate_${VERSION}_arm64.deb"
+            "repogate-${VERSION}.x86_64.rpm"
+            "repogate-${VERSION}.aarch64.rpm"
+            "repogate-${VERSION}-linux-amd64.tar.gz"
+            "repogate-${VERSION}-linux-arm64.tar.gz"
+          )
+          install -d dist/final
+          for artifact in "${expected[@]}"; do
+            test -f "dist/staging/${artifact}"
+            install -m 0644 "dist/staging/${artifact}" "dist/final/${artifact}"
+          done
+          (
+            cd dist/final
+            sha256sum "${expected[@]}" > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
+          {
+            echo '# Embedded Managed Upstream Nginx checksums:'
+            sed 's/^/# linux\/amd64: /' dist/staging/Managed-Upstream-Nginx-SHA256-amd64
+            sed 's/^/# linux\/arm64: /' dist/staging/Managed-Upstream-Nginx-SHA256-arm64
+          } >> dist/final/SHA256SUMS
+
+      - name: Upload complete release bundle
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: repogate-${{ needs.metadata.outputs.version }}-release
+          path: dist/final/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Write build summary
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          {
+            echo "## RepoGate release build"
+            echo
+            echo "- Version: \`${VERSION}\`"
+            echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- Formats: DEB, RPM, tar.gz"
+            echo "- Container images: none"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  github-release:
+    name: Publish release assets
+    if: github.event_name == 'release'
+    needs: [metadata, release-bundle]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: repogate-${{ needs.metadata.outputs.version }}-release
+          path: dist/final
+
+      - name: Upload GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG_NAME}" dist/final/* \
+            --clobber \
+            --repo "${GITHUB_REPOSITORY}"

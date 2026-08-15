@@ -1,0 +1,10 @@
+.code-editor,
+.config-preview {
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.config-preview {
+  max-height: 650px;
+  overflow: auto;
+  white-space: pre;
+}

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "22"
+      - name: Verify formatting and modules
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod verify
+          shellcheck build/*.sh scripts/*.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+          go test -race -p 1 -count=1 ./...
+      - name: Verify UI and bundled Managed Upstream Nginx
+        run: |
+          node --check internal/web/dist/app.js
+          (cd nginx/sbin && sha256sum -c nginx.sha256)
+          file nginx/sbin/nginx | grep -E 'x86-64.*statically linked'
+          ldd nginx/sbin/nginx > /tmp/upstream-nginx-ldd.txt 2>&1 || true
+          if grep -Eq '=>|ld-linux|ld-musl|libc\.so|libssl\.so|libcrypto\.so|libpcre[^ ]*\.so|libz\.so' /tmp/upstream-nginx-ldd.txt; then
+            echo 'Managed Upstream Nginx has an unexpected runtime dependency.' >&2
+            exit 1
+          fi
+          if readelf -l nginx/sbin/nginx | grep -q INTERP; then
+            echo 'Managed Upstream Nginx has a dynamic interpreter.' >&2
+            exit 1
+          fi
+          REPOGATE_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
+      - name: Build both release architectures
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o /tmp/repogate-amd64 ./cmd/repogate
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -buildvcs=false -o /tmp/repogate-arm64 ./cmd/repogate
+      - name: Validate Compose model
+        env:
+          REPOGATE_ADMIN_PASSWORD: ci-only-password
+        run: docker compose config --quiet

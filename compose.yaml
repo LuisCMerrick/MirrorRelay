@@ -1,0 +1,26 @@
+services:
+  repogate:
+    platform: linux/amd64
+    build:
+      context: .
+      args:
+        VERSION: ${REPOGATE_VERSION:-0.0.1}
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    environment:
+      REPOGATE_ADMIN_USERNAME: ${REPOGATE_ADMIN_USERNAME:-admin}
+      REPOGATE_ADMIN_PASSWORD: ${REPOGATE_ADMIN_PASSWORD:?set REPOGATE_ADMIN_PASSWORD in .env}
+    volumes:
+      - ./configs/config.docker.yaml:/etc/repogate/config.yaml:ro
+      - /run/repogate:/run/repogate
+      - repogate-data:/var/lib/repogate
+      - repogate-cache:/var/cache/repogate
+      - repogate-logs:/var/log/repogate
+
+volumes:
+  repogate-data:
+  repogate-cache:
+  repogate-logs:

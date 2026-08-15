@@ -1,0 +1,63 @@
+#!/bin/sh
+set -e
+
+stop_managed_upstream_nginx() {
+  binary=/usr/lib/repogate/nginx/nginx
+  pid_file=/run/repogate/upstream-nginx.pid
+  is_managed_upstream_nginx() {
+    managed_executable=$(readlink "/proc/$managed_pid/exe" 2>/dev/null || true)
+    case "$managed_executable" in
+      "$binary"|"$binary (deleted)") return 0 ;;
+      *) return 1 ;;
+    esac
+  }
+
+  managed_pid=
+  if [ -r "$pid_file" ]; then
+    IFS= read -r managed_pid < "$pid_file" || true
+  fi
+  case "$managed_pid" in
+    ''|*[!0-9]*) return ;;
+  esac
+  if ! is_managed_upstream_nginx; then
+    return
+  fi
+
+  kill -QUIT "$managed_pid" >/dev/null 2>&1 || true
+  remaining=30
+  while [ "$remaining" -gt 0 ] && is_managed_upstream_nginx; do
+    sleep 1
+    remaining=$((remaining - 1))
+  done
+  if is_managed_upstream_nginx; then
+    kill -TERM "$managed_pid" >/dev/null 2>&1 || true
+    remaining=5
+    while [ "$remaining" -gt 0 ] && is_managed_upstream_nginx; do
+      sleep 1
+      remaining=$((remaining - 1))
+    done
+  fi
+  if is_managed_upstream_nginx; then
+    kill -KILL "$managed_pid" >/dev/null 2>&1 || true
+  fi
+}
+
+case "${1:-}" in
+  upgrade)
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet repogate.service; then
+      touch /var/lib/repogate/.package-active
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl stop repogate.service || true
+    fi
+    stop_managed_upstream_nginx
+    ;;
+  remove|deconfigure)
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl stop repogate.service || true
+    fi
+    stop_managed_upstream_nginx
+    ;;
+esac
+
+exit 0
