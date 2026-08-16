@@ -19,11 +19,13 @@ const dictionary = {
   tagline: ['Linux repository reverse-proxy gateway', 'Linux 软件仓库反向代理网关'],
   username: ['Username', '用户名'], password: ['Password', '密码'], signIn: ['Sign in', '登录'], signOut: ['Sign out', '退出'],
   navDashboard: ['Dashboard', '概览'], navRepositories: ['Repositories', '仓库'], navProfiles: ['Profiles', '模板'], navUpstreamNginx: ['Managed Upstream Nginx', '受管上游 Nginx'],
-  navCustom: ['Custom configuration', '自定义配置'], navIngress: ['Ingress integration', '入口接入'], navCache: ['Cache', '缓存'], navHealth: ['Health', '健康状态'],
+  navCustom: ['Custom configuration', '自定义配置'], navIngress: ['Ingress integration', '入口接入'], navCluster: ['Cluster', '集群'], navCache: ['Cache', '缓存'], navHealth: ['Health', '健康状态'],
   navAccess: ['Access log', '访问日志'], navAudit: ['Audit log', '审计日志'], navSystem: ['System', '系统'], navSettings: ['Settings', '设置'], navUsers: ['Users', '用户'], navAccount: ['My account', '我的账号'],
-  addRepository: ['Add repository', '新增仓库'], addCustom: ['Add custom configuration', '新增自定义配置'], identityRouting: ['Identity and routing', '标识与路由'],
+  addRepository: ['Add repository', '新增仓库'], addCustom: ['Add custom configuration', '新增自定义配置'], addNode: ['Add node', '新增节点'], resetFingerprint: ['Reset fingerprint', '重置指纹'],
+  identityRouting: ['Identity and routing', '标识与路由'],
   profileVersion: ['Profile / version', '模板 / 版本'], name: ['Name', '名称'], repositoryType: ['Repository type', '仓库类型'], publicMode: ['Public mode', '公开模式'],
   publicHost: ['Public host', '公开 Host'], publicPath: ['Public path', '公开路径'], accessPolicy: ['Access policy', '访问策略'], description: ['Description', '备注'],
+  nodeURL: ['Public base URL', '公开基础 URL'], region: ['Region', '地域'], country: ['Country', '国家/地区'], priority: ['Priority', '优先级'], weight: ['Weight', '权重'], save: ['Save', '保存'],
   upstreamsPaths: ['Upstreams and path mapping', '上游与路径映射'], upstreamList: ['Upstreams (one “priority URL” per line)', '上游列表（每行“优先级 URL”）'],
   stripPrefix: ['Strip prefix', '移除前缀'], addPrefix: ['Add prefix', '添加前缀'], hostRewrite: ['Host rewrite', 'Host 改写'], proxyMode: ['Proxy mode', '代理模式'], redirectPolicy: ['Redirect policy', '重定向策略'],
   headersTimeouts: ['Headers and timeouts', 'Header 与超时'], headerAdd: ['Add request headers (one “Name: Value” per line)', '添加请求 Header（每行“名称: 值”）'],
@@ -56,6 +58,7 @@ const pageMeta = {
   'upstream-nginx': [['Managed Upstream Nginx', '受管上游 Nginx'], ['Status, effective configuration, history and rollback', '状态、生效配置、历史与回滚']],
   custom: [['Custom configuration', '自定义配置'], ['Controlled advanced Managed Upstream Nginx directives', '受控的受管上游 Nginx 指令']],
   ingress: [['Ingress integration', '入口接入'], ['External Shared Nginx connection details', '外部共享 Nginx 接入信息']],
+  cluster: [['Cluster', '集群'], ['Distributed edge nodes, routing and configuration consistency', '分布式边缘节点、路由策略与配置一致性']],
   cache: [['Cache', '缓存'], ['Generation invalidation and asynchronous physical reclaim', 'Generation 逻辑失效与异步物理回收']],
   health: [['Health', '健康状态'], ['RepoGate, local transports, Managed Upstream Nginx and repositories', 'RepoGate、本地传输、受管上游 Nginx 与仓库']],
   access: [['Access log', '访问日志'], ['Latest 200 Managed Upstream Nginx access records', '受管上游 Nginx 最近 200 条访问记录']],
@@ -181,7 +184,7 @@ document.querySelectorAll('nav button').forEach(button => button.addEventListene
 }));
 
 async function renderCurrentPage() {
-  const loaders = {dashboard: loadDashboard, mirrors: loadMirrors, profiles: loadProfiles, 'upstream-nginx': loadUpstreamNginx, custom: loadCustom, ingress: loadIngress, cache: loadCache, health: loadHealth, access: loadAccess, audit: loadAudit, system: loadSystem, settings: loadSettings, users: loadUsers, account: loadAccount};
+  const loaders = {dashboard: loadDashboard, mirrors: loadMirrors, profiles: loadProfiles, 'upstream-nginx': loadUpstreamNginx, custom: loadCustom, ingress: loadIngress, cluster: loadCluster, cache: loadCache, health: loadHealth, access: loadAccess, audit: loadAudit, system: loadSystem, settings: loadSettings, users: loadUsers, account: loadAccount};
   try { await (loaders[currentPage] || loadDashboard)(); } catch (error) { notice(error.message, true); }
 }
 
@@ -668,6 +671,170 @@ async function loadSettings() {
   });
 }
 
+async function loadCluster() {
+  const [overview, nodes] = await Promise.all([
+    api('/cluster/overview').catch(() => ({role: 'standalone', enabled: false})),
+    api('/cluster/nodes').catch(() => [])
+  ]);
+
+  const overviewHtml = `<div class="cards">
+    ${card(L('Cluster role', '集群角色'), overview.role || 'standalone')}
+    ${card(L('Cluster status', '集群状态'), overview.enabled ? L('Enabled', '已启用') : L('Disabled', '未启用'), overview.enabled)}
+    ${card(L('Total nodes', '总节点数'), overview.total_nodes || 0)}
+    ${card(L('Healthy nodes', '健康节点数'), overview.healthy_nodes || 0, (overview.healthy_nodes || 0) > 0)}
+    ${card(L('Routable nodes', '可路由节点数'), overview.routable_nodes || 0, (overview.routable_nodes || 0) > 0)}
+    ${card(L('Routing mode', '路由模式'), overview.routing_mode || 'hybrid')}
+  </div>
+  <div class="panel">
+    <h2>${L('Cluster Fingerprint', '集群配置指纹')}</h2>
+    <p><code>${esc(overview.cluster_fingerprint || L('Not initialized', '未初始化'))}</code></p>
+  </div>`;
+
+  const nodeRows = (nodes || []).map(node => {
+    const isHealthy = node.health_status === 'healthy';
+    const isMatch = node.config_status === 'match';
+    return `<tr>
+      <td><strong>${esc(node.name)}</strong></td>
+      <td><code>${esc(node.url)}</code></td>
+      <td>${esc(node.region)}${node.country ? ` (${esc(node.country)})` : ''}</td>
+      <td>${node.priority} / ${node.weight}</td>
+      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}">${esc(node.health_status || 'unknown')}</span></td>
+      <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(node.config_status || 'unknown')}</span></td>
+      <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
+      <td>${node.last_check ? date(node.last_check) : '—'}</td>
+      <td>
+        <button class="small secondary" data-action="check-node" data-id="${node.id}">${L('Check', '检查')}</button>
+        <button class="small secondary" data-action="edit-node" data-id="${node.id}">${L('Edit', '编辑')}</button>
+        <button class="small secondary" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable', '禁用') : L('Enable', '启用')}</button>
+        <button class="small danger" data-action="delete-node" data-id="${node.id}">${L('Delete', '删除')}</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const tableHtml = `<div class="panel">
+    <h2>${L('Edge nodes', '边缘节点')}</h2>
+    <div class="table-wrap"><table><thead><tr>
+      <th>${L('Name', '名称')}</th>
+      <th>${L('URL', '基础 URL')}</th>
+      <th>${L('Region', '地域')}</th>
+      <th>${L('Priority / Weight', '优先级 / 权重')}</th>
+      <th>${L('Health', '健康状态')}</th>
+      <th>${L('Config', '配置一致性')}</th>
+      <th>${L('Fingerprint', '指纹')}</th>
+      <th>${L('Last check', '最后检查')}</th>
+      <th>${L('Actions', '操作')}</th>
+    </tr></thead><tbody>${nodeRows || `<tr><td colspan="9" class="empty">${L('No edge nodes registered yet.', '尚未注册边缘节点。')}</td></tr>`}</tbody></table></div>
+  </div>`;
+
+  $('#cluster-overview').innerHTML = overviewHtml;
+  $('#cluster-node-list').innerHTML = tableHtml;
+}
+
+$('#add-node')?.addEventListener('click', () => {
+  $('#node-form').reset();
+  $('#node-id').value = '';
+  $('#node-form-title').textContent = L('Add edge node', '新增边缘节点');
+  $('#node-enabled').checked = true;
+  $('#node-priority').value = '100';
+  $('#node-weight').value = '100';
+  $('#node-error').textContent = '';
+  $('#node-dialog').showModal();
+});
+$('#close-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
+$('#cancel-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
+
+$('#node-form')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  $('#node-error').textContent = '';
+  const id = $('#node-id').value;
+  const payload = {
+    name: $('#node-name').value.trim(),
+    url: $('#node-url').value.trim(),
+    region: $('#node-region').value.trim(),
+    country: $('#node-country').value.trim().toUpperCase(),
+    priority: Number($('#node-priority').value) || 100,
+    weight: Number($('#node-weight').value) || 100,
+    enabled: $('#node-enabled').checked
+  };
+  try {
+    if (id) {
+      await api(`/cluster/nodes/${id}`, {method: 'PUT', body: JSON.stringify(payload)});
+      notice(L('Node updated.', '节点已更新。'));
+    } else {
+      await api('/cluster/nodes', {method: 'POST', body: JSON.stringify(payload)});
+      notice(L('Node added.', '节点已添加。'));
+    }
+    $('#node-dialog').close();
+    await loadCluster();
+  } catch (error) {
+    $('#node-error').textContent = error.message;
+  }
+});
+
+$('#reset-cluster-fp')?.addEventListener('click', async () => {
+  if (!confirm(L('Reset the cluster configuration fingerprint? It will reinitialize from active nodes.', '重置集群配置指纹？它将从活动节点重新初始化。'))) return;
+  try {
+    await api('/cluster/fingerprint/reset', {method: 'POST'});
+    notice(L('Cluster fingerprint reset.', '集群指纹已重置。'));
+    await loadCluster();
+  } catch (error) {
+    notice(error.message, true);
+  }
+});
+
+window.checkNode = async id => {
+  try {
+    await api(`/cluster/nodes/${id}/check`, {method: 'POST'});
+    notice(L('Node probe completed.', '节点探测完成。'));
+    await loadCluster();
+  } catch (error) {
+    notice(error.message, true);
+  }
+};
+
+window.editNode = async id => {
+  try {
+    const nodes = await api('/cluster/nodes');
+    const node = (nodes || []).find(n => n.id === id);
+    if (!node) return;
+    $('#node-id').value = node.id;
+    $('#node-name').value = node.name || '';
+    $('#node-url').value = node.url || '';
+    $('#node-region').value = node.region || '';
+    $('#node-country').value = node.country || '';
+    $('#node-priority').value = node.priority || 100;
+    $('#node-weight').value = node.weight || 100;
+    $('#node-enabled').checked = node.enabled;
+    $('#node-form-title').textContent = L('Edit edge node', '编辑边缘节点');
+    $('#node-error').textContent = '';
+    $('#node-dialog').showModal();
+  } catch (error) {
+    notice(error.message, true);
+  }
+};
+
+window.toggleNode = async (id, currentEnabled) => {
+  try {
+    const action = currentEnabled ? 'disable' : 'enable';
+    await api(`/cluster/nodes/${id}/${action}`, {method: 'POST'});
+    notice(currentEnabled ? L('Node disabled.', '节点已禁用。') : L('Node enabled.', '节点已启用。'));
+    await loadCluster();
+  } catch (error) {
+    notice(error.message, true);
+  }
+};
+
+window.deleteNode = async id => {
+  if (!confirm(L('Delete this edge node?', '删除此边缘节点？'))) return;
+  try {
+    await api(`/cluster/nodes/${id}`, {method: 'DELETE'});
+    notice(L('Node deleted.', '节点已删除。'));
+    await loadCluster();
+  } catch (error) {
+    notice(error.message, true);
+  }
+};
+
 async function loadUsers() {
   const users = (await api('/users')) || [];
   $('#page-users').innerHTML = `<form class="panel narrow" id="user-form"><h2>${L('Add administrator', '新增管理员')}</h2><div class="form-grid"><label>${L('Username', '用户名')}<input id="new-user" minlength="3" maxlength="64" required></label><label>${L('Initial password', '初始密码')}<input id="new-user-pass" type="password" minlength="10" required></label></div><button>${L('Create user', '创建用户')}</button><div id="user-error" class="error"></div></form><div class="panel"><h2>${L('User list', '用户列表')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Username', '用户名')}</th><th>${L('Created', '创建时间')}</th><th>${L('Updated', '更新时间')}</th><th></th></tr></thead><tbody>${users.map(user => `<tr><td>${esc(user.username)}</td><td>${date(user.created_at)}</td><td>${date(user.updated_at)}</td><td><button class="danger" data-action="delete-user" data-id="${user.id}">${L('Delete', '删除')}</button></td></tr>`).join('')}</tbody></table></div></div>`;
@@ -695,6 +862,10 @@ async function runAction(button) {
     case 'rollback-config': return window.rollbackConfig(Number(button.dataset.version));
     case 'edit-custom': return window.editCustom(id);
     case 'delete-custom': return window.deleteCustom(id);
+    case 'check-node': return window.checkNode(id);
+    case 'edit-node': return window.editNode(id);
+    case 'toggle-node': return window.toggleNode(id, button.dataset.enabled === 'true');
+    case 'delete-node': return window.deleteNode(id);
     case 'delete-user': return window.deleteUser(id);
     default: throw new Error(L('Unknown action.', '未知操作。'));
   }

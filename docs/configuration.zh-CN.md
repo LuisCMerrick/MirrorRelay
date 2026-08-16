@@ -49,7 +49,7 @@ upstream_nginx.ca_bundle
 | `server.local_port` | `9081` | 只有显式关闭前端 Unix Socket 后才使用的回环端口 |
 | `upstream_nginx.upstream_unix_socket_enabled` | `true` | Go 到 Managed Upstream Nginx 使用 Unix Socket |
 | `upstream_nginx.upstream_socket` | `/run/repogate/upstream.sock` | Managed Upstream Nginx Socket 路径 |
-| `upstream_nginx.upstream_socket_mode` | `0660` | 固定要求的 Socket 权限 |
+| `upstream_nginx.upstream_socket_mode` | `0600` | Socket 权限（`0600` 或 `0660`） |
 | `upstream_nginx.upstream_local_port` | `9082` | 只有显式关闭上游 Unix Socket 后才使用的回环端口 |
 
 TCP 回退端点始终绑定 `127.0.0.1`。如果两个 Socket 都关闭，两个端口必须不同。Unix Socket 失败时不会隐式回退到 TCP。回环 TCP 不具备 Unix 文件属主与权限模式隔离，因此只能在信任本机进程的环境中使用。
@@ -133,12 +133,14 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | `security.allow_http_upstream` | HTTP 上游双重许可中的全局开关 |
 | `security.allow_private_upstream` | 私网地址双重许可中的全局开关 |
 | `security.expose_client_ip` | 允许按配置向内部转发客户端上下文 |
-| `security.admin_cidrs` | 可访问 `admin.path` 下 UI 与内嵌 API 的 CIDR；空表示此层不限制 |
-| `security.session_timeout` | 服务端 Session 生命周期 |
-| `security.login_window`、`security.login_max_failures` | 按客户端登录限流 |
-| `limits.max_total_concurrency` | 全局请求并发，`0` 表示不限 |
-| `limits.max_ip_concurrency` | 单客户端并发，`0` 表示不限 |
-| `limits.bandwidth_limit_bps` | 全局 Managed Upstream Nginx 上游带宽上限，`0` 表示不限 |
+| `security.admin_cidrs` | 允许访问 `admin.path` 下 Web UI 与管理 API 的 CIDR 列表；为空表示本层不作限制 |
+| `security.session_timeout` | 服务端 Session 会话生命周期 |
+| `security.login_window`、`security.login_max_failures` | 登录频次限制窗口与最大失败次数 |
+| `admin.host` | 管理控制台与指标端点的专用独立域名隔离 |
+| `admin.path` | 管理控制台与 REST API 的基础路径前缀 |
+| `limits.max_total_concurrency` | 全局并发请求上限；`0` 表示无限制 |
+| `limits.max_ip_concurrency` | 单客户端并发请求上限；`0` 表示无限制 |
+| `limits.bandwidth_limit_bps` | 全局 Managed Upstream Nginx 上游带宽上限；`0` 表示无限制 |
 
 只有直接 Peer 是本地 Unix Socket 或回环 Listener 时，RepoGate 才信任转发的客户端 IP Header。使用私网或 HTTP 上游还必须开启相应仓库开关。上游 TLS 验证不能关闭。
 
@@ -164,3 +166,36 @@ Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Str
 只有内容身份不随 Authorization 变化且实质公开时，才能启用认证响应缓存。默认情况下，携带 `Authorization` 或 `Cookie` 的请求绕过缓存；配置静态认证 Header 也会关闭缓存。Nginx 默认不会缓存带 `Set-Cookie` 的响应，RepoGate 的普通自定义配置不能覆盖这项内建保护。
 
 普通 Managed Upstream Nginx 自定义片段严格绑定到指定 Context：不能创建 Listener、路由或 Upstream Target，不能更改 TLS 校验、缓存身份或缓存绕过规则，不能访问文件系统或进程环境，也不能引用 RepoGate 保留变量、Zone 和内部 Header。每个候选配置先由 RepoGate 解析，还必须通过随附二进制的 `nginx -t` 才能激活。危险/Hop-by-Hop/内部 Header、无效 Host、配置控制字符和 `insecure_skip_verify` 都会被拒绝。
+
+## 分布式部署
+
+RepoGate 支持由一个协调器（Coordinator）与多个边缘节点（Edge）组成的分布式集群。
+
+```text
+客户端 -> 协调器 (Coordinator) -> (HTTP 307 临时重定向) -> 边缘节点 (Edge) -> Managed Upstream Nginx -> 源站
+```
+
+| 配置 | 说明 |
+|---|---|
+| `distributed.enabled` | 全局分布式模式开关 |
+| `distributed.role` | 节点角色：`standalone`（默认单机）、`coordinator`（协调器）或 `edge`（边缘节点） |
+| `distributed.token` | 集群间探针 API 认证 Token（`/api/v1/cluster/manifest`、`/api/v1/cluster/health`） |
+| `distributed.node.name` | 边缘节点唯一标识名称 |
+| `distributed.node.public_base_url` | 协调器向客户端重定向时使用的边缘节点公开 Base URL |
+| `distributed.node.region` | 节点所在地域标识（用于 Geo/CIDR 调度） |
+| `distributed.node.country` | ISO 3166-1 alpha-2 国家/地区代码 |
+| `distributed.routing.mode` | 路由调度模式：`hybrid`（默认混合模式）、`cidr`、`geo` 或 `priority` |
+| `distributed.routing.client_networks` | CIDR 网段到地域的映射规则 |
+| `distributed.routing.regions` | 国家到地域的映射定义 |
+| `distributed.health_check.interval` | 协调器对边缘节点的健康检查与配置一致性探测间隔 |
+| `distributed.health_check.timeout` | 探测请求超时时间 |
+| `distributed.health_check.healthy_threshold` | 判定节点转为健康的连续成功次数 |
+| `distributed.health_check.unhealthy_threshold` | 判定节点转为异常的连续失败次数 |
+| `distributed.nodes` | 协调器启动时的初始种子边缘节点列表 |
+
+### 分布式不变量
+
+- **数据面隔离**：协调器永不代为拉取源站或边缘节点的包文件；它始终返回保留原始请求路径与 Query 字符串的 `HTTP 307 临时重定向`。
+- **配置一致性与漂移检测**：集群内所有边缘节点必须共享一致的逻辑配置指纹（`sha256:...`）。发生配置漂移的节点自动标记为 `mismatch` 并剔除路由。
+- **容器镜像仓库限制**：V1 阶段分布式调度明确不支持 Docker / OCI Registry（返回 HTTP 501）。
+

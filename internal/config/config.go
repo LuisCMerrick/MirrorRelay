@@ -35,6 +35,7 @@ type Config struct {
 	Admin         AdminConfig         `yaml:"admin"`
 	Shutdown      ShutdownConfig      `yaml:"shutdown"`
 	UpstreamNginx UpstreamNginxConfig `yaml:"upstream_nginx"`
+	Distributed   DistributedConfig   `yaml:"distributed"`
 }
 
 type ServerConfig struct {
@@ -170,6 +171,7 @@ type HealthConfig struct {
 }
 
 type AdminConfig struct {
+	Host            string `yaml:"host"`
 	Path            string `yaml:"path"`
 	InitialUsername string `yaml:"initial_username"`
 	InitialPassword string `yaml:"initial_password"`
@@ -177,6 +179,56 @@ type AdminConfig struct {
 
 type ShutdownConfig struct {
 	GracePeriod time.Duration `yaml:"grace_period"`
+}
+
+type DistributedConfig struct {
+	Enabled     bool                     `yaml:"enabled"`
+	Role        string                   `yaml:"role"`
+	Token       string                   `yaml:"token"`
+	Node        DistributedNodeConfig    `yaml:"node"`
+	Routing     DistributedRoutingConfig `yaml:"routing"`
+	HealthCheck DistributedHealthConfig  `yaml:"health_check"`
+	Nodes       []DistributedNodeSeed    `yaml:"nodes"`
+}
+
+type DistributedNodeConfig struct {
+	Name          string `yaml:"name"`
+	PublicBaseURL string `yaml:"public_base_url"`
+	Region        string `yaml:"region"`
+	Country       string `yaml:"country"`
+}
+
+type DistributedRoutingConfig struct {
+	Mode           string                 `yaml:"mode"`
+	ClientNetworks []ClientNetworkMapping `yaml:"client_networks"`
+	Regions        []RegionMapping        `yaml:"regions"`
+}
+
+type ClientNetworkMapping struct {
+	CIDR   string `yaml:"cidr"`
+	Region string `yaml:"region"`
+}
+
+type RegionMapping struct {
+	Code      string   `yaml:"code"`
+	Countries []string `yaml:"countries"`
+}
+
+type DistributedHealthConfig struct {
+	Interval           time.Duration `yaml:"interval"`
+	Timeout            time.Duration `yaml:"timeout"`
+	UnhealthyThreshold int           `yaml:"unhealthy_threshold"`
+	HealthyThreshold   int           `yaml:"healthy_threshold"`
+}
+
+type DistributedNodeSeed struct {
+	Name     string `yaml:"name"`
+	URL      string `yaml:"url"`
+	Region   string `yaml:"region"`
+	Country  string `yaml:"country"`
+	Priority int    `yaml:"priority"`
+	Weight   int    `yaml:"weight"`
+	Enabled  bool   `yaml:"enabled"`
 }
 
 func Default() Config {
@@ -203,12 +255,25 @@ func Default() Config {
 			PID:                   "/run/repogate/upstream-nginx.pid",
 			LogPath:               "/var/log/repogate/upstream-nginx",
 			UpstreamSocketEnabled: true, UpstreamSocket: "/run/repogate/upstream.sock",
-			UpstreamSocketModeText: "0660", UpstreamSocketMode: 0o660, UpstreamLocalPort: 9082,
+			UpstreamSocketModeText: "0600", UpstreamSocketMode: 0o600, UpstreamLocalPort: 9082,
 			CABundle: "/etc/ssl/certs/ca-certificates.crt", TLSVerifyDepth: 5,
 			Resolver: "1.1.1.1 8.8.8.8", ResolverRefresh: 5 * time.Minute,
 			HistoryLimit: 20, RestartMaxFailures: 5, RestartWindow: 2 * time.Minute,
 			RestartInitialBackoff: time.Second, RestartMaxBackoff: 30 * time.Second, WorkerProcesses: "auto", WorkerUser: "repogate", WorkerConnections: 4096,
 			StopOnRepoGateExit: false},
+		Distributed: DistributedConfig{
+			Enabled: false,
+			Role:    "standalone",
+			Routing: DistributedRoutingConfig{
+				Mode: "hybrid",
+			},
+			HealthCheck: DistributedHealthConfig{
+				Interval:           10 * time.Second,
+				Timeout:            3 * time.Second,
+				UnhealthyThreshold: 3,
+				HealthyThreshold:   2,
+			},
+		},
 	}
 }
 
@@ -291,8 +356,39 @@ func applyEnvironment(cfg *Config) {
 	if v := os.Getenv("REPOGATE_ADMIN_USERNAME"); v != "" {
 		cfg.Admin.InitialUsername = v
 	}
+	if v := os.Getenv("REPOGATE_ADMIN_PASSWORD_FILE"); v != "" {
+		if content, err := os.ReadFile(v); err == nil {
+			cfg.Admin.InitialPassword = strings.TrimSpace(string(content))
+		}
+	}
 	if v := os.Getenv("REPOGATE_ADMIN_PASSWORD"); v != "" {
 		cfg.Admin.InitialPassword = v
+	}
+	if v := os.Getenv("REPOGATE_ADMIN_HOST"); v != "" {
+		cfg.Admin.Host = v
+	}
+	if v := os.Getenv("REPOGATE_DISTRIBUTED_ROLE"); v != "" {
+		cfg.Distributed.Role = v
+		if v == "coordinator" || v == "edge" {
+			cfg.Distributed.Enabled = true
+		}
+	}
+	if v := os.Getenv("REPOGATE_DISTRIBUTED_ENABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.Distributed.Enabled = b
+		}
+	}
+	if v := os.Getenv("REPOGATE_DISTRIBUTED_TOKEN"); v != "" {
+		cfg.Distributed.Token = v
+	}
+	if v := os.Getenv("REPOGATE_NODE_NAME"); v != "" {
+		cfg.Distributed.Node.Name = v
+	}
+	if v := os.Getenv("REPOGATE_NODE_PUBLIC_BASE_URL"); v != "" {
+		cfg.Distributed.Node.PublicBaseURL = v
+	}
+	if v := os.Getenv("REPOGATE_NODE_REGION"); v != "" {
+		cfg.Distributed.Node.Region = v
 	}
 }
 
@@ -310,8 +406,8 @@ func (c Config) Validate() error {
 	}
 	if c.UpstreamNginx.UpstreamSocketEnabled {
 		upstreamMode, err := parseSocketMode(c.UpstreamNginx.UpstreamSocketModeText)
-		if err != nil || upstreamMode != 0o660 {
-			return errors.New("upstream_nginx.upstream_socket_mode must be 0660")
+		if err != nil || (upstreamMode != 0o600 && upstreamMode != 0o660) {
+			return errors.New("upstream_nginx.upstream_socket_mode must be 0600 or 0660")
 		}
 		if strings.TrimSpace(c.UpstreamNginx.UpstreamSocket) == "" {
 			return errors.New("upstream_nginx.upstream_socket is required when Unix sockets are enabled")
@@ -340,6 +436,20 @@ func (c Config) Validate() error {
 			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.EscapedPath() != "" && u.EscapedPath() != "/") ||
 			!validURLAuthority(u.Host) || strings.ContainsAny(c.HTTP.PublicBaseURL, "\x00\r\n\\{}") {
 			return errors.New("http.public_base_url must be an HTTPS origin without credentials, path, query or fragment")
+		}
+	}
+	if c.Admin.Host != "" {
+		adminHost := strings.ToLower(strings.TrimSuffix(c.Admin.Host, "."))
+		if strings.ContainsAny(adminHost, " /:@\x00\r\n\\{}") || !validURLAuthority(adminHost) {
+			return errors.New("admin.host must be a valid hostname without scheme, port or path")
+		}
+		if c.HTTP.PublicBaseURL != "" {
+			if u, err := url.Parse(c.HTTP.PublicBaseURL); err == nil {
+				sharedHost := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+				if adminHost == sharedHost {
+					return errors.New("admin.host must not be the same origin/host as http.public_base_url")
+				}
+			}
 		}
 	}
 	if c.Database.Path == "" || c.Cache.Path == "" || c.Logging.Path == "" {
@@ -436,6 +546,42 @@ func (c Config) Validate() error {
 	}
 	if c.Redirect.MaxHops <= 0 || c.Redirect.MaxHops > 20 || !c.Redirect.PinValidatedIP {
 		return errors.New("redirect.max_hops must be 1..20 and pin_validated_ip must remain enabled")
+	}
+	if c.Distributed.Role != "" && c.Distributed.Role != "standalone" && c.Distributed.Role != "coordinator" && c.Distributed.Role != "edge" {
+		return errors.New("distributed.role must be standalone, coordinator or edge")
+	}
+	if c.Distributed.Enabled || c.Distributed.Role != "standalone" {
+		if c.Distributed.Routing.Mode != "" && c.Distributed.Routing.Mode != "hybrid" && c.Distributed.Routing.Mode != "cidr" && c.Distributed.Routing.Mode != "geo" && c.Distributed.Routing.Mode != "priority" {
+			return errors.New("distributed.routing.mode must be hybrid, cidr, geo or priority")
+		}
+		for _, netMap := range c.Distributed.Routing.ClientNetworks {
+			if _, _, err := net.ParseCIDR(netMap.CIDR); err != nil {
+				return fmt.Errorf("invalid distributed client network CIDR %q: %w", netMap.CIDR, err)
+			}
+			if strings.TrimSpace(netMap.Region) == "" {
+				return errors.New("distributed client network region cannot be empty")
+			}
+		}
+		if c.Distributed.Role == "coordinator" {
+			if c.Distributed.HealthCheck.Interval <= 0 || c.Distributed.HealthCheck.Timeout <= 0 {
+				return errors.New("distributed.health_check interval and timeout must be positive")
+			}
+			for _, seed := range c.Distributed.Nodes {
+				if strings.TrimSpace(seed.URL) == "" {
+					return errors.New("distributed node seed URL cannot be empty")
+				}
+				u, err := url.Parse(seed.URL)
+				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+					return fmt.Errorf("invalid distributed node seed URL %q", seed.URL)
+				}
+			}
+		}
+		if c.Distributed.Role == "edge" && c.Distributed.Node.PublicBaseURL != "" {
+			u, err := url.Parse(c.Distributed.Node.PublicBaseURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("invalid distributed node public_base_url %q", c.Distributed.Node.PublicBaseURL)
+			}
+		}
 	}
 	return nil
 }

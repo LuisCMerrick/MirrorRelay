@@ -27,6 +27,7 @@ type Store interface {
 	ListMirrors(context.Context) ([]model.Mirror, error)
 	ReplaceMirrors(context.Context, []model.Mirror) error
 	ReplaceCustomConfigs(context.Context, []model.CustomConfig) error
+	ReplaceConfiguration(context.Context, []model.Mirror, []model.CustomConfig) error
 	ListCustomConfigs(context.Context) ([]model.CustomConfig, error)
 	AddConfigVersion(context.Context, model.ConfigVersion, int) (model.ConfigVersion, error)
 	ListConfigVersions(context.Context, int) ([]model.ConfigVersion, error)
@@ -360,14 +361,7 @@ func (c *Controller) Rollback(ctx context.Context, version int64, operator strin
 		}
 	}
 	c.versionMu.Unlock()
-	currentRepositories, _ := c.store.ListMirrors(ctx)
-	currentCustom, _ := c.store.ListCustomConfigs(ctx)
-	if err := c.store.ReplaceMirrors(ctx, snapshot.Repositories); err != nil {
-		return model.ConfigVersion{}, err
-	}
-	if err := c.store.ReplaceCustomConfigs(ctx, snapshot.Custom); err != nil {
-		_ = c.store.ReplaceMirrors(context.Background(), currentRepositories)
-		_ = c.store.ReplaceCustomConfigs(context.Background(), currentCustom)
+	if err := c.store.ReplaceConfiguration(ctx, snapshot.Repositories, snapshot.Custom); err != nil {
 		return model.ConfigVersion{}, err
 	}
 	return c.reconcileLocked(ctx, operator, fmt.Sprintf("rollback to version %d", version))

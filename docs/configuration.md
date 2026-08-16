@@ -49,7 +49,7 @@ Use **Reset to YAML after restart** to delete the stored override. Invalid store
 | `server.local_port` | `9081` | Loopback port used only when the frontend Unix socket is explicitly disabled |
 | `upstream_nginx.upstream_unix_socket_enabled` | `true` | Use a Unix socket from Go to Managed Upstream Nginx |
 | `upstream_nginx.upstream_socket` | `/run/repogate/upstream.sock` | Managed Upstream Nginx socket path |
-| `upstream_nginx.upstream_socket_mode` | `0660` | Required socket mode |
+| `upstream_nginx.upstream_socket_mode` | `0600` | Socket mode (`0600` or `0660`) |
 | `upstream_nginx.upstream_local_port` | `9082` | Loopback port used only when the upstream Unix socket is explicitly disabled |
 
 TCP fallback endpoints always bind `127.0.0.1`. If both sockets are disabled, the two local ports must differ. There is no implicit fallback from a failed Unix socket to TCP. Loopback TCP does not provide Unix filesystem ownership/mode isolation, so use it only when local-process trust is acceptable.
@@ -136,6 +136,8 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | `security.admin_cidrs` | CIDRs allowed to access the UI and nested API under `admin.path`; empty means unrestricted at this layer |
 | `security.session_timeout` | Server-side session lifetime |
 | `security.login_window`, `security.login_max_failures` | Per-client login throttle |
+| `admin.host` | Dedicated hostname for administration console and metrics isolation |
+| `admin.path` | Base path for administration web console and REST API |
 | `limits.max_total_concurrency` | Global request concurrency; `0` is unlimited |
 | `limits.max_ip_concurrency` | Per-client concurrency; `0` is unlimited |
 | `limits.bandwidth_limit_bps` | Global Managed Upstream Nginx upstream bandwidth ceiling; `0` is unlimited |
@@ -164,3 +166,36 @@ The Web UI and repository API expose profile/version, routing mode, multiple ups
 Authenticated caching must be enabled only for content whose cache identity is public and does not vary by authorization. By default, requests carrying `Authorization` or `Cookie` bypass cache, and a configured static credential header disables cache. Nginx also does not cache responses with `Set-Cookie` unless that built-in protection is deliberately overridden; RepoGate's normal custom configuration cannot override it.
 
 Normal custom Managed Upstream Nginx fragments are context-scoped and cannot create listeners, routes or upstream targets; alter TLS verification, cache identity or cache bypass; access the filesystem or process environment; or reference RepoGate's reserved variables, zones and internal headers. Every candidate is parsed by RepoGate and must also pass the bundled binary's `nginx -t` before activation. Unsafe/hop-by-hop/internal headers, invalid hosts, configuration-control characters and `insecure_skip_verify` are rejected.
+
+## Distributed deployment
+
+RepoGate supports distributed multi-node clusters consisting of a Coordinator and multiple Edge nodes.
+
+```text
+Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed Upstream Nginx -> Origin
+```
+
+| Key | Description |
+|---|---|
+| `distributed.enabled` | Global distributed mode switch |
+| `distributed.role` | Node role: `standalone` (default), `coordinator`, or `edge` |
+| `distributed.token` | Shared cluster authentication token for probe APIs (`/api/v1/cluster/manifest`, `/api/v1/cluster/health`) |
+| `distributed.node.name` | Unique edge node identifier |
+| `distributed.node.public_base_url` | Base URL used by coordinator when redirecting clients to this edge |
+| `distributed.node.region` | Node region identifier for geolocation and CIDR routing |
+| `distributed.node.country` | ISO 3166-1 alpha-2 country code |
+| `distributed.routing.mode` | Routing algorithm mode: `hybrid` (default), `cidr`, `geo`, or `priority` |
+| `distributed.routing.client_networks` | CIDR-to-region routing rules mapping client IP ranges to regions |
+| `distributed.routing.regions` | Country-to-region mapping definitions |
+| `distributed.health_check.interval` | Coordinator node health and consistency check interval |
+| `distributed.health_check.timeout` | Coordinator probe request timeout |
+| `distributed.health_check.healthy_threshold` | Consecutive successes required to mark a node healthy |
+| `distributed.health_check.unhealthy_threshold` | Consecutive failures required to mark a node unhealthy |
+| `distributed.nodes` | Initial seed edge nodes for Coordinator bootstrap |
+
+### Distributed Invariants
+
+- **Data plane isolation**: The Coordinator never fetches upstream or edge packages; it returns `HTTP 307 Temporary Redirect` preserving the original request path and query string.
+- **Config consistency**: All edge nodes must share a matching logical configuration fingerprint (`sha256:...`). Nodes with configuration drift are automatically marked `mismatch` and excluded from routing.
+- **Container registries**: Distributed routing is explicitly disabled for Docker and OCI registries (returns HTTP 501).
+

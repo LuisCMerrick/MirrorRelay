@@ -41,7 +41,7 @@ func NewGenerator(cfg config.Config, resolver security.Resolver) *Generator {
 }
 
 func (g *Generator) Generate(ctx context.Context, repositories []model.Mirror, custom []model.CustomConfig) (Generated, error) {
-	if err := mirror.ValidateRouteConflicts(repositories, g.cfg.Admin.Path, g.cfg.HTTP.PublicBaseURL); err != nil {
+	if err := mirror.ValidateRouteConflicts(repositories, g.cfg.Admin.Path, g.cfg.HTTP.PublicBaseURL, g.cfg.Admin.Host); err != nil {
 		return Generated{}, err
 	}
 	fragments, err := classifyCustom(custom)
@@ -358,7 +358,7 @@ func (g *Generator) writeRepositoryLocation(out *strings.Builder, repository mod
 	fmt.Fprintf(out, "            set %s %q;\n", variable, origin)
 	fmt.Fprintf(out, "            rewrite ^/_repo/%d/%d/%s/(.*)$ %s break;\n", repository.ID, upstream.ID, class, strconv.Quote(basePath+"$1"))
 	fmt.Fprintf(out, "            proxy_pass %s;\n", variable)
-	g.writeProxyCommon(out, repository, parsed, host)
+	g.writeProxyCommon(out, repository, parsed, host, true)
 	g.writeCache(out, repository, class, ttl)
 	out.WriteString(custom)
 	out.WriteString("        }\n")
@@ -378,7 +378,7 @@ func (g *Generator) writeHealthLocation(out *strings.Builder, repository model.M
 	fmt.Fprintf(out, "            set %s %q;\n", variable, origin)
 	fmt.Fprintf(out, "            rewrite ^/_health/%d/%d/(.*)$ %s break;\n", repository.ID, upstream.ID, strconv.Quote(basePath+"$1"))
 	fmt.Fprintf(out, "            proxy_pass %s;\n", variable)
-	g.writeProxyCommon(out, repository, parsed, host)
+	g.writeProxyCommon(out, repository, parsed, host, true)
 	out.WriteString("            proxy_buffering off;\n            proxy_cache off;\n")
 	out.WriteString("        }\n")
 }
@@ -399,7 +399,7 @@ func (g *Generator) writeAuxiliaryLocation(out *strings.Builder, repository mode
 	fmt.Fprintf(out, "            set %s %q;\n", variable, origin)
 	fmt.Fprintf(out, "            rewrite ^/_repo_aux/%d/%d/%s/(.*)$ %s break;\n", repository.ID, upstream.ID, class, strconv.Quote("/$1"))
 	fmt.Fprintf(out, "            proxy_pass %s;\n", variable)
-	g.writeProxyCommon(out, repository, parsed, host)
+	g.writeProxyCommon(out, repository, parsed, host, false)
 	g.writeCache(out, repository, class, ttl)
 	out.WriteString(custom)
 	out.WriteString("        }\n")
@@ -430,7 +430,7 @@ func (g *Generator) writeDynamicTargetLocation(out *strings.Builder, repository 
 	}
 }
 
-func (g *Generator) writeProxyCommon(out *strings.Builder, repository model.Mirror, parsed *url.URL, host string) {
+func (g *Generator) writeProxyCommon(out *strings.Builder, repository model.Mirror, parsed *url.URL, host string, includeCustomHeaders bool) {
 	fmt.Fprintf(out, "            proxy_set_header Host %s;\n", host)
 	if parsed.Scheme == "https" {
 		fmt.Fprintf(out, "            proxy_ssl_name %s;\n", parsed.Hostname())
@@ -440,7 +440,7 @@ func (g *Generator) writeProxyCommon(out *strings.Builder, repository model.Mirr
 		fmt.Fprintf(out, "            proxy_ssl_verify_depth %d;\n", g.cfg.UpstreamNginx.TLSVerifyDepth)
 	}
 	g.writeProxyHeaders(out)
-	g.writeRepositoryHeaders(out, repository, true)
+	g.writeRepositoryHeaders(out, repository, includeCustomHeaders)
 }
 
 func (g *Generator) writeProxyHeaders(out *strings.Builder) {

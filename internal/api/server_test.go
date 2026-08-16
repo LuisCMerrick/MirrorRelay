@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LuisCMerrick/RepoGate/internal/auth"
+	"github.com/LuisCMerrick/RepoGate/internal/cluster"
 	"github.com/LuisCMerrick/RepoGate/internal/config"
 	"github.com/LuisCMerrick/RepoGate/internal/database"
 	"github.com/LuisCMerrick/RepoGate/internal/mirror"
@@ -221,5 +222,211 @@ func TestPublicRootListsRepositoriesAndPreservesHostRoutes(t *testing.T) {
 	handler.ServeHTTP(hostRecorder, hostRequest)
 	if hostRecorder.Body.String() != "proxied" {
 		t.Fatalf("host-mode root was not proxied: %q", hostRecorder.Body.String())
+	}
+}
+
+func TestOriginIsolationAndMetricsSecurity(t *testing.T) {
+	cfg := config.Default()
+	cfg.Admin.Host = "admin.example.com"
+	cfg.Admin.Path = "/admin/"
+	adminCIDRs, _ := security.ParseCIDRs([]string{"127.0.0.1/32"})
+	server := &Server{
+		cfg:        cfg,
+		adminCIDRs: adminCIDRs,
+		web:        fstest.MapFS{"index.html": {Data: []byte("admin index")}},
+		registry:   mirror.NewRegistry(nil),
+	}
+	proxy := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("proxied package data"))
+	})
+	handler := server.Handler(proxy)
+
+	// 1. Request to admin.example.com for /admin/ -> should succeed
+	r1 := httptest.NewRequest(http.MethodGet, "https://admin.example.com/admin/", nil)
+	r1.RemoteAddr = "127.0.0.1:1234"
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, r1)
+	if rec1.Code != http.StatusOK || rec1.Body.String() != "admin index" {
+		t.Fatalf("admin host admin access failed: code=%d body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	// 2. Request to admin.example.com for package proxy route -> should return 404
+	r2 := httptest.NewRequest(http.MethodGet, "https://admin.example.com/debian/pool/main/a.deb", nil)
+	r2.RemoteAddr = "127.0.0.1:1234"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, r2)
+	if rec2.Code != http.StatusNotFound {
+		t.Fatalf("admin host should reject package proxy routes with 404, got %d", rec2.Code)
+	}
+
+	// 3. Request to data plane host mirror.example.com for /admin/ -> should return 404
+	r3 := httptest.NewRequest(http.MethodGet, "https://mirror.example.com/admin/", nil)
+	r3.RemoteAddr = "127.0.0.1:1234"
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, r3)
+	if rec3.Code != http.StatusNotFound {
+		t.Fatalf("data plane host should reject admin routes with 404, got %d", rec3.Code)
+	}
+
+	// 4. Request to /metrics from unauthorized IP -> should return 403 Forbidden
+	r4 := httptest.NewRequest(http.MethodGet, "https://admin.example.com/metrics", nil)
+	r4.RemoteAddr = "192.168.1.100:1234"
+	rec4 := httptest.NewRecorder()
+	handler.ServeHTTP(rec4, r4)
+	if rec4.Code != http.StatusForbidden {
+		t.Fatalf("/metrics from non-admin CIDR should return 403, got %d", rec4.Code)
+	}
+}
+
+func TestDebianSecurityClientExamples(t *testing.T) {
+	cfg := config.Default()
+	cfg.HTTP.PublicBaseURL = "https://mirror.example.com"
+
+	debian := model.Mirror{Type: "apt", ProfileName: "Debian", PublicPath: "/debian/"}
+	exDebian := clientExamples(cfg, debian)
+	if len(exDebian) == 0 || !strings.Contains(exDebian[0].Command, "bookworm main") {
+		t.Fatalf("unexpected debian example: %+v", exDebian)
+	}
+
+	debSec := model.Mirror{Type: "apt", ProfileName: "Debian Security", PublicPath: "/debian-security/"}
+	exDebSec := clientExamples(cfg, debSec)
+	if len(exDebSec) == 0 || !strings.Contains(exDebSec[0].Command, "bookworm-security") {
+		t.Fatalf("unexpected debian-security example: %+v", exDebSec)
+	}
+}
+
+func TestClusterManifestAndHealthEndpoints(t *testing.T) {
+	cfg := config.Default()
+	cfg.Distributed.Enabled = true
+	cfg.Distributed.Role = "edge"
+	cfg.Distributed.Token = "secret-token-123"
+	cfg.Distributed.Node.Name = "tokyo-01"
+
+	registry := mirror.NewRegistry(nil)
+	registry.Replace([]model.Mirror{
+		{ID: 1, Name: "Debian", Slug: "debian", Type: "apt", Enabled: true, PublicPath: "/debian/"},
+	})
+
+	server := &Server{
+		cfg:      cfg,
+		registry: registry,
+		web:      fstest.MapFS{"index.html": {Data: []byte("admin index")}},
+	}
+	handler := server.Handler(http.NotFoundHandler())
+
+	// 1. Unauthenticated request to /api/v1/cluster/manifest -> 401
+	r1 := httptest.NewRequest(http.MethodGet, "/api/v1/cluster/manifest", nil)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, r1)
+	if rec1.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated manifest request, got %d", rec1.Code)
+	}
+
+	// 2. Authenticated request with header -> 200
+	r2 := httptest.NewRequest(http.MethodGet, "/api/v1/cluster/manifest", nil)
+	r2.Header.Set("X-RepoGate-Cluster-Token", "secret-token-123")
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, r2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated manifest request, got %d", rec2.Code)
+	}
+	var manifest model.ClusterManifest
+	if err := json.NewDecoder(rec2.Body).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.NodeID != "tokyo-01" || manifest.ProtocolVersion != 1 || len(manifest.Capabilities) != 1 || manifest.Capabilities[0] != "apt" {
+		t.Fatalf("unexpected manifest: %+v", manifest)
+	}
+
+	// 3. Authenticated request to /api/v1/cluster/health -> 200
+	r3 := httptest.NewRequest(http.MethodGet, "/api/v1/cluster/health", nil)
+	r3.Header.Set("Authorization", "Bearer secret-token-123")
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, r3)
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated health request, got %d", rec3.Code)
+	}
+}
+
+func TestCoordinatorDistributed307Redirect(t *testing.T) {
+	cfg := config.Default()
+	cfg.Distributed.Enabled = true
+	cfg.Distributed.Role = "coordinator"
+	cfg.Distributed.Routing.ClientNetworks = []config.ClientNetworkMapping{
+		{CIDR: "10.20.0.0/16", Region: "jp-tokyo"},
+	}
+
+	registry := mirror.NewRegistry(nil)
+	registry.Replace([]model.Mirror{
+		{ID: 1, Name: "Debian", Slug: "debian", Type: "apt", Enabled: true, PublicPath: "/debian/"},
+		{ID: 2, Name: "Docker Hub", Slug: "docker", Type: "docker-registry", Enabled: true, PublicPath: "/docker/"},
+	})
+
+	router := cluster.NewRouter(cfg)
+	fp := cluster.CanonicalFingerprint(registry.List())
+	router.SetNodes([]model.ClusterNode{
+		{
+			ID:                1,
+			Name:              "tokyo-01",
+			URL:               "https://jp.repo.example.com",
+			Region:            "jp-tokyo",
+			Priority:          100,
+			Weight:            100,
+			Enabled:           true,
+			HealthStatus:      "healthy",
+			ConfigStatus:      "match",
+			ConfigFingerprint: fp,
+			ProtocolVersion:   1,
+			Capabilities:      []string{"apt"},
+		},
+	})
+
+	metrics := cluster.NewMetrics()
+	checker := cluster.NewChecker(cfg, nil, router, metrics, nil)
+	_ = checker.SetClusterFingerprint(context.Background(), fp)
+
+	server := &Server{
+		cfg:            cfg,
+		registry:       registry,
+		clusterRouter:  router,
+		clusterChecker: checker,
+		clusterMetrics: metrics,
+		web:            fstest.MapFS{"index.html": {Data: []byte("admin index")}},
+	}
+	handler := server.Handler(http.NotFoundHandler())
+
+	// 1. Client request to /debian/dists/bookworm/InRelease?arch=amd64 from Tokyo CIDR 10.20.1.5 -> 307 to Tokyo Edge
+	r1 := httptest.NewRequest(http.MethodGet, "https://repo.example.com/debian/dists/bookworm/InRelease?arch=amd64", nil)
+	r1.RemoteAddr = "10.20.1.5:1234"
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, r1)
+
+	if rec1.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected HTTP 307 Temporary Redirect, got %d; body=%s", rec1.Code, rec1.Body.String())
+	}
+	loc := rec1.Header().Get("Location")
+	expectedLoc := "https://jp.repo.example.com/debian/dists/bookworm/InRelease?arch=amd64"
+	if loc != expectedLoc {
+		t.Fatalf("Location mismatch: got %q, want %q", loc, expectedLoc)
+	}
+
+	// 2. Client request for docker-registry -> 501 / Not implemented
+	r2 := httptest.NewRequest(http.MethodGet, "https://repo.example.com/docker/v2/", nil)
+	r2.RemoteAddr = "10.20.1.5:1234"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, r2)
+	if rec2.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 for distributed docker registry, got %d", rec2.Code)
+	}
+
+	// 3. When no healthy nodes exist -> 503 Service Unavailable
+	router.SetNodes([]model.ClusterNode{})
+	r3 := httptest.NewRequest(http.MethodGet, "https://repo.example.com/debian/dists/bookworm/InRelease", nil)
+	r3.RemoteAddr = "10.20.1.5:1234"
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, r3)
+	if rec3.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when no healthy edge is available, got %d", rec3.Code)
 	}
 }

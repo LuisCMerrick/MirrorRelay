@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/LuisCMerrick/RepoGate/internal/accesslog"
+	"github.com/LuisCMerrick/RepoGate/internal/auth"
 	"github.com/LuisCMerrick/RepoGate/internal/cachectl"
 	"github.com/LuisCMerrick/RepoGate/internal/config"
 	"github.com/LuisCMerrick/RepoGate/internal/limit"
@@ -40,6 +41,7 @@ type requestMeta struct {
 	relativePath    string
 	cacheClass      string
 	cacheKey        string
+	authPartition   string
 	objectID        string
 	publicBase      string
 	requestID       string
@@ -181,7 +183,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	acceptHeader := strings.Join(request.Header.Values("Accept"), ",")
-	cacheKey = representationCacheKey(cacheKey, repository, class, acceptHeader)
+	authPartition := credentialPartitionKey(repository, request.Header)
+	cacheKey = representationCacheKey(cacheKey, repository, class, acceptHeader) + authPartition
 	rewriteMetadata := repository.RewriteEnabled && class == "metadata"
 	rewriteHTML := repository.HTMLRewriteEnabled && class == "metadata"
 	validatorKey := metadataValidatorKey(repository, upstreamIdentity, objectPath, objectQuery, publicBase, auxiliary,
@@ -192,6 +195,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		relativePath:    relative,
 		cacheClass:      class,
 		cacheKey:        cacheKey,
+		authPartition:   authPartition,
 		objectID:        objectID,
 		publicBase:      publicBase,
 		requestID:       requestID,
@@ -294,7 +298,7 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "invalid adapter template target"}
 		}
 		target, parseErr := parseAbsoluteHTTPURL(string(decodedOrigin))
-		if parseErr != nil || !allowedRewriteHost(repository, target.Hostname()) {
+		if parseErr != nil || !isAllowedRewriteOrigin(repository, target) {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusForbidden, text: "adapter target is not allowed"}
 		}
 		target.Path = "/" + templatePath
@@ -311,7 +315,7 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "invalid adapter target"}
 	}
 	target, err := parseAbsoluteHTTPURL(string(decoded))
-	if err != nil || !allowedRewriteHost(repository, target.Hostname()) {
+	if err != nil || !isAllowedRewriteOrigin(repository, target) {
 		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusForbidden, text: "adapter target is not allowed"}
 	}
 	if target.Scheme != "https" && !(e.cfg.Security.AllowHTTPUpstream && repository.AllowHTTP && target.Scheme == "http") {
@@ -408,7 +412,7 @@ func (e *Engine) rewriteLocation(response *http.Response, meta requestMeta) {
 		return
 	}
 	target := meta.logicalURL.ResolveReference(parsed)
-	if !allowedRewriteHost(meta.repository, target.Hostname()) {
+	if !isAllowedRewriteOrigin(meta.repository, target) {
 		return
 	}
 	response.Header.Set("Location", meta.publicBase+publicFetchPath(meta.repository, target.String()))
@@ -441,7 +445,7 @@ func (e *Engine) rewriteBearerChallenges(response *http.Response, meta requestMe
 		if err != nil {
 			return fmt.Errorf("reject unsafe Registry Bearer challenge realm: %w", err)
 		}
-		if !allowedRewriteHost(meta.repository, target.Hostname()) {
+		if !isAllowedRewriteOrigin(meta.repository, target) {
 			return fmt.Errorf("reject unsafe Registry Bearer challenge realm host %q", target.Hostname())
 		}
 		if meta.repository.TokenUpstream != "" {
@@ -516,7 +520,7 @@ func (e *Engine) tokenTarget(repository model.Mirror) *url.URL {
 		}
 		e.tokenMu.RUnlock()
 	}
-	if target == nil || !allowedRewriteHost(repository, target.Hostname()) {
+	if target == nil || !isAllowedRewriteOrigin(repository, target) {
 		return nil
 	}
 	if target.Scheme != "https" && !(target.Scheme == "http" && e.cfg.Security.AllowHTTPUpstream && repository.AllowHTTP) {
@@ -557,7 +561,7 @@ func (e *Engine) finishRequest(start time.Time, clientIP string, repository mode
 		ClientIP:           clientIP,
 		Mirror:             repository.Slug,
 		Method:             request.Method,
-		URI:                request.URL.RequestURI(),
+		URI:                sanitizeLogURI(request.URL.RequestURI()),
 		Status:             writer.status,
 		Bytes:              writer.bytes,
 		DurationMS:         time.Since(start).Milliseconds(),
@@ -565,6 +569,29 @@ func (e *Engine) finishRequest(start time.Time, clientIP string, repository mode
 		UpstreamDurationMS: selected.duration.Milliseconds(),
 		CacheStatus:        cacheStatus,
 	})
+}
+
+func sanitizeLogURI(rawURI string) string {
+	idx := strings.IndexByte(rawURI, '?')
+	if idx == -1 {
+		return rawURI
+	}
+	pathPart := rawURI[:idx]
+	queryPart := rawURI[idx+1:]
+	values, err := url.ParseQuery(queryPart)
+	if err != nil {
+		return pathPart + "?[REDACTED]"
+	}
+	for key := range values {
+		lower := strings.ToLower(key)
+		if strings.Contains(lower, "token") || strings.Contains(lower, "secret") ||
+			strings.Contains(lower, "key") || strings.Contains(lower, "sig") ||
+			strings.Contains(lower, "auth") || strings.Contains(lower, "pass") ||
+			strings.HasPrefix(lower, "x-amz-") {
+			values[key] = []string{"[REDACTED]"}
+		}
+	}
+	return pathPart + "?" + values.Encode()
 }
 
 type upstreamNginxTransport struct {
@@ -652,7 +679,7 @@ func (t *upstreamNginxTransport) metaForUpstream(ctx context.Context, meta reque
 	if err != nil {
 		return meta, err
 	}
-	cacheKey = representationCacheKey(cacheKey, meta.repository, meta.cacheClass, meta.acceptHeader)
+	cacheKey = representationCacheKey(cacheKey, meta.repository, meta.cacheClass, meta.acceptHeader) + meta.authPartition
 	meta.logicalURL = logicalURL
 	meta.cacheKey = cacheKey
 	meta.objectID = objectID
@@ -676,6 +703,33 @@ func representationCacheKey(base string, repository model.Mirror, class, acceptH
 	}
 	sum := sha256.Sum256([]byte(strings.Join(values, ",")))
 	return base + ":accept:" + hex.EncodeToString(sum[:8])
+}
+
+func credentialPartitionKey(repository model.Mirror, header http.Header) string {
+	if !repository.CacheAuthenticated {
+		return ""
+	}
+	authHeader := header.Get("Authorization")
+	var cookieItems []string
+	for _, cookieLine := range header.Values("Cookie") {
+		for _, part := range strings.Split(cookieLine, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, _, _ := strings.Cut(part, "=")
+			if strings.TrimSpace(name) != auth.CookieName {
+				cookieItems = append(cookieItems, part)
+			}
+		}
+	}
+	sort.Strings(cookieItems)
+	cookies := strings.Join(cookieItems, ";")
+	if authHeader == "" && cookies == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("auth\x00" + authHeader + "\x00" + cookies))
+	return ":auth:" + hex.EncodeToString(sum[:8])
 }
 
 func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestMeta, upstreamID int64) (*http.Response, error) {
@@ -706,6 +760,10 @@ func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestM
 		out.URL.Path = prefix + strconv.FormatInt(meta.repository.ID, 10) + "/" + strconv.FormatInt(upstreamID, 10) + "/" + meta.cacheClass + ensureLeadingSlash(meta.relativePath)
 		out.URL.RawQuery = original.URL.RawQuery
 		return t.base.RoundTrip(out)
+	}
+	if meta.logicalURL != nil && !sameOrigin(meta.logicalURL, meta.dynamicTarget) {
+		out.Header.Del("Authorization")
+		out.Header.Del("Cookie")
 	}
 	target, err := security.ResolveApprovedTarget(out.Context(), meta.dynamicTarget.String(),
 		t.cfg.Security.AllowHTTPUpstream && meta.repository.AllowHTTP,
@@ -752,9 +810,9 @@ func (t *upstreamNginxTransport) followRedirects(original *http.Request, respons
 			return nil, meta, errors.New("invalid redirect location")
 		}
 		target := meta.logicalURL.ResolveReference(parsed)
-		if !allowedRewriteHost(meta.repository, target.Hostname()) {
+		if !isAllowedRewriteOrigin(meta.repository, target) {
 			_ = response.Body.Close()
-			return nil, meta, fmt.Errorf("redirect host %s is not allowed", target.Hostname())
+			return nil, meta, fmt.Errorf("redirect target %s is not allowed", target.String())
 		}
 		if visited[target.String()] {
 			_ = response.Body.Close()
@@ -1003,25 +1061,110 @@ func parseAbsoluteHTTPURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func allowedRewriteHost(repository model.Mirror, host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	for _, allowed := range repository.RewriteHosts {
-		if host == strings.ToLower(strings.TrimSuffix(allowed, ".")) {
-			return true
+func isAllowedRewriteOrigin(repository model.Mirror, target *url.URL) bool {
+	if target == nil || target.Hostname() == "" {
+		return false
+	}
+	targetScheme := strings.ToLower(target.Scheme)
+	if targetScheme != "http" && targetScheme != "https" {
+		return false
+	}
+	targetHost := strings.ToLower(strings.TrimSuffix(target.Hostname(), "."))
+	targetPort := target.Port()
+	if targetPort == "" {
+		if targetScheme == "https" {
+			targetPort = "443"
+		} else {
+			targetPort = "80"
 		}
 	}
+
 	for _, upstream := range repository.Upstreams {
 		parsed, err := url.Parse(upstream.URL)
-		if err == nil && strings.EqualFold(strings.TrimSuffix(parsed.Hostname(), "."), host) {
-			return true
+		if err == nil {
+			uScheme := strings.ToLower(parsed.Scheme)
+			uHost := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+			uPort := parsed.Port()
+			if uPort == "" {
+				if uScheme == "https" {
+					uPort = "443"
+				} else {
+					uPort = "80"
+				}
+			}
+			if uScheme == targetScheme && uHost == targetHost && uPort == targetPort {
+				return true
+			}
 		}
 	}
+
 	if repository.TokenUpstream != "" {
 		parsed, err := url.Parse(repository.TokenUpstream)
-		if err == nil && strings.EqualFold(strings.TrimSuffix(parsed.Hostname(), "."), host) {
-			return true
+		if err == nil {
+			tScheme := strings.ToLower(parsed.Scheme)
+			tHost := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+			tPort := parsed.Port()
+			if tPort == "" {
+				if tScheme == "https" {
+					tPort = "443"
+				} else {
+					tPort = "80"
+				}
+			}
+			if tScheme == targetScheme && tHost == targetHost && tPort == targetPort {
+				return true
+			}
 		}
 	}
+
+	for _, allowed := range repository.RewriteHosts {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		if strings.HasPrefix(allowed, "http://") || strings.HasPrefix(allowed, "https://") {
+			parsed, err := url.Parse(allowed)
+			if err == nil {
+				aScheme := strings.ToLower(parsed.Scheme)
+				aHost := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+				aPort := parsed.Port()
+				if aPort == "" {
+					if aScheme == "https" {
+						aPort = "443"
+					} else {
+						aPort = "80"
+					}
+				}
+				if aScheme == targetScheme && aHost == targetHost && aPort == targetPort {
+					return true
+				}
+			}
+			continue
+		}
+
+		aHost, aPort, err := net.SplitHostPort(allowed)
+		if err != nil {
+			aHost = strings.ToLower(strings.TrimSuffix(allowed, "."))
+			aPort = ""
+		} else {
+			aHost = strings.ToLower(strings.TrimSuffix(aHost, "."))
+		}
+		if aHost == targetHost {
+			if aPort != "" {
+				if aPort == targetPort {
+					return true
+				}
+			} else {
+				if targetScheme == "https" && targetPort == "443" {
+					return true
+				}
+				if targetScheme == "http" && repository.AllowHTTP && targetPort == "80" {
+					return true
+				}
+			}
+		}
+	}
+
 	return false
 }
 
@@ -1121,6 +1264,31 @@ func stripUntrustedHeaders(header http.Header) {
 			lower == "x-forwarded-host" || lower == "x-forwarded-proto" || lower == "x-real-ip" {
 			header.Del(name)
 		}
+	}
+	sanitizeProxyCookies(header)
+}
+
+func sanitizeProxyCookies(header http.Header) {
+	cookieValues := header.Values("Cookie")
+	if len(cookieValues) == 0 {
+		return
+	}
+	header.Del("Cookie")
+	var preserved []string
+	for _, line := range cookieValues {
+		for _, part := range strings.Split(line, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, _, _ := strings.Cut(part, "=")
+			if strings.TrimSpace(name) != auth.CookieName {
+				preserved = append(preserved, part)
+			}
+		}
+	}
+	if len(preserved) > 0 {
+		header.Set("Cookie", strings.Join(preserved, "; "))
 	}
 }
 

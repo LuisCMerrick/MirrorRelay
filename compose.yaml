@@ -12,7 +12,9 @@ services:
         hard: 1048576
     environment:
       REPOGATE_ADMIN_USERNAME: ${REPOGATE_ADMIN_USERNAME:-admin}
-      REPOGATE_ADMIN_PASSWORD: ${REPOGATE_ADMIN_PASSWORD:?set REPOGATE_ADMIN_PASSWORD in .env}
+      REPOGATE_ADMIN_PASSWORD: ${REPOGATE_ADMIN_PASSWORD:-}
+      REPOGATE_ADMIN_PASSWORD_FILE: ${REPOGATE_ADMIN_PASSWORD_FILE:-}
+      REPOGATE_ADMIN_HOST: ${REPOGATE_ADMIN_HOST:-}
     volumes:
       - ./configs/config.docker.yaml:/etc/repogate/config.yaml:ro
       - /run/repogate:/run/repogate

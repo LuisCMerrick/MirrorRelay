@@ -40,6 +40,7 @@ type Profile struct {
 var builtins = []Profile{
 	{Name: "Generic HTTP", Version: "1.0.0", LatestStable: true, Type: "generic", ProxyMode: "transparent", Upstream: "https://example.com/", CacheProfile: "standard", PublicMode: "path"},
 	{Name: "Debian", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian/", HealthPath: "dists/stable/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
+	{Name: "Debian Security", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian-security/", HealthPath: "dists/stable-security/InRelease", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
 	{Name: "Ubuntu", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://archive.ubuntu.com/ubuntu/", HealthPath: "dists/noble/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
 	{Name: "Rocky Linux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://dl.rockylinux.org/pub/rocky/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
 	{Name: "AlmaLinux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://repo.almalinux.org/almalinux/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},

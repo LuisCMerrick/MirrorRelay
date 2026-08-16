@@ -20,10 +20,20 @@ const (
 	argonSaltLen        = 16
 )
 
+var argonSem = make(chan struct{}, 4)
+
+func acquireArgon() func() {
+	argonSem <- struct{}{}
+	return func() { <-argonSem }
+}
+
 func HashPassword(password string) (string, error) {
 	if len(password) < 10 {
 		return "", errors.New("password must be at least 10 characters")
 	}
+	release := acquireArgon()
+	defer release()
+
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
@@ -69,6 +79,8 @@ func VerifyPassword(encoded, password string) bool {
 	if memory < 8*1024 || memory > 1024*1024 || iterations == 0 || iterations > 10 || threads == 0 || threads > 32 {
 		return false
 	}
+	release := acquireArgon()
+	defer release()
 	enc := base64.RawStdEncoding
 	salt, err := enc.DecodeString(parts[4])
 	if err != nil {

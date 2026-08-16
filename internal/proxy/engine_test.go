@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/LuisCMerrick/RepoGate/internal/config"
@@ -184,5 +185,94 @@ func TestAuxiliaryRootHasAnIndependentCacheIdentity(t *testing.T) {
 		t.Fatalf("normal and auxiliary cache identities collided: %q", normal)
 	} else if auxiliary != "https://repo.example/" {
 		t.Fatalf("unexpected auxiliary cache identity: %q", auxiliary)
+	}
+}
+
+func TestSanitizeLogURI(t *testing.T) {
+	input := "/simple/pkg/?token=secret123&user=alice&signature=sig456&version=1.0"
+	got := sanitizeLogURI(input)
+	if strings.Contains(got, "secret123") || strings.Contains(got, "sig456") {
+		t.Fatalf("sensitive values leaked in log URI: %s", got)
+	}
+	if !strings.Contains(got, "user=alice") || !strings.Contains(got, "version=1.0") {
+		t.Fatalf("innocuous parameters missing in log URI: %s", got)
+	}
+}
+
+func TestStripUntrustedHeadersSanitizesSessionCookie(t *testing.T) {
+	h := http.Header{}
+	h.Set("Cookie", "repogate_session=secret_token; foo=bar; another=value")
+	h.Set("X-Mirror-Internal-Foo", "bar")
+	h.Set("X-Forwarded-For", "1.2.3.4")
+	stripUntrustedHeaders(h)
+
+	if h.Get("X-Mirror-Internal-Foo") != "" || h.Get("X-Forwarded-For") != "" {
+		t.Fatal("internal headers not stripped")
+	}
+	cookie := h.Get("Cookie")
+	if strings.Contains(cookie, "repogate_session") {
+		t.Fatalf("repogate_session was not stripped: %s", cookie)
+	}
+	if !strings.Contains(cookie, "foo=bar") || !strings.Contains(cookie, "another=value") {
+		t.Fatalf("legitimate cookies removed: %s", cookie)
+	}
+}
+
+func TestIsAllowedRewriteOrigin(t *testing.T) {
+	repo := model.Mirror{
+		Upstreams: []model.Upstream{
+			{URL: "https://deb.debian.org/debian/"},
+		},
+		RewriteHosts: []string{
+			"security.debian.org",
+			"https://archive.debian.org:8443",
+		},
+	}
+
+	allowed1, _ := url.Parse("https://deb.debian.org/pool/main/a/a.deb")
+	if !isAllowedRewriteOrigin(repo, allowed1) {
+		t.Fatal("deb.debian.org should be allowed")
+	}
+
+	allowed2, _ := url.Parse("https://security.debian.org/dists/InRelease")
+	if !isAllowedRewriteOrigin(repo, allowed2) {
+		t.Fatal("security.debian.org should be allowed")
+	}
+
+	disallowedPort, _ := url.Parse("https://security.debian.org:8080/dists/InRelease")
+	if isAllowedRewriteOrigin(repo, disallowedPort) {
+		t.Fatal("security.debian.org on port 8080 should not be allowed")
+	}
+
+	disallowedScheme, _ := url.Parse("http://security.debian.org/dists/InRelease")
+	if isAllowedRewriteOrigin(repo, disallowedScheme) {
+		t.Fatal("security.debian.org over HTTP should not be allowed")
+	}
+
+	allowedCustomPort, _ := url.Parse("https://archive.debian.org:8443/pool/main/b/b.deb")
+	if !isAllowedRewriteOrigin(repo, allowedCustomPort) {
+		t.Fatal("archive.debian.org:8443 should be allowed")
+	}
+}
+
+func TestCredentialPartitionKey(t *testing.T) {
+	repoUnauth := model.Mirror{CacheAuthenticated: false}
+	h := http.Header{}
+	h.Set("Authorization", "Bearer token1")
+	if key := credentialPartitionKey(repoUnauth, h); key != "" {
+		t.Fatalf("unauth repo should have empty partition key: %q", key)
+	}
+
+	repoAuth := model.Mirror{CacheAuthenticated: true}
+	key1 := credentialPartitionKey(repoAuth, h)
+	if !strings.HasPrefix(key1, ":auth:") {
+		t.Fatalf("auth repo should have :auth: partition key: %q", key1)
+	}
+
+	h2 := http.Header{}
+	h2.Set("Authorization", "Bearer token2")
+	key2 := credentialPartitionKey(repoAuth, h2)
+	if key1 == key2 {
+		t.Fatal("different tokens must have different partition keys")
 	}
 }

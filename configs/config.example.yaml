@@ -74,6 +74,7 @@ limits:
 health:
   worker_interval: 15s
 admin:
+  host: ""
   path: /admin/
   initial_username: "admin"
   initial_password: ""
@@ -87,7 +88,7 @@ upstream_nginx:
   log_path: /var/log/repogate/upstream-nginx
   upstream_unix_socket_enabled: true
   upstream_socket: /run/repogate/upstream.sock
-  upstream_socket_mode: "0660"
+  upstream_socket_mode: "0600"
   upstream_local_port: 9082
   ca_bundle: /etc/ssl/certs/ca-certificates.crt
   tls_verify_depth: 5
@@ -102,3 +103,22 @@ upstream_nginx:
   worker_user: repogate
   worker_connections: 4096
   stop_on_repogate_exit: false
+distributed:
+  enabled: false
+  role: standalone
+  token: ""
+  node:
+    name: "node-01"
+    public_base_url: "https://mirror.example.com"
+    region: "default"
+    country: ""
+  routing:
+    mode: hybrid
+    regions: []
+    client_networks: []
+  health_check:
+    interval: 10s
+    timeout: 3s
+    healthy_threshold: 2
+    unhealthy_threshold: 3
+  nodes: []

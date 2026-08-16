@@ -129,7 +129,7 @@ func (m *Manager) Purge(ctx context.Context, scope string, repositoryID int64, o
 func (m *Manager) StartReclaimer(ctx context.Context) {
 	go func() {
 		reclaimTicker := time.NewTicker(5 * time.Second)
-		usageTicker := time.NewTicker(30 * time.Second)
+		usageTicker := time.NewTicker(2 * time.Minute)
 		defer reclaimTicker.Stop()
 		defer usageTicker.Stop()
 		m.scanUsage()
@@ -155,6 +155,7 @@ func (m *Manager) reclaim(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	scanned := false
 	for _, job := range jobs {
 		m.mu.Lock()
 		baseline, tracked := m.reclaimBytes[job.ID]
@@ -172,7 +173,10 @@ func (m *Manager) reclaim(ctx context.Context) {
 		if time.Since(job.CreatedAt) < m.cfg.Cache.Inactive+m.cfg.Cache.CleanupInterval {
 			continue
 		}
-		m.scanUsage()
+		if !scanned {
+			m.scanUsage()
+			scanned = true
+		}
 		m.mu.RLock()
 		current := m.usage
 		m.mu.RUnlock()
@@ -200,6 +204,13 @@ func (m *Manager) reclaim(ctx context.Context) {
 }
 
 func (m *Manager) scanUsage() {
+	m.mu.RLock()
+	lastScanned := m.usage.ScannedAt
+	m.mu.RUnlock()
+	if !lastScanned.IsZero() && time.Since(lastScanned) < 5*time.Second {
+		return
+	}
+
 	current := usage{ScannedAt: time.Now()}
 	err := filepath.WalkDir(m.cfg.Cache.Path, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -222,6 +233,12 @@ func (m *Manager) scanUsage() {
 	m.mu.Lock()
 	m.usage = current
 	m.mu.Unlock()
+}
+
+func (m *Manager) GlobalGeneration() int64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.global
 }
 
 func (m *Manager) Summary() map[string]any {

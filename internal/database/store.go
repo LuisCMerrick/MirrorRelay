@@ -228,6 +228,31 @@ CREATE TABLE IF NOT EXISTS purge_jobs (
  operator TEXT NOT NULL,
  created_at TEXT NOT NULL,
  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cluster_nodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL UNIQUE,
+  region TEXT NOT NULL,
+  country TEXT NOT NULL DEFAULT '',
+  priority INTEGER NOT NULL DEFAULT 100,
+  weight INTEGER NOT NULL DEFAULT 100,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  health_status TEXT NOT NULL DEFAULT 'unknown',
+  config_status TEXT NOT NULL DEFAULT 'unknown',
+  config_fingerprint TEXT NOT NULL DEFAULT '',
+  version TEXT NOT NULL DEFAULT '',
+  protocol_version INTEGER NOT NULL DEFAULT 0,
+  capabilities TEXT NOT NULL DEFAULT '[]',
+  last_check TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cluster_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );`
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {
@@ -559,6 +584,15 @@ func (s *Store) GetSession(ctx context.Context, idHash string) (int64, string, s
 
 func (s *Store) DeleteSession(ctx context.Context, idHash string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash=?`, idHash)
+	return err
+}
+
+func (s *Store) DeleteUserSessions(ctx context.Context, userID int64, exceptIDHash ...string) error {
+	if len(exceptIDHash) > 0 && exceptIDHash[0] != "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=? AND id_hash!=?`, userID, exceptIDHash[0])
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID)
 	return err
 }
 
@@ -1023,6 +1057,70 @@ func (s *Store) ReplaceCustomConfigs(ctx context.Context, values []model.CustomC
 	return tx.Commit()
 }
 
+func (s *Store) ReplaceConfiguration(ctx context.Context, mirrors []model.Mirror, configs []model.CustomConfig) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM upstreams`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mirrors`); err != nil {
+		return err
+	}
+	for _, m := range mirrors {
+		created, updated := m.CreatedAt, m.UpdatedAt
+		if created.IsZero() {
+			created = time.Now()
+		}
+		if updated.IsZero() {
+			updated = created
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO mirrors(id,name,slug,type,enabled,description,public_mode,public_host,public_path,proxy_mode,
+cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile,rewrite_hosts,health_check_enabled,health_check_path,health_interval_sec,
+	health_timeout_sec,health_method,health_expected,redirect_mode,profile_name,profile_version,rate_limit_profile,access_policy,strip_prefix,add_prefix,host_rewrite,
+		header_add,header_remove,connect_timeout_sec,read_timeout_sec,send_timeout_sec,metadata_rewrite_limit_bytes,metadata_ttl_sec,package_ttl_sec,immutable_ttl_sec,blob_ttl_sec,cache_authenticated,
+		auth_mode,token_upstream,blob_redirect_mode,pull_only,config_state,config_error,allow_http,allow_private,insecure_tls,bandwidth_limit_bps,
+		max_concurrency,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			m.ID, m.Name, m.Slug, m.Type, m.Enabled, m.Description, m.PublicMode, m.PublicHost, m.PublicPath, m.ProxyMode,
+			m.CacheEnabled, m.CacheProfile, m.RewriteEnabled, m.HTMLRewriteEnabled, m.RewriteProfile, encodeStrings(m.RewriteHosts), m.HealthCheckEnabled, m.HealthCheckPath,
+			m.HealthIntervalSec, m.HealthTimeoutSec, m.HealthMethod, m.HealthExpected, m.RedirectMode, m.ProfileName,
+			m.ProfileVersion, m.RateLimitProfile, m.AccessPolicy, m.StripPrefix, m.AddPrefix, m.HostRewrite, encodeMap(m.HeaderAdd), encodeStrings(m.HeaderRemove),
+			m.ConnectTimeoutSec, m.ReadTimeoutSec, m.SendTimeoutSec, m.MetadataLimitBytes, m.MetadataTTLSec, m.PackageTTLSec, m.ImmutableTTLSec, m.BlobTTLSec, m.CacheAuthenticated,
+			m.AuthMode, m.TokenUpstream, m.BlobRedirectMode,
+			m.PullOnly, m.ConfigState, m.ConfigError, m.AllowHTTP, m.AllowPrivate, m.InsecureTLS, m.BandwidthLimitBPS, m.MaxConcurrency,
+			created.UTC().Format(time.RFC3339Nano), updated.UTC().Format(time.RFC3339Nano))
+		if err != nil {
+			return err
+		}
+		if err := replaceUpstreams(ctx, tx, m.ID, m.Upstreams); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM custom_configs`); err != nil {
+		return err
+	}
+	for _, value := range configs {
+		created, updated := value.CreatedAt, value.UpdatedAt
+		if created.IsZero() {
+			created = time.Now()
+		}
+		if updated.IsZero() {
+			updated = created
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO custom_configs(id,name,context,repository_id,enabled,content,last_validation_result,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+			value.ID, value.Name, value.Context, value.RepositoryID, value.Enabled, value.Content, value.LastResult,
+			created.UTC().Format(time.RFC3339Nano), updated.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *Store) UpdateUpstreamHealth(ctx context.Context, upstreamID int64, status string, latency int64, detail string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE upstreams SET health_status=?,last_check=?,latency_ms=?,last_error=? WHERE id=?`, status, at.UTC().Format(time.RFC3339Nano), latency, detail, upstreamID)
 	return err
@@ -1068,3 +1166,175 @@ func IsConflict(err error) bool {
 }
 
 func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
+
+func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes ORDER BY priority ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var nodes []model.ClusterNode
+	for rows.Next() {
+		var n model.ClusterNode
+		var enabled int
+		var capsJSON string
+		var lastCheckStr, createdStr, updatedStr string
+		if err := rows.Scan(&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr); err != nil {
+			return nil, err
+		}
+		n.Enabled = enabled != 0
+		if capsJSON != "" {
+			_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
+		}
+		if lastCheckStr != "" {
+			n.LastCheck = parseTime(lastCheckStr)
+		}
+		n.CreatedAt = parseTime(createdStr)
+		n.UpdatedAt = parseTime(updatedStr)
+		nodes = append(nodes, n)
+	}
+	return nodes, rows.Err()
+}
+
+func (s *Store) GetClusterNode(ctx context.Context, id int64) (model.ClusterNode, error) {
+	var n model.ClusterNode
+	var enabled int
+	var capsJSON string
+	var lastCheckStr, createdStr, updatedStr string
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE id=?`, id).Scan(
+		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
+	if err != nil {
+		return n, err
+	}
+	n.Enabled = enabled != 0
+	if capsJSON != "" {
+		_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
+	}
+	if lastCheckStr != "" {
+		n.LastCheck = parseTime(lastCheckStr)
+	}
+	n.CreatedAt = parseTime(createdStr)
+	n.UpdatedAt = parseTime(updatedStr)
+	return n, nil
+}
+
+func (s *Store) GetClusterNodeByURL(ctx context.Context, rawURL string) (model.ClusterNode, error) {
+	var n model.ClusterNode
+	var enabled int
+	var capsJSON string
+	var lastCheckStr, createdStr, updatedStr string
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE url=?`, rawURL).Scan(
+		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
+	if err != nil {
+		return n, err
+	}
+	n.Enabled = enabled != 0
+	if capsJSON != "" {
+		_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
+	}
+	if lastCheckStr != "" {
+		n.LastCheck = parseTime(lastCheckStr)
+	}
+	n.CreatedAt = parseTime(createdStr)
+	n.UpdatedAt = parseTime(updatedStr)
+	return n, nil
+}
+
+func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
+	now := time.Now()
+	nowStr := now.UTC().Format(time.RFC3339Nano)
+	if node.Priority <= 0 {
+		node.Priority = 100
+	}
+	if node.Weight <= 0 {
+		node.Weight = 100
+	}
+	if node.HealthStatus == "" {
+		node.HealthStatus = "unknown"
+	}
+	if node.ConfigStatus == "" {
+		node.ConfigStatus = "unknown"
+	}
+	capsBytes, _ := json.Marshal(node.Capabilities)
+	var enabledInt int
+	if node.Enabled {
+		enabledInt = 1
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, string(capsBytes), "", node.LastError, nowStr, nowStr)
+	if err != nil {
+		return node, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return node, err
+	}
+	node.ID = id
+	node.CreatedAt = now
+	node.UpdatedAt = now
+	return node, nil
+}
+
+func (s *Store) UpdateClusterNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
+	now := time.Now()
+	nowStr := now.UTC().Format(time.RFC3339Nano)
+	if node.Priority <= 0 {
+		node.Priority = 100
+	}
+	if node.Weight <= 0 {
+		node.Weight = 100
+	}
+	var enabledInt int
+	if node.Enabled {
+		enabledInt = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET name=?,url=?,region=?,country=?,priority=?,weight=?,enabled=?,updated_at=? WHERE id=?`,
+		node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, nowStr, node.ID)
+	if err != nil {
+		return node, err
+	}
+	node.UpdatedAt = now
+	return node, nil
+}
+
+func (s *Store) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, lastError string, lastCheck time.Time) error {
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	var checkStr string
+	if !lastCheck.IsZero() {
+		checkStr = lastCheck.UTC().Format(time.RFC3339Nano)
+	}
+	capsBytes, _ := json.Marshal(caps)
+	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET health_status=?,config_status=?,config_fingerprint=?,version=?,protocol_version=?,capabilities=?,last_error=?,last_check=?,updated_at=? WHERE id=?`,
+		healthStatus, configStatus, fingerprint, version, protoVer, string(capsBytes), lastError, checkStr, nowStr, id)
+	return err
+}
+
+func (s *Store) DeleteClusterNode(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id=?`, id)
+	return err
+}
+
+func (s *Store) SetClusterNodeEnabled(ctx context.Context, id int64, enabled bool) error {
+	var enabledInt int
+	if enabled {
+		enabledInt = 1
+	}
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET enabled=?,updated_at=? WHERE id=?`, enabledInt, nowStr, id)
+	return err
+}
+
+func (s *Store) ClusterSetting(ctx context.Context, key string) (string, bool, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM cluster_settings WHERE key=?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return value, err == nil, err
+}
+
+func (s *Store) PutClusterSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO cluster_settings(key,value,updated_at) VALUES(?,?,?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, key, value, nowText())
+	return err
+}

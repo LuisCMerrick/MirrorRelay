@@ -13,12 +13,16 @@ type publicPathRoute struct {
 	slug string
 }
 
-func ValidateRouteConflicts(repositories []model.Mirror, adminPath, publicBaseURL string) error {
+func ValidateRouteConflicts(repositories []model.Mirror, adminPath, publicBaseURL string, adminHost ...string) error {
 	sharedHost := ""
 	if publicBaseURL != "" {
 		if parsed, err := url.Parse(publicBaseURL); err == nil {
 			sharedHost = strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 		}
+	}
+	adminH := ""
+	if len(adminHost) > 0 && adminHost[0] != "" {
+		adminH = strings.ToLower(strings.TrimSuffix(adminHost[0], "."))
 	}
 
 	seenHosts := make(map[string]string)
@@ -44,6 +48,9 @@ func ValidateRouteConflicts(repositories []model.Mirror, adminPath, publicBaseUR
 			}
 			if sharedHost != "" && host == sharedHost {
 				return fmt.Errorf("public host %s conflicts with the shared host from http.public_base_url", host)
+			}
+			if adminH != "" && host == adminH {
+				return fmt.Errorf("public host %s conflicts with admin.host", host)
 			}
 			seenHosts[host] = repository.Slug
 			continue

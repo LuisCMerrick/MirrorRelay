@@ -31,6 +31,7 @@
         <button data-page="upstream-nginx" data-i18n="navUpstreamNginx">Managed Upstream Nginx</button>
         <button data-page="custom" data-i18n="navCustom">Custom configuration</button>
         <button data-page="ingress" data-i18n="navIngress">Ingress integration</button>
+        <button data-page="cluster" data-i18n="navCluster">Cluster</button>
         <button data-page="cache" data-i18n="navCache">Cache</button>
         <button data-page="health" data-i18n="navHealth">Health</button>
         <button data-page="access" data-i18n="navAccess">Access log</button>
@@ -52,6 +53,7 @@
       <section id="page-upstream-nginx" class="page hidden"></section>
       <section id="page-custom" class="page hidden"><div class="toolbar"><div></div><button id="add-custom" data-i18n="addCustom">Add custom configuration</button></div><div id="custom-list"></div></section>
       <section id="page-ingress" class="page hidden"></section>
+      <section id="page-cluster" class="page hidden"><div class="toolbar"><div></div><div class="actions"><button id="reset-cluster-fp" class="secondary" data-i18n="resetFingerprint">Reset fingerprint</button><button id="add-node" data-i18n="addNode">Add node</button></div></div><div id="cluster-overview"></div><div id="cluster-node-list"></div></section>
       <section id="page-cache" class="page hidden"></section>
       <section id="page-health" class="page hidden"></section>
       <section id="page-access" class="page hidden"></section>
@@ -146,6 +148,18 @@
       <label class="check"><input id="custom-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
       <label class="wide"><span data-i18n="configuration">Configuration</span><textarea id="custom-content" class="code-editor" rows="18" required spellcheck="false"></textarea></label>
     </div><footer><button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="validateApply">Validate and apply</button></footer><div id="custom-error" class="error"></div>
+  </form></dialog>
+
+  <dialog id="node-dialog"><form id="node-form" method="dialog"><header><h2 id="node-form-title">Add edge node</h2><button type="button" class="icon" id="close-node-dialog">×</button></header>
+    <input id="node-id" type="hidden"><div class="form-grid">
+      <label><span data-i18n="name">Name</span><input id="node-name" required maxlength="100" placeholder="tokyo-01"></label>
+      <label><span data-i18n="nodeURL">Public base URL</span><input id="node-url" required placeholder="https://jp.repo.example.com"></label>
+      <label><span data-i18n="region">Region</span><input id="node-region" required placeholder="jp-tokyo"></label>
+      <label><span data-i18n="country">Country</span><input id="node-country" placeholder="JP" maxlength="2"></label>
+      <label><span data-i18n="priority">Priority</span><input id="node-priority" type="number" value="100" min="1"></label>
+      <label><span data-i18n="weight">Weight</span><input id="node-weight" type="number" value="100" min="1" max="1000"></label>
+      <label class="check"><input id="node-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
+    </div><footer><button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="save">Save</button></footer><div id="node-error" class="error"></div>
   </form></dialog>
 
   <script src="app.js" defer></script>

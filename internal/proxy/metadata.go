@@ -197,7 +197,7 @@ func (e *rewriteTooLargeError) Error() string {
 
 func rewriteURLAllowed(repository model.Mirror, raw string) bool {
 	parsed, err := parseAbsoluteHTTPURL(raw)
-	return err == nil && allowedRewriteHost(repository, parsed.Hostname())
+	return err == nil && isAllowedRewriteOrigin(repository, parsed)
 }
 
 func addVary(header http.Header, value string) {

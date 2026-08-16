@@ -26,6 +26,7 @@ import (
 	"github.com/LuisCMerrick/RepoGate/internal/health"
 	"github.com/LuisCMerrick/RepoGate/internal/ipc"
 	"github.com/LuisCMerrick/RepoGate/internal/mirror"
+	"github.com/LuisCMerrick/RepoGate/internal/model"
 	"github.com/LuisCMerrick/RepoGate/internal/proxy"
 	"github.com/LuisCMerrick/RepoGate/internal/stats"
 	"github.com/LuisCMerrick/RepoGate/internal/upstreamnginx"
@@ -93,9 +94,26 @@ func run() error {
 		slog.Info("development TLS enabled", "certificate", cfg.TLS.Certificate, "CA", ca, "generated", generated)
 	}
 
+	if len(cfg.Distributed.Nodes) > 0 {
+		for _, seed := range cfg.Distributed.Nodes {
+			if _, err := store.GetClusterNodeByURL(context.Background(), seed.URL); err != nil {
+				_, _ = store.CreateClusterNode(context.Background(), model.ClusterNode{
+					Name:     seed.Name,
+					URL:      seed.URL,
+					Region:   seed.Region,
+					Country:  seed.Country,
+					Priority: seed.Priority,
+					Weight:   seed.Weight,
+					Enabled:  seed.Enabled,
+				})
+			}
+		}
+	}
+
 	if err := bootstrapAdmin(context.Background(), store, cfg, dev); err != nil {
 		return err
 	}
+
 	registry := mirror.NewRegistry(store)
 	cacheManager := cachectl.New(cfg, store)
 	if err := cacheManager.Load(context.Background()); err != nil {
@@ -122,6 +140,7 @@ func run() error {
 	defer cancel()
 	metric.StartPersistence(ctx)
 	cacheManager.StartReclaimer(ctx)
+	control.StartCluster(ctx)
 	return runProduct(ctx, cancel, cfg, handler, engine, checker, upstreamNginxController, registry, metric)
 }
 

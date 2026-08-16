@@ -9,8 +9,10 @@ import (
 	"html"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,6 +24,7 @@ import (
 	"github.com/LuisCMerrick/RepoGate/internal/auth"
 	"github.com/LuisCMerrick/RepoGate/internal/buildinfo"
 	"github.com/LuisCMerrick/RepoGate/internal/cachectl"
+	"github.com/LuisCMerrick/RepoGate/internal/cluster"
 	"github.com/LuisCMerrick/RepoGate/internal/config"
 	"github.com/LuisCMerrick/RepoGate/internal/database"
 	"github.com/LuisCMerrick/RepoGate/internal/health"
@@ -42,6 +45,7 @@ type Store interface {
 	PutSession(context.Context, string, int64, string, string, time.Time) error
 	GetSession(context.Context, string) (int64, string, string, time.Time, error)
 	DeleteSession(context.Context, string) error
+	DeleteUserSessions(context.Context, int64, ...string) error
 	CreateMirror(context.Context, model.Mirror) (model.Mirror, error)
 	UpdateMirror(context.Context, model.Mirror) (model.Mirror, error)
 	ListMirrors(context.Context) ([]model.Mirror, error)
@@ -59,24 +63,55 @@ type Store interface {
 	Setting(context.Context, string) (string, bool, error)
 	PutSetting(context.Context, string, string) error
 	DeleteSetting(context.Context, string) error
+	ListClusterNodes(context.Context) ([]model.ClusterNode, error)
+	GetClusterNode(context.Context, int64) (model.ClusterNode, error)
+	GetClusterNodeByURL(context.Context, string) (model.ClusterNode, error)
+	CreateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
+	UpdateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
+	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, string, time.Time) error
+	DeleteClusterNode(context.Context, int64) error
+	SetClusterNodeEnabled(context.Context, int64, bool) error
+	ClusterSetting(context.Context, string) (string, bool, error)
+	PutClusterSetting(context.Context, string, string) error
+}
+
+type auditRecorderAdapter struct {
+	server *Server
+}
+
+func (a *auditRecorderAdapter) Record(user, action, object, detail string, ok bool) {
+	if a.server != nil && a.server.store != nil {
+		_ = a.server.store.AddAudit(context.Background(), model.AuditEntry{
+			Time:      time.Now(),
+			Username:  user,
+			ClientIP:  "127.0.0.1",
+			Action:    action,
+			Object:    object,
+			Detail:    detail,
+			Succeeded: ok,
+		})
+	}
 }
 
 type Server struct {
-	cfg           config.Config
-	fileConfig    config.Config
-	store         Store
-	registry      *mirror.Registry
-	cache         *cachectl.Manager
-	stats         *stats.Stats
-	checker       *health.Checker
-	upstreamNginx *upstreamnginx.Controller
-	sessions      *auth.Sessions
-	loginLimiter  *auth.LoginLimiter
-	adminCIDRs    security.CIDRList
-	web           fs.FS
-	build         buildinfo.Info
-	started       time.Time
-	mutationMu    sync.Mutex
+	cfg            config.Config
+	fileConfig     config.Config
+	store          Store
+	registry       *mirror.Registry
+	cache          *cachectl.Manager
+	stats          *stats.Stats
+	checker        *health.Checker
+	upstreamNginx  *upstreamnginx.Controller
+	clusterRouter  *cluster.Router
+	clusterChecker *cluster.Checker
+	clusterMetrics *cluster.Metrics
+	sessions       *auth.Sessions
+	loginLimiter   *auth.LoginLimiter
+	adminCIDRs     security.CIDRList
+	web            fs.FS
+	build          buildinfo.Info
+	started        time.Time
+	mutationMu     sync.Mutex
 }
 
 func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, cacheManager *cachectl.Manager, metric *stats.Stats, checker *health.Checker, upstreamNginx *upstreamnginx.Controller, web fs.FS, build buildinfo.Info) (*Server, error) {
@@ -84,8 +119,45 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, fileConfig: fileConfig, store: store, registry: registry, cache: cacheManager, stats: metric, checker: checker, sessions: auth.NewSessions(store, cfg.Security.SessionTimeout),
-		loginLimiter: auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures), upstreamNginx: upstreamNginx, adminCIDRs: cidrs, web: web, build: build, started: time.Now()}, nil
+	srv := &Server{
+		cfg:           cfg,
+		fileConfig:    fileConfig,
+		store:         store,
+		registry:      registry,
+		cache:         cacheManager,
+		stats:         metric,
+		checker:       checker,
+		sessions:      auth.NewSessionsWithPath(store, cfg.Security.SessionTimeout, cfg.Admin.Path),
+		loginLimiter:  auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures),
+		upstreamNginx: upstreamNginx,
+		adminCIDRs:    cidrs,
+		web:           web,
+		build:         build,
+		started:       time.Now(),
+	}
+	if cfg.Distributed.Enabled || cfg.Distributed.Role != "standalone" {
+		srv.clusterRouter = cluster.NewRouter(cfg)
+		srv.clusterMetrics = cluster.NewMetrics()
+		srv.clusterChecker = cluster.NewChecker(cfg, store, srv.clusterRouter, srv.clusterMetrics, &auditRecorderAdapter{server: srv})
+		if store != nil {
+			if nodes, err := store.ListClusterNodes(context.Background()); err == nil {
+				srv.clusterRouter.SetNodes(nodes)
+			}
+		}
+	}
+	return srv, nil
+}
+
+func (s *Server) SetCluster(router *cluster.Router, checker *cluster.Checker, metrics *cluster.Metrics) {
+	s.clusterRouter = router
+	s.clusterChecker = checker
+	s.clusterMetrics = metrics
+}
+
+func (s *Server) StartCluster(ctx context.Context) {
+	if s.clusterChecker != nil && s.cfg.Distributed.Role == "coordinator" {
+		s.clusterChecker.Start(ctx)
+	}
 }
 
 func (s *Server) publishActiveRouting() error {
@@ -98,17 +170,156 @@ func (s *Server) publishActiveRouting() error {
 }
 
 func (s *Server) Handler(proxy http.Handler) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
-	mux.HandleFunc("/metrics", s.metrics)
-	mux.Handle(s.cfg.Admin.Path, s.adminAccess(http.HandlerFunc(s.webHandler)))
-	mux.Handle(s.cfg.AdminAPIPath(), s.adminAccess(http.HandlerFunc(s.apiHandler)))
-	mux.Handle("/", s.publicHandler(proxy))
-	return securityHeaders(mux)
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	adminMux.Handle("/metrics", s.adminAccess(http.HandlerFunc(s.metrics)))
+	adminMux.Handle(s.cfg.Admin.Path, s.adminAccess(securityHeaders(http.HandlerFunc(s.webHandler))))
+	adminMux.Handle(s.cfg.AdminAPIPath(), s.adminAccess(securityHeaders(http.HandlerFunc(s.apiHandler))))
+
+	adminHost := strings.ToLower(strings.TrimSuffix(s.cfg.Admin.Host, "."))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqHost := requestHostname(r.Host)
+		if adminHost != "" {
+			if reqHost == adminHost {
+				if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" ||
+					strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
+					strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
+					r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+					adminMux.ServeHTTP(w, r)
+					return
+				}
+				http.NotFound(w, r)
+				return
+			}
+			if strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
+				strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
+				r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+				http.NotFound(w, r)
+				return
+			}
+		}
+
+		if r.URL.Path == "/api/v1/cluster/manifest" || r.URL.Path == "/api/v1/cluster/health" {
+			if !s.verifyClusterToken(r) {
+				writeError(w, http.StatusUnauthorized, "invalid cluster token")
+				return
+			}
+			if r.URL.Path == "/api/v1/cluster/manifest" {
+				var gen int64 = 1
+				if s.cache != nil {
+					gen = s.cache.GlobalGeneration()
+				}
+				manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
+				writeJSON(w, http.StatusOK, manifest)
+				return
+			}
+			if r.URL.Path == "/api/v1/cluster/health" {
+				writeJSON(w, http.StatusOK, s.clusterHealth())
+				return
+			}
+		}
+
+		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" ||
+			strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
+			strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
+			r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+			adminMux.ServeHTTP(w, r)
+			return
+		}
+
+		s.publicHandler(proxy).ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) verifyClusterToken(r *http.Request) bool {
+	if s.cfg.Distributed.Token == "" {
+		return true
+	}
+	hdr := r.Header.Get("X-RepoGate-Cluster-Token")
+	if hdr == "" {
+		authHdr := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHdr, "Bearer ") {
+			hdr = strings.TrimPrefix(authHdr, "Bearer ")
+		}
+	}
+	return subtle.ConstantTimeCompare([]byte(hdr), []byte(s.cfg.Distributed.Token)) == 1
+}
+
+func (s *Server) clusterHealth() model.ClusterHealth {
+	hStatus := "healthy"
+	repoHealth := make(map[string]bool)
+	for _, m := range s.registry.List() {
+		if !m.Enabled {
+			continue
+		}
+		viable := repositoryHealthState(m) != "unhealthy"
+		repoHealth[m.Slug] = viable
+		if !viable {
+			hStatus = "degraded"
+		}
+	}
+	return model.ClusterHealth{
+		Status:            hStatus,
+		Version:           s.build.Version,
+		ConfigFingerprint: cluster.CanonicalFingerprint(s.registry.List()),
+		Repositories:      repoHealth,
+	}
+}
+
+func requestHostname(raw string) string {
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	return strings.ToLower(strings.Trim(strings.TrimSuffix(raw, "."), "[]"))
 }
 
 func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.Distributed.Role == "coordinator" {
+			if r.URL.Path == "/" && !s.hostRepository(r.Host) {
+				s.repositoryIndex(w, r)
+				return
+			}
+			repo, _, matched := s.registry.Route(r.Host, r.URL.Path)
+			if matched {
+				if repo.Type == "docker-registry" || repo.Type == "oci-registry" {
+					writeJSON(w, http.StatusNotImplemented, map[string]string{
+						"error":   "distributed_registry_not_supported",
+						"message": "Distributed Registry Not Supported",
+					})
+					return
+				}
+				clientIP := security.RequestClientIP(r)
+				fp := ""
+				if s.clusterChecker != nil {
+					fp = s.clusterChecker.ClusterFingerprint()
+				}
+				if s.clusterRouter != nil {
+					node, err := s.clusterRouter.SelectNode(clientIP, repo, fp)
+					if err != nil {
+						if s.clusterMetrics != nil {
+							s.clusterMetrics.IncNoAvailableEdge()
+						}
+						writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+							"error":   "no_available_edge",
+							"message": "No healthy RepoGate edge node is available",
+						})
+						return
+					}
+					if s.clusterMetrics != nil {
+						s.clusterMetrics.IncRedirect(node.Name, node.Region)
+					}
+					dest := strings.TrimRight(node.URL, "/") + r.URL.Path
+					if r.URL.RawQuery != "" {
+						dest += "?" + r.URL.RawQuery
+					}
+					http.Redirect(w, r, dest, http.StatusTemporaryRedirect)
+					return
+				}
+			}
+		}
+
 		if r.URL.Path != "/" || s.hostRepository(r.Host) {
 			proxy.ServeHTTP(w, r)
 			return
@@ -402,6 +613,16 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		s.customConfigAction(w, r, session, strings.TrimPrefix(path, "/custom-configs/"))
 	case strings.HasPrefix(path, "/upstream-nginx/rollback/") && r.Method == http.MethodPost:
 		s.rollbackConfig(w, r, session, strings.TrimPrefix(path, "/upstream-nginx/rollback/"))
+	case path == "/cluster/overview" && r.Method == http.MethodGet:
+		s.clusterOverview(w, r)
+	case path == "/cluster/nodes" && r.Method == http.MethodGet:
+		s.listClusterNodes(w, r)
+	case path == "/cluster/nodes" && r.Method == http.MethodPost:
+		s.createClusterNode(w, r, session)
+	case strings.HasPrefix(path, "/cluster/nodes/"):
+		s.clusterNodeAction(w, r, session, strings.TrimPrefix(path, "/cluster/nodes/"))
+	case path == "/cluster/fingerprint/reset" && r.Method == http.MethodPost:
+		s.resetClusterFingerprint(w, r, session)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
@@ -582,23 +803,25 @@ type loginRequest struct {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	ip := security.RequestClientIP(r)
-	if !s.loginLimiter.Allowed(ip) {
-		writeError(w, http.StatusTooManyRequests, "too many login attempts")
-		return
-	}
 	var in loginRequest
 	if err := decodeJSON(w, r, &in); err != nil {
 		return
 	}
+	key := ip + ":" + strings.TrimSpace(in.Username)
+	release, allowed := s.loginLimiter.Acquire(key)
+	if !allowed {
+		writeError(w, http.StatusTooManyRequests, "too many login attempts")
+		return
+	}
 	user, err := s.store.UserByName(r.Context(), strings.TrimSpace(in.Username))
 	if err != nil || !auth.VerifyPassword(user.PasswordHash, in.Password) {
-		s.loginLimiter.Failure(ip)
+		release(false)
 		_ = s.audit(r, in.Username, "login", "session", "invalid credentials", false)
 		time.Sleep(250 * time.Millisecond)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	s.loginLimiter.Success(ip)
+	release(true)
 	session, err := s.sessions.Create(user.ID, user.Username)
 	if err != nil {
 		writeInternal(w, err)
@@ -631,6 +854,9 @@ func (s *Server) password(w http.ResponseWriter, r *http.Request, session auth.S
 		writeInternal(w, err)
 		return
 	}
+	if err := s.sessions.RevokeUser(r.Context(), user.ID, session.ID); err != nil {
+		slog.Warn("failed to revoke user sessions on password change", "user", user.Username, "error", err)
+	}
 	_ = s.audit(r, session.Username, "change_password", "user", session.Username, true)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -650,7 +876,7 @@ func (s *Server) createMirror(w http.ResponseWriter, r *http.Request, session au
 		return
 	}
 	proposed := append(desired, m)
-	if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL); err != nil {
+	if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL, s.cfg.Admin.Host); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -734,7 +960,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			return
 		}
 		proposed := replaceCandidate(desired, updated)
-		if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL); err != nil {
+		if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL, s.cfg.Admin.Host); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
@@ -888,7 +1114,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			return
 		}
 		proposed := replaceCandidate(desired, candidate)
-		if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL); err != nil {
+		if err := mirror.ValidateRouteConflicts(proposed, s.cfg.Admin.Path, s.cfg.HTTP.PublicBaseURL, s.cfg.Admin.Host); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
@@ -974,7 +1200,10 @@ func clientExamples(cfg config.Config, repository model.Mirror) []clientExample 
 	case "apt":
 		suite := "bookworm"
 		components := "main contrib non-free-firmware"
-		if strings.Contains(strings.ToLower(repository.ProfileName), "ubuntu") {
+		pName := strings.ToLower(repository.ProfileName)
+		if strings.Contains(pName, "debian security") || strings.Contains(pName, "debian-security") {
+			suite = "bookworm-security"
+		} else if strings.Contains(pName, "ubuntu") {
 			suite, components = "noble", "main restricted universe multiverse"
 		}
 		return []clientExample{{Name: "APT source", Command: "deb " + base + " " + suite + " " + components}}
@@ -1165,6 +1394,9 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		names[m.ID] = m.Name
 	}
 	s.stats.Metrics(w, names)
+	if s.clusterMetrics != nil {
+		s.clusterMetrics.WritePrometheus(w)
+	}
 	fmt.Fprintln(w, "# TYPE repogate_up gauge")
 	fmt.Fprintln(w, "repogate_up 1")
 	fmt.Fprintln(w, "# TYPE repogate_managed_upstream_nginx_up gauge")
@@ -1175,7 +1407,20 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "repogate_managed_upstream_nginx_up %d\n", upstreamNginxUp)
 }
 func (s *Server) audit(r *http.Request, user, action, object, detail string, ok bool) error {
-	return s.store.AddAudit(r.Context(), model.AuditEntry{Time: time.Now(), Username: user, ClientIP: security.RequestClientIP(r), Action: action, Object: object, Detail: detail, Succeeded: ok})
+	entry := model.AuditEntry{
+		Time:      time.Now(),
+		Username:  user,
+		ClientIP:  security.RequestClientIP(r),
+		Action:    action,
+		Object:    object,
+		Detail:    detail,
+		Succeeded: ok,
+	}
+	if err := s.store.AddAudit(r.Context(), entry); err != nil {
+		slog.Error("failed to record audit entry", "user", user, "action", action, "object", object, "error", err)
+		return err
+	}
+	return nil
 }
 func (s *Server) validateUpstreams(parent context.Context, m model.Mirror) error {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
@@ -1449,4 +1694,204 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) clusterOverview(w http.ResponseWriter, r *http.Request) {
+	fp := ""
+	if s.clusterChecker != nil {
+		fp = s.clusterChecker.ClusterFingerprint()
+	}
+	var total, healthy, routable int
+	if s.store != nil {
+		nodes, _ := s.store.ListClusterNodes(r.Context())
+		total = len(nodes)
+		for _, n := range nodes {
+			if n.HealthStatus == "healthy" {
+				healthy++
+			}
+			isMatch := (fp == "" || n.ConfigFingerprint == fp) && n.ConfigStatus != "mismatch" && n.ConfigStatus != "drifted"
+			if n.Enabled && n.HealthStatus == "healthy" && isMatch && (n.ProtocolVersion == 0 || n.ProtocolVersion == cluster.ClusterProtocolVersion) {
+				routable++
+			}
+		}
+	}
+	overview := model.ClusterOverview{
+		Role:               s.cfg.Distributed.Role,
+		Enabled:            s.cfg.Distributed.Enabled,
+		ClusterFingerprint: fp,
+		TotalNodes:         total,
+		HealthyNodes:       healthy,
+		RoutableNodes:      routable,
+		RoutingMode:        s.cfg.Distributed.Routing.Mode,
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+func (s *Server) listClusterNodes(w http.ResponseWriter, r *http.Request) {
+	nodes, err := s.store.ListClusterNodes(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if nodes == nil {
+		nodes = []model.ClusterNode{}
+	}
+	writeJSON(w, http.StatusOK, nodes)
+}
+
+func (s *Server) createClusterNode(w http.ResponseWriter, r *http.Request, session auth.Session) {
+	var in model.ClusterNode
+	if decodeJSON(w, r, &in) != nil {
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	in.URL = strings.TrimSpace(in.URL)
+	in.Region = strings.TrimSpace(in.Region)
+	if in.Name == "" || in.URL == "" || in.Region == "" {
+		writeError(w, http.StatusBadRequest, "node name, url, and region are required")
+		return
+	}
+	u, err := url.Parse(in.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		writeError(w, http.StatusBadRequest, "invalid node url")
+		return
+	}
+	if in.Priority <= 0 {
+		in.Priority = 100
+	}
+	if in.Weight <= 0 {
+		in.Weight = 100
+	}
+	in.Enabled = true
+
+	created, err := s.store.CreateClusterNode(r.Context(), in)
+	if err != nil {
+		if database.IsConflict(err) {
+			writeError(w, http.StatusConflict, "node url already exists")
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+
+	if s.clusterChecker != nil {
+		probed, _ := s.clusterChecker.CheckNode(r.Context(), created)
+		created = probed
+		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
+			s.clusterRouter.SetNodes(all)
+		}
+	}
+
+	_ = s.audit(r, session.Username, "create_cluster_node", "cluster_node", created.Name, true)
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, session auth.Session, subpath string) {
+	parts := strings.Split(strings.Trim(subpath, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		writeError(w, http.StatusBadRequest, "invalid node id")
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid node id")
+		return
+	}
+	node, err := s.store.GetClusterNode(r.Context(), id)
+	if err != nil {
+		if database.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "node not found")
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+
+	if len(parts) == 1 && (r.Method == http.MethodPatch || r.Method == http.MethodPut || r.Method == http.MethodPost) {
+		var in model.ClusterNode
+		if decodeJSON(w, r, &in) != nil {
+			return
+		}
+		in.ID = id
+		if strings.TrimSpace(in.Name) == "" {
+			in.Name = node.Name
+		}
+		if strings.TrimSpace(in.URL) == "" {
+			in.URL = node.URL
+		}
+		if strings.TrimSpace(in.Region) == "" {
+			in.Region = node.Region
+		}
+		if in.Priority <= 0 {
+			in.Priority = node.Priority
+		}
+		if in.Weight <= 0 {
+			in.Weight = node.Weight
+		}
+		updated, err := s.store.UpdateClusterNode(r.Context(), in)
+		if err != nil {
+			writeInternal(w, err)
+			return
+		}
+		if s.clusterChecker != nil {
+			probed, _ := s.clusterChecker.CheckNode(r.Context(), updated)
+			updated = probed
+			if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
+				s.clusterRouter.SetNodes(all)
+			}
+		}
+		_ = s.audit(r, session.Username, "update_cluster_node", "cluster_node", updated.Name, true)
+		writeJSON(w, http.StatusOK, updated)
+		return
+	}
+
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if err := s.store.DeleteClusterNode(r.Context(), id); err != nil {
+			writeInternal(w, err)
+			return
+		}
+		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
+			s.clusterRouter.SetNodes(all)
+		}
+		_ = s.audit(r, session.Username, "delete_cluster_node", "cluster_node", node.Name, true)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "check" && r.Method == http.MethodPost {
+		if s.clusterChecker != nil {
+			probed, _ := s.clusterChecker.CheckNode(r.Context(), node)
+			node = probed
+			if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
+				s.clusterRouter.SetNodes(all)
+			}
+		}
+		writeJSON(w, http.StatusOK, node)
+		return
+	}
+
+	if len(parts) == 2 && (parts[1] == "enable" || parts[1] == "disable") && r.Method == http.MethodPost {
+		enabled := parts[1] == "enable"
+		if err := s.store.SetClusterNodeEnabled(r.Context(), id, enabled); err != nil {
+			writeInternal(w, err)
+			return
+		}
+		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
+			s.clusterRouter.SetNodes(all)
+		}
+		_ = s.audit(r, session.Username, parts[1]+"_cluster_node", "cluster_node", node.Name, true)
+		writeJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "not found")
+}
+
+func (s *Server) resetClusterFingerprint(w http.ResponseWriter, r *http.Request, session auth.Session) {
+	if s.clusterChecker != nil {
+		_ = s.clusterChecker.SetClusterFingerprint(r.Context(), "")
+		_ = s.clusterChecker.CheckAll(r.Context())
+	}
+	_ = s.audit(r, session.Username, "reset_cluster_fingerprint", "cluster", "", true)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

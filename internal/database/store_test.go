@@ -148,3 +148,150 @@ func TestSessionPersistenceAndUserCascade(t *testing.T) {
 		t.Fatal("session survived user deletion")
 	}
 }
+
+func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+
+	// Test user sessions and revocation
+	if err := store.CreateUser(ctx, "admin2", "hash2"); err != nil {
+		t.Fatal(err)
+	}
+	u, err := store.UserByName(ctx, "admin2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := time.Now().Add(time.Hour)
+	_ = store.PutSession(ctx, "s1", u.ID, u.Username, "c1", exp)
+	_ = store.PutSession(ctx, "s2", u.ID, u.Username, "c2", exp)
+	_ = store.PutSession(ctx, "s3", u.ID, u.Username, "c3", exp)
+
+	// Delete all sessions for u.ID except s2
+	if err := store.DeleteUserSessions(ctx, u.ID, "s2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := store.GetSession(ctx, "s1"); err == nil {
+		t.Fatal("s1 should be deleted")
+	}
+	if _, _, _, _, err := store.GetSession(ctx, "s2"); err != nil {
+		t.Fatal("s2 should survive")
+	}
+	if _, _, _, _, err := store.GetSession(ctx, "s3"); err == nil {
+		t.Fatal("s3 should be deleted")
+	}
+
+	// Test ReplaceConfiguration in single transaction
+	mirrors := []model.Mirror{
+		{ID: 10, Name: "M1", Slug: "m1", Type: "generic", Enabled: true, Upstreams: []model.Upstream{{URL: "https://upstream.test"}}},
+	}
+	customs := []model.CustomConfig{
+		{ID: 20, Name: "c1", Context: "http", Enabled: true, Content: "# custom"},
+	}
+	if err := store.ReplaceConfiguration(ctx, mirrors, customs); err != nil {
+		t.Fatal(err)
+	}
+	listM, err := store.ListMirrors(ctx)
+	if err != nil || len(listM) != 1 || listM[0].Slug != "m1" {
+		t.Fatalf("mirrors not restored properly: %+v", listM)
+	}
+	listC, err := store.ListCustomConfigs(ctx)
+	if err != nil || len(listC) != 1 || listC[0].Name != "c1" {
+		t.Fatalf("custom configs not restored properly: %+v", listC)
+	}
+}
+
+func TestClusterNodeAndSettingStore(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+
+	// 1. Test Cluster Setting
+	if err := store.PutClusterSetting(ctx, "cluster_fingerprint", "sha256:abcd"); err != nil {
+		t.Fatal(err)
+	}
+	val, ok, err := store.ClusterSetting(ctx, "cluster_fingerprint")
+	if err != nil || !ok || val != "sha256:abcd" {
+		t.Fatalf("cluster setting mismatch: val=%s, ok=%v, err=%v", val, ok, err)
+	}
+
+	// 2. Create Cluster Nodes
+	node1 := model.ClusterNode{
+		Name:         "tokyo-01",
+		URL:          "https://jp.repo.example.com",
+		Region:       "jp-tokyo",
+		Country:      "JP",
+		Priority:     100,
+		Weight:       80,
+		Enabled:      true,
+		Capabilities: []string{"apt", "rpm", "pypi"},
+	}
+	created1, err := store.CreateClusterNode(ctx, node1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created1.ID == 0 || created1.Name != "tokyo-01" || created1.Priority != 100 {
+		t.Fatalf("unexpected created node: %+v", created1)
+	}
+
+	node2 := model.ClusterNode{
+		Name:         "sg-01",
+		URL:          "https://sg.repo.example.com",
+		Region:       "sg",
+		Country:      "SG",
+		Priority:     200,
+		Weight:       100,
+		Enabled:      true,
+		Capabilities: []string{"apt", "rpm"},
+	}
+	created2, err := store.CreateClusterNode(ctx, node2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. List
+	nodes, err := store.ListClusterNodes(ctx)
+	if err != nil || len(nodes) != 2 {
+		t.Fatalf("list nodes failed: nodes=%+v, err=%v", nodes, err)
+	}
+
+	// 4. Update status
+	now := time.Now()
+	err = store.UpdateClusterNodeStatus(ctx, created1.ID, "healthy", "match", "sha256:abcd", "0.0.1", 1, []string{"apt", "rpm", "pypi"}, "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got1, err := store.GetClusterNode(ctx, created1.ID)
+	if err != nil || got1.HealthStatus != "healthy" || got1.ConfigStatus != "match" || got1.ConfigFingerprint != "sha256:abcd" {
+		t.Fatalf("unexpected node after status update: %+v", got1)
+	}
+
+	// 5. Get by URL
+	gotByUrl, err := store.GetClusterNodeByURL(ctx, "https://jp.repo.example.com")
+	if err != nil || gotByUrl.ID != created1.ID {
+		t.Fatalf("get by url failed: %+v", gotByUrl)
+	}
+
+	// 6. Disable & Delete
+	if err := store.SetClusterNodeEnabled(ctx, created2.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := store.GetClusterNode(ctx, created2.ID)
+	if err != nil || got2.Enabled {
+		t.Fatalf("node2 should be disabled: %+v", got2)
+	}
+
+	if err := store.DeleteClusterNode(ctx, created2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetClusterNode(ctx, created2.ID); err == nil {
+		t.Fatal("node2 should be deleted")
+	}
+}

@@ -2,6 +2,7 @@
 /dev-data/
 /dist/
 /AGENTS.md
+/SESSION_HANDOFF.md
 *.log
 *.db
 *.db-shm

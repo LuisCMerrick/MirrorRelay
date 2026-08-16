@@ -27,8 +27,11 @@ type Checker struct {
 	registry *mirror.Registry
 	client   *http.Client
 
-	lastMu sync.Mutex
-	last   map[int64]time.Time
+	lastMu     sync.Mutex
+	last       map[int64]time.Time
+	inFlightMu sync.Mutex
+	inFlight   map[int64]bool
+	tasks      chan model.Mirror
 }
 
 type Result struct {
@@ -54,12 +57,37 @@ func New(cfg config.Config, store Store, registry *mirror.Registry) *Checker {
 		ResponseHeaderTimeout: cfg.Transport.ResponseHeaderTimeout,
 	}
 	return &Checker{
-		cfg: cfg, store: store, registry: registry, last: make(map[int64]time.Time),
-		client: &http.Client{Transport: transport},
+		cfg:      cfg,
+		store:    store,
+		registry: registry,
+		last:     make(map[int64]time.Time),
+		inFlight: make(map[int64]bool),
+		tasks:    make(chan model.Mirror, 64),
+		client:   &http.Client{Transport: transport},
 	}
 }
 
 func (c *Checker) Start(ctx context.Context) {
+	// Start bounded worker pool (4 workers)
+	for i := 0; i < 4; i++ {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case repository, ok := <-c.tasks:
+					if !ok {
+						return
+					}
+					_, _ = c.CheckMirror(ctx, repository)
+					c.inFlightMu.Lock()
+					delete(c.inFlight, repository.ID)
+					c.inFlightMu.Unlock()
+				}
+			}
+		}()
+	}
+
 	go func() {
 		ticker := time.NewTicker(c.cfg.Health.WorkerInterval)
 		defer ticker.Stop()
@@ -86,9 +114,27 @@ func (c *Checker) runDue(ctx context.Context) {
 			c.last[repository.ID] = now
 		}
 		c.lastMu.Unlock()
-		if due {
-			repository := repository
-			go func() { _, _ = c.CheckMirror(ctx, repository) }()
+		if !due {
+			continue
+		}
+
+		c.inFlightMu.Lock()
+		running := c.inFlight[repository.ID]
+		if !running {
+			c.inFlight[repository.ID] = true
+		}
+		c.inFlightMu.Unlock()
+
+		if running {
+			continue
+		}
+
+		select {
+		case c.tasks <- repository:
+		default:
+			c.inFlightMu.Lock()
+			delete(c.inFlight, repository.ID)
+			c.inFlightMu.Unlock()
 		}
 	}
 }
