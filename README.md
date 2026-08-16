@@ -111,11 +111,11 @@ Open `https://127.0.0.1:8443/admin/` in your browser and sign in with `admin` / 
    # RHEL / Rocky Linux / Fedora:
    sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
    ```
-2. **Configure Initial Admin Password**:
+2. **Configure Initial Admin Password & Enable Service**:
    ```bash
    echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
    sudo chmod 0600 /etc/mirrorrelay/environment
-   sudo systemctl restart mirrorrelay
+   sudo systemctl enable --now mirrorrelay.service
    ```
 3. **Connect External Shared Nginx** (see [Installation Guide](docs/installation.md)):
    Add your web server user (e.g. `www-data` or `nginx`) to the `mirrorrelay` group to access the Unix domain socket:
@@ -177,7 +177,7 @@ MirrorRelay includes native clustering capabilities to scale traffic across geog
 - **Coordinator Node**: Central management authority owning repository definitions, client routing rules, and node health monitoring.
 - **Edge Nodes**: Autonomous caching nodes that receive traffic directly from clients via HTTP 307 redirects from the Coordinator.
 - **Routing Policies**: Client IP CIDR matching, Geo-location, Priority, and Weight balancing.
-- **Failover**: If an Edge node fails health checks, the Coordinator automatically routes traffic to the next healthy node or serves it locally.
+- **Cluster Failover**: If an Edge node fails health checks, the Coordinator automatically routes traffic to the next healthy candidate node (or returns HTTP 503 if all edge nodes are unreachable).
 
 Read more in the [Distributed Deployment Guide](docs/distributed.md).
 

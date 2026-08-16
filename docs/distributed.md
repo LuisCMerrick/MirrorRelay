@@ -48,7 +48,7 @@ MirrorRelay includes built-in distributed clustering capabilities, allowing you 
   - Manages global repository configurations and profile definitions via Web UI/API.
   - Actively probes Edge nodes for availability and configuration consistency.
   - Matches client requests against routing rules and issues HTTP `307 Temporary Redirect` responses.
-  - Serves as an automatic fallback origin if all edge nodes are unreachable.
+  - Returns `HTTP 503 Service Unavailable` with `error: no_available_edge` if no healthy edge node is available (the Coordinator never acts as a data-plane fallback or origin proxy).
 
 ### Edge Node
 - **Role**: Regional high-speed caching proxy.
@@ -62,12 +62,18 @@ MirrorRelay includes built-in distributed clustering capabilities, allowing you 
 
 ## 3. Traffic Routing Policies
 
-The Coordinator evaluates routing rules in the following sequence:
+The `distributed.routing.mode` setting controls how the Coordinator selects candidate edge nodes. Valid modes are:
+- `hybrid` (default): Evaluates client CIDR and Geo region mappings first, selects nodes with the lowest priority value (highest precedence), and balances traffic proportionally using node weights.
+- `cidr`: Strictly routes based on `client_networks` CIDR subnet matching.
+- `geo`: Strictly routes based on country and region mapping.
+- `priority`: Strictly selects the node with the lowest numeric priority value (e.g. priority 1 takes precedence over priority 100).
 
-1. **Client IP / CIDR Matching**: Routes clients from designated subnet ranges (e.g. `10.0.0.0/8` or `192.168.1.0/24`) to specific edge nodes.
-2. **Geo / Region Matching**: Uses GeoIP metadata or configured region tags (e.g. `us-east`, `eu-west`, `ap-southeast`) to direct clients to the geographically closest node.
-3. **Priority & Weight**: When multiple nodes match, selects the highest-priority node or distributes requests proportionally according to node weights.
-4. **Health & Consistency Filtering**: Automatically filters out nodes that fail health checks or have mismatched configuration fingerprints.
+Candidates are filtered before selection:
+1. **Health & Consistency Filtering**: Nodes that fail health probes (`health_status != "healthy"`) or have mismatched configuration fingerprints are automatically excluded.
+2. **Capability Check**: Ensures the edge node supports the requested repository type.
+3. **Weight Distribution**: When multiple candidates share the same priority, requests are distributed proportionally according to each node's `weight`.
+
+If all candidate nodes are unhealthy or offline, the Coordinator returns `HTTP 503 Service Unavailable`.
 
 ---
 
@@ -86,7 +92,7 @@ distributed:
     region: "us-east"
     country: "US"
   routing:
-    mode: hybrid              # hybrid, cidr, geo, priority, weight
+    mode: hybrid              # hybrid, cidr, geo, priority
     client_networks:
       - cidr: "10.10.0.0/16"
         region: "us-east"

@@ -47,7 +47,7 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
   - 通过 Web UI / API 统一管理全局仓库与模板配置。
   - 主动定时轮询探测所有 Edge 节点的可用性与配置版本指纹。
   - 根据客户端请求特征执行路由匹配并下发 HTTP `307 Temporary Redirect` 重定向。
-  - 在所有 Edge 节点异常时自动回退到本地数据平面服务，保障业务连续性。
+  - 当无任何健康 Edge 节点可用时返回 `HTTP 503 Service Unavailable`（`error: no_available_edge`，Coordinator 自身严格作为控制面，不执行上游数据回源）。
 
 ### Edge 边缘节点
 - **角色定位**：区域高速缓存加速与拉取节点。
@@ -61,12 +61,18 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
 
 ## 3. 流量调度策略
 
-Coordinator 按照以下优先级依次计算路由调度策略：
+`distributed.routing.mode` 控制 Coordinator 如何选取目标边缘节点。支持的合法模式为：
+- `hybrid`（默认模式）：优先评估客户端 IP CIDR 与 Geo 区域映射，选取数值最小的优先级节点（数字越小优先级越高），同优先级候选节点按 `weight` 权重比例分流。
+- `cidr`：严格依据 `client_networks` 中的 IP CIDR 网段规则匹配边缘节点。
+- `geo`：严格依据国家代码与区域映射规则匹配地理最近的边缘节点。
+- `priority`：严格选取优先级数值最小的节点（例如优先级 1 优于优先级 100）。
 
-1. **客户端 IP / CIDR 匹配**：将特定内网或公网 IP 网段（如 `10.0.0.0/8` 或 `192.168.1.0/24`）的客户端精准指派至指定边缘节点。
-2. **Geo 地区与国家代码匹配**：利用区域标签（如 `us-east`、`eu-west`、`cn-shanghai`）将请求导流至地理位置最近的节点。
-3. **优先级与权重负载均衡**：在多个候选节点中优先选择高优先级节点，或按权重比例分流。
-4. **健康度与指纹一致性过滤**：自动剔除未通过健康探针或配置指纹不一致的异常节点。
+节点候选过滤流程：
+1. **健康度与指纹一致性过滤**：探针未通过（`health_status != "healthy"`）或配置指纹不一致的异常节点会被自动剔除。
+2. **能力支持检测**：校验边缘节点是否声明支持当前请求的仓库类型。
+3. **权重分流**：同优先级多个候选节点根据各节点的 `weight` 权重比例平滑分流。
+
+若所有候选节点均不可用，Coordinator 将直接返回 `HTTP 503 Service Unavailable`。
 
 ---
 
@@ -85,7 +91,7 @@ distributed:
     region: "cn-east"
     country: "CN"
   routing:
-    mode: hybrid              # hybrid, cidr, geo, priority, weight
+    mode: hybrid              # hybrid, cidr, geo, priority
     client_networks:
       - cidr: "10.10.0.0/16"
         region: "cn-east"

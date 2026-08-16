@@ -12,6 +12,7 @@ This roadmap outlines current accomplishments and future development milestones 
 - [x] **Data-Plane Safety**: Desired/Active state separation, `nginx -t` validation, atomic configuration swapping, and graceful reloads.
 - [x] **Security Engine**: SSRF defense with private IP / CIDR blacklists, IP pinning with preserved TLS SNI, and internal header stripping.
 - [x] **Web Management UI**: Embedded, zero-dependency bilingual (English / Chinese) single-page application with in-place service restarts.
+- [x] **Observability**: Current internal/system metrics dashboard, JSON API (`/admin/api/v1/stats`), access logs, and SQLite audit trail.
 - [x] **Distributed Routing (Package Repos)**: Coordinator / Edge multi-node topology with CIDR, Geo, Priority, and Weight 307 redirects.
 - [x] **Release Packaging**: Multi-architecture (`amd64`, `arm64`) DEB, RPM, and tarball releases.
 
@@ -21,7 +22,7 @@ This roadmap outlines current accomplishments and future development milestones 
 
 ### v0.1.0 — Distributed OCI & Enhanced Observability
 - [ ] **Distributed OCI Registry Routing**: Implement Coordinator control plane for Docker/OCI layer blobs to enable edge-redirected container image pulling.
-- [ ] **Prometheus Metrics Exporter**: Native `/metrics` endpoint exporting cache HIT/MISS rates, upstream latency, bandwidth, and edge health.
+- [ ] **Prometheus Metrics Exporter**: Dedicated `/metrics` endpoint exporting cache HIT/MISS rates, upstream latency, bandwidth, and edge health alongside current internal/system metrics.
 - [ ] **Structured OpenTelemetry Tracing**: Distributed tracing across Coordinator, Edge, and Upstream Nginx layers.
 
 ### v0.2.0 — Storage & Ingress Flexibility

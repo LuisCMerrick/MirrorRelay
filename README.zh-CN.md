@@ -111,11 +111,11 @@ go run ./cmd/mirrorrelay -dev
    # RHEL / Rocky Linux / Fedora:
    sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
    ```
-2. **设置初始管理员密码**：
+2. **设置初始管理员密码并启用服务**：
    ```bash
    echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
    sudo chmod 0600 /etc/mirrorrelay/environment
-   sudo systemctl restart mirrorrelay
+   sudo systemctl enable --now mirrorrelay.service
    ```
 3. **对接外部共享 Nginx**（详见 [安装说明](docs/installation.zh-CN.md)）：
    将宿主机 Web 运行用户（如 `www-data` 或 `nginx`）加入 `mirrorrelay` 用户组以获取 Unix Socket 访问权限：
@@ -177,7 +177,7 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 - **Coordinator 控制中心**：全局配置权威节点，负责仓库定义、客户端路由策略与节点健康监控。
 - **Edge 边缘节点**：独立的缓存加速节点，通过 Coordinator 的 HTTP 307 重定向直接向客户端提供缓存与拉取服务。
 - **路由调度策略**：支持客户端 IP CIDR 匹配、Geo 地区、优先级与权重调度。
-- **健康容灾**：当某个 Edge 节点出现故障时，Coordinator 自动切换至下一可用节点或由本地回退服务。
+- **集群容灾**：当某个 Edge 节点出现故障时，Coordinator 自动切换至下一可用健康节点（若全部 Edge 离线则返回 HTTP 503）。
 
 深入了解请阅读 [分布式部署指南](docs/distributed.zh-CN.md)。
 

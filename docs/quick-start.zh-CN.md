@@ -25,10 +25,10 @@ sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
 # RHEL / Rocky Linux / Fedora:
 sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
 
-# 配置初始管理员密码：
+# 配置初始管理员密码并启用服务：
 echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
 sudo chmod 0600 /etc/mirrorrelay/environment
-sudo systemctl restart mirrorrelay
+sudo systemctl enable --now mirrorrelay.service
 
 # 授权外部共享 Nginx 运行用户访问 Unix Domain Socket：
 sudo usermod -aG mirrorrelay www-data
