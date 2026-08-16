@@ -72,7 +72,7 @@ MirrorRelay (Go 控制平面与路由器)
 
 ---
 
-## 兼容性与生态矩阵
+## 目标兼容性 (Target Compatibility)
 
 | 软件包生态 | 代理模式 | 动态缓存 | 元数据 / URL 重写 | 已验证客户端与系统 |
 |---|:---:|:---:|:---:|---|
@@ -91,21 +91,7 @@ MirrorRelay (Go 控制平面与路由器)
 
 ## 5 分钟快速上手
 
-### 方式 1：安装发行版预编译包（推荐）
-
-从 [Releases](https://github.com/LuisCMerrick/MirrorRelay/releases) 页面下载对应架构的 `.deb` 或 `.rpm` 安装包：
-
-```bash
-# 在 Debian / Ubuntu 上：
-sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
-
-# 在 RHEL / Rocky Linux / Fedora 上：
-sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
-```
-
-安装后服务会自动启动并监听 `/run/mirrorrelay/frontend.sock`。
-
-### 方式 2：本地源码运行（开发模式）
+### 方式 1：本地快速开发与评估体验（无需任何外部依赖）
 
 ```bash
 git clone https://github.com/LuisCMerrick/MirrorRelay.git
@@ -113,26 +99,46 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-在浏览器打开 `https://127.0.0.1:8443/admin/`，使用默认账号密码 `admin` / `adminadmin` 登录。
+在浏览器直接打开 `https://127.0.0.1:8443/admin/`，使用默认账号密码 `admin` / `adminadmin` 登录。
 
-### 快速配置示例
+### 方式 2：生产环境发行版安装包部署 (DEB / RPM)
 
-1. **登录 Web UI 管理后台**（`/admin/`）。
-2. **添加 Debian 镜像源**：
-   - 仓库名称：`debian`
-   - 公开路径：`/debian`
-   - 上游地址：`https://deb.debian.org/debian`
-   - 启用缓存：开启（默认策略）
-3. **配置客户端**（`/etc/apt/sources.list.d/mirror.sources` 或 `sources.list`）：
-   ```text
-   deb http://mirror.example.com/debian bookworm main contrib non-free
+1. **安装软件包**：
+   ```bash
+   # Debian / Ubuntu:
+   sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+
+   # RHEL / Rocky Linux / Fedora:
+   sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
    ```
-4. **测试更新**：
+2. **设置初始管理员密码**：
+   ```bash
+   echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
+   sudo chmod 0600 /etc/mirrorrelay/environment
+   sudo systemctl restart mirrorrelay
+   ```
+3. **对接外部共享 Nginx**（详见 [安装说明](docs/installation.zh-CN.md)）：
+   将宿主机 Web 运行用户（如 `www-data` 或 `nginx`）加入 `mirrorrelay` 用户组以获取 Unix Socket 访问权限：
+   ```bash
+   sudo usermod -aG mirrorrelay www-data
+   ```
+   在外部 Nginx 的 `server` 块中引入自动生成的集成配置 `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 并平滑重载 Nginx。
+
+### 仓库添加与客户端配置示例
+
+1. **在 Web UI 中添加 Debian 仓库**：
+   - 名称：`debian`，标识：`debian`，类型：`apt`，公开路径：`/debian`
+   - 上游源地址：`https://deb.debian.org/debian`
+2. **配置客户端源地址**（`/etc/apt/sources.list`）：
+   ```text
+   deb https://mirror.example.com/debian bookworm main contrib non-free
+   ```
+3. **运行更新测试**：
    ```bash
    sudo apt-get update
    ```
 
-详细图文操作步骤请参见 [快速上手指南](docs/quick-start.zh-CN.md)。
+详细操作步骤请阅读 [快速上手指南](docs/quick-start.zh-CN.md) 与 [安装说明](docs/installation.zh-CN.md)。
 
 ---
 

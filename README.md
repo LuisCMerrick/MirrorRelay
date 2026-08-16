@@ -72,7 +72,7 @@ Traditional repository setups require either **full mirror synchronization** or 
 
 ---
 
-## Compatibility Matrix
+## Target Compatibility
 
 | Ecosystem | Proxy Mode | Dynamic Cache | Metadata / URL Rewrite | Tested Client / OS |
 |---|:---:|:---:|:---:|---|
@@ -91,21 +91,7 @@ Traditional repository setups require either **full mirror synchronization** or 
 
 ## Quick Start (5 Minutes)
 
-### Option 1: Install Release Package (Recommended)
-
-Download the `.deb` or `.rpm` package from the [Releases](https://github.com/LuisCMerrick/MirrorRelay/releases) page:
-
-```bash
-# On Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
-
-# On RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
-```
-
-The service will automatically start and bind to `/run/mirrorrelay/frontend.sock`.
-
-### Option 2: Standalone Binary / Development Mode
+### Option 1: Instant Development Evaluation (Zero Setup)
 
 ```bash
 git clone https://github.com/LuisCMerrick/MirrorRelay.git
@@ -113,26 +99,46 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-Open `https://127.0.0.1:8443/admin/` in your browser and log in with default credentials `admin` / `adminadmin`.
+Open `https://127.0.0.1:8443/admin/` in your browser and sign in with `admin` / `adminadmin`.
 
-### Quick Configuration Example
+### Option 2: Production Package Deployment (DEB / RPM)
 
-1. **Log in to the Web UI** at `/admin/`.
-2. **Add a Debian Repository**:
-   - Name: `debian`
-   - Public Path: `/debian`
-   - Upstream URL: `https://deb.debian.org/debian`
-   - Cache: Enabled (Default Profile)
-3. **Configure Client** (`/etc/apt/sources.list.d/mirror.sources` or `sources.list`):
-   ```text
-   deb http://mirror.example.com/debian bookworm main contrib non-free
+1. **Install Package**:
+   ```bash
+   # Debian / Ubuntu:
+   sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+
+   # RHEL / Rocky Linux / Fedora:
+   sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
    ```
-4. **Update and verify**:
+2. **Configure Initial Admin Password**:
+   ```bash
+   echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
+   sudo chmod 0600 /etc/mirrorrelay/environment
+   sudo systemctl restart mirrorrelay
+   ```
+3. **Connect External Shared Nginx** (see [Installation Guide](docs/installation.md)):
+   Add your web server user (e.g. `www-data` or `nginx`) to the `mirrorrelay` group to access the Unix domain socket:
+   ```bash
+   sudo usermod -aG mirrorrelay www-data
+   ```
+   Include the generated snippet `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in your Nginx `server` block and reload Nginx.
+
+### Example Repository & Client Setup
+
+1. **Add Debian Repository** in Web UI:
+   - Name: `debian`, Slug: `debian`, Type: `apt`, Public Path: `/debian`
+   - Upstream URL: `https://deb.debian.org/debian`
+2. **Configure Client** (`/etc/apt/sources.list`):
+   ```text
+   deb https://mirror.example.com/debian bookworm main contrib non-free
+   ```
+3. **Verify**:
    ```bash
    sudo apt-get update
    ```
 
-For comprehensive step-by-step instructions, see the [Quick Start Guide](docs/quick-start.md).
+For detailed setup instructions, see the [Quick Start Guide](docs/quick-start.md) and [Installation Guide](docs/installation.md).
 
 ---
 
