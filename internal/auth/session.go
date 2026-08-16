@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const CookieName = "repogate_session"
+const CookieName = "mirrorrelay_session"
 
 type Session struct {
 	ID        string

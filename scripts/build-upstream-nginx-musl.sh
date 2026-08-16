@@ -15,7 +15,7 @@ esac
 
 output_dir=${2:-"$project_root/dist/upstream-nginx-linux-$architecture"}
 artifact_dir=$(mktemp -d)
-build_network=${REPOGATE_DOCKER_BUILD_NETWORK:-default}
+build_network=${MIRRORRELAY_DOCKER_BUILD_NETWORK:-default}
 
 cleanup() {
   rm -rf -- "$artifact_dir"

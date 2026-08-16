@@ -109,10 +109,10 @@ jobs:
 
       - name: Verify static dependencies and generated configuration
         env:
-          REPOGATE_TEST_UPSTREAM_NGINX: ${{ github.workspace }}/dist/upstream-nginx-linux-${{ matrix.architecture }}/nginx
+          MIRRORRELAY_TEST_UPSTREAM_NGINX: ${{ github.workspace }}/dist/upstream-nginx-linux-${{ matrix.architecture }}/nginx
         run: |
           set -euo pipefail
-          nginx_binary="${REPOGATE_TEST_UPSTREAM_NGINX}"
+          nginx_binary="${MIRRORRELAY_TEST_UPSTREAM_NGINX}"
           ldd "${nginx_binary}" > /tmp/upstream-nginx-ldd.txt 2>&1 || true
           cat /tmp/upstream-nginx-ldd.txt
           if grep -Eq '=>|ld-linux|ld-musl|libc\.so|libssl\.so|libcrypto\.so|libpcre[^ ]*\.so|libz\.so' /tmp/upstream-nginx-ldd.txt; then
@@ -131,14 +131,14 @@ jobs:
         run: |
           go test ./internal/proxy ./internal/mirror ./internal/cachectl -count=1
 
-      - name: Build RepoGate and create release packages
+      - name: Build MirrorRelay and create release packages
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
           ARCH: ${{ matrix.architecture }}
           GIT_COMMIT: ${{ github.sha }}
           SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.source_date_epoch }}
           BUILD_TIMESTAMP: ${{ needs.metadata.outputs.build_timestamp }}
-          BUILD_ID: repogate-${{ needs.metadata.outputs.version }}-linux-${{ matrix.architecture }}-${{ github.sha }}
+          BUILD_ID: mirrorrelay-${{ needs.metadata.outputs.version }}-linux-${{ matrix.architecture }}-${{ github.sha }}
           UPSTREAM_NGINX_DIR: dist/upstream-nginx-linux-${{ matrix.architecture }}
           RELEASE_DIR: dist/release
         run: |
@@ -174,12 +174,12 @@ jobs:
         run: |
           set -euo pipefail
           expected=(
-            "repogate_${VERSION}_amd64.deb"
-            "repogate_${VERSION}_arm64.deb"
-            "repogate-${VERSION}.x86_64.rpm"
-            "repogate-${VERSION}.aarch64.rpm"
-            "repogate-${VERSION}-linux-amd64.tar.gz"
-            "repogate-${VERSION}-linux-arm64.tar.gz"
+            "mirrorrelay_${VERSION}_amd64.deb"
+            "mirrorrelay_${VERSION}_arm64.deb"
+            "mirrorrelay-${VERSION}.x86_64.rpm"
+            "mirrorrelay-${VERSION}.aarch64.rpm"
+            "mirrorrelay-${VERSION}-linux-amd64.tar.gz"
+            "mirrorrelay-${VERSION}-linux-arm64.tar.gz"
           )
           install -d dist/final
           for artifact in "${expected[@]}"; do
@@ -200,7 +200,7 @@ jobs:
       - name: Upload complete release bundle
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: repogate-${{ needs.metadata.outputs.version }}-release
+          name: mirrorrelay-${{ needs.metadata.outputs.version }}-release
           path: dist/final/
           if-no-files-found: error
           compression-level: 0
@@ -211,7 +211,7 @@ jobs:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
           {
-            echo "## RepoGate release build"
+            echo "## MirrorRelay release build"
             echo
             echo "- Version: \`${VERSION}\`"
             echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
@@ -229,7 +229,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8.0.1
         with:
-          name: repogate-${{ needs.metadata.outputs.version }}-release
+          name: mirrorrelay-${{ needs.metadata.outputs.version }}-release
           path: dist/final
 
       - name: Upload GitHub Release assets

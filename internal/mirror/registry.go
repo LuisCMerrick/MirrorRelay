@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Loader interface {
@@ -286,7 +286,7 @@ func NormalizeAndValidate(m *model.Mirror, allowHTTP, globallyAllowPrivate bool)
 		}
 		first := strings.Split(strings.Trim(m.PublicPath, "/"), "/")[0]
 		switch first {
-		case "metrics", "healthz", "_mirror_auth", "_repogate":
+		case "metrics", "healthz", "_mirror_auth", "_mirrorrelay":
 			return errors.New("public_path uses a reserved system prefix")
 		}
 	}

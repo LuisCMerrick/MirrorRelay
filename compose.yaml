@@ -1,28 +1,28 @@
 services:
-  repogate:
+  mirrorrelay:
     platform: linux/amd64
     build:
       context: .
       args:
-        VERSION: ${REPOGATE_VERSION:-0.0.1}
+        VERSION: ${MIRRORRELAY_VERSION:-0.0.1}
     restart: unless-stopped
     ulimits:
       nofile:
         soft: 1048576
         hard: 1048576
     environment:
-      REPOGATE_ADMIN_USERNAME: ${REPOGATE_ADMIN_USERNAME:-admin}
-      REPOGATE_ADMIN_PASSWORD: ${REPOGATE_ADMIN_PASSWORD:-}
-      REPOGATE_ADMIN_PASSWORD_FILE: ${REPOGATE_ADMIN_PASSWORD_FILE:-}
-      REPOGATE_ADMIN_HOST: ${REPOGATE_ADMIN_HOST:-}
+      MIRRORRELAY_ADMIN_USERNAME: ${MIRRORRELAY_ADMIN_USERNAME:-admin}
+      MIRRORRELAY_ADMIN_PASSWORD: ${MIRRORRELAY_ADMIN_PASSWORD:-}
+      MIRRORRELAY_ADMIN_PASSWORD_FILE: ${MIRRORRELAY_ADMIN_PASSWORD_FILE:-}
+      MIRRORRELAY_ADMIN_HOST: ${MIRRORRELAY_ADMIN_HOST:-}
     volumes:
-      - ./configs/config.docker.yaml:/etc/repogate/config.yaml:ro
-      - /run/repogate:/run/repogate
-      - repogate-data:/var/lib/repogate
-      - repogate-cache:/var/cache/repogate
-      - repogate-logs:/var/log/repogate
+      - ./configs/config.docker.yaml:/etc/mirrorrelay/config.yaml:ro
+      - /run/mirrorrelay:/run/mirrorrelay
+      - mirrorrelay-data:/var/lib/mirrorrelay
+      - mirrorrelay-cache:/var/cache/mirrorrelay
+      - mirrorrelay-logs:/var/log/mirrorrelay
 
 volumes:
-  repogate-data:
-  repogate-cache:
-  repogate-logs:
+  mirrorrelay-data:
+  mirrorrelay-cache:
+  mirrorrelay-logs:

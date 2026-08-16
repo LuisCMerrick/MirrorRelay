@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestBrowsableHTMLRewritesRepositoryAndAuxiliaryURLs(t *testing.T) {
@@ -37,9 +37,9 @@ func TestBrowsableHTMLRewritesRepositoryAndAuxiliaryURLs(t *testing.T) {
 		`href="/debian/pool/?C=N&amp;O=D"`,
 		`href="/debian/dists/"`,
 		`href="/debian/a%20b"`,
-		`src="/_repogate/upstream/7/icons/folder.gif"`,
+		`src="/_mirrorrelay/upstream/7/icons/folder.gif"`,
 		`action="/debian/pool/?search=1"`,
-		`srcset="/_repogate/upstream/7/icons/small.png 1x, /debian/large.png 2x"`,
+		`srcset="/_mirrorrelay/upstream/7/icons/small.png 1x, /debian/large.png 2x"`,
 		`src="https://cdn.example/app.js"`,
 		`href="#top"`,
 	} {
@@ -65,7 +65,7 @@ func TestBrowsableHTMLUsesAuxiliaryScopeOutsideRepositoryBase(t *testing.T) {
 		t.Fatal("auxiliary HTML was not rewritten")
 	}
 	actual := string(output)
-	if !strings.Contains(actual, `href="/_repogate/upstream/9/icons/folder.gif"`) {
+	if !strings.Contains(actual, `href="/_mirrorrelay/upstream/9/icons/folder.gif"`) {
 		t.Fatalf("relative auxiliary URL was not scoped: %s", actual)
 	}
 	if !strings.Contains(actual, `href="/repo/incoming/packages/"`) {
@@ -100,7 +100,7 @@ func TestBrowsableHTMLResponseGetsARepresentationValidator(t *testing.T) {
 		t.Fatalf("stale representation headers were retained: %v", response.Header)
 	}
 	body, err := io.ReadAll(response.Body)
-	if err != nil || !strings.Contains(string(body), "/_repogate/upstream/7/icons/folder.gif") {
+	if err != nil || !strings.Contains(string(body), "/_mirrorrelay/upstream/7/icons/folder.gif") {
 		t.Fatalf("unexpected rewritten body %q, err=%v", body, err)
 	}
 }
@@ -117,7 +117,7 @@ func TestAuxiliaryResourceRouteIsRepositoryScoped(t *testing.T) {
 	registry.Replace([]model.Mirror{repository})
 	engine := &Engine{cfg: cfg, registry: registry}
 
-	request := httptest.NewRequest(http.MethodGet, "https://mirror.example/_repogate/upstream/7/icons/folder.gif?size=16", nil)
+	request := httptest.NewRequest(http.MethodGet, "https://mirror.example/_mirrorrelay/upstream/7/icons/folder.gif?size=16", nil)
 	got, relative, dynamic, auxiliary, routeErr := engine.routeRequest(request)
 	if routeErr != nil || got.ID != 7 || relative != "/icons/folder.gif" || dynamic != nil || !auxiliary {
 		t.Fatalf("unexpected auxiliary route: repository=%+v relative=%q dynamic=%v auxiliary=%v err=%v", got, relative, dynamic, auxiliary, routeErr)
@@ -127,7 +127,7 @@ func TestAuxiliaryResourceRouteIsRepositoryScoped(t *testing.T) {
 		t.Fatalf("unexpected auxiliary target %v, err=%v", logical, err)
 	}
 
-	wrongHost := httptest.NewRequest(http.MethodGet, "https://other.example/_repogate/upstream/7/icons/folder.gif", nil)
+	wrongHost := httptest.NewRequest(http.MethodGet, "https://other.example/_mirrorrelay/upstream/7/icons/folder.gif", nil)
 	if _, _, _, _, routeErr := engine.routeRequest(wrongHost); routeErr == nil || routeErr.status != http.StatusNotFound {
 		t.Fatalf("path-mode auxiliary route accepted the wrong shared host: %v", routeErr)
 	}
@@ -148,11 +148,11 @@ func TestHostModeAuxiliaryRouteRequiresRepositoryHost(t *testing.T) {
 	}
 	registry.Replace([]model.Mirror{repository})
 	engine := &Engine{cfg: cfg, registry: registry}
-	valid := httptest.NewRequest(http.MethodGet, "https://repo.example/_repogate/upstream/11/icons/folder.gif", nil)
+	valid := httptest.NewRequest(http.MethodGet, "https://repo.example/_mirrorrelay/upstream/11/icons/folder.gif", nil)
 	if _, _, _, auxiliary, routeErr := engine.routeRequest(valid); routeErr != nil || !auxiliary {
 		t.Fatalf("host-mode auxiliary route failed: auxiliary=%v err=%v", auxiliary, routeErr)
 	}
-	invalid := httptest.NewRequest(http.MethodGet, "https://elsewhere.example/_repogate/upstream/11/icons/folder.gif", nil)
+	invalid := httptest.NewRequest(http.MethodGet, "https://elsewhere.example/_mirrorrelay/upstream/11/icons/folder.gif", nil)
 	if _, _, _, _, routeErr := engine.routeRequest(invalid); routeErr == nil || routeErr.status != http.StatusNotFound {
 		t.Fatalf("host-mode auxiliary route accepted another host: %v", routeErr)
 	}

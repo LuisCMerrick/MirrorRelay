@@ -21,19 +21,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 // This test is opt-in because normal development environments are not
 // required to have the Managed Upstream Nginx binary installed.
 func TestRealManagedUpstreamNginxAcceptsGeneratedV5Configuration(t *testing.T) {
-	binary := os.Getenv("REPOGATE_TEST_UPSTREAM_NGINX")
+	binary := os.Getenv("MIRRORRELAY_TEST_UPSTREAM_NGINX")
 	if binary == "" {
-		t.Skip("REPOGATE_TEST_UPSTREAM_NGINX is not set")
+		t.Skip("MIRRORRELAY_TEST_UPSTREAM_NGINX is not set")
 	}
 	root := t.TempDir()
-	runtimeDir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "repogate-runtime-")
+	runtimeDir, err := os.MkdirTemp(os.Getenv("TMPDIR"), "mirrorrelay-runtime-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +81,13 @@ func TestRealManagedUpstreamNginxAcceptsGeneratedV5Configuration(t *testing.T) {
 }
 
 func TestRealManagedUpstreamNginxStreamsRepositoryResponse(t *testing.T) {
-	binary := os.Getenv("REPOGATE_TEST_UPSTREAM_NGINX")
+	binary := os.Getenv("MIRRORRELAY_TEST_UPSTREAM_NGINX")
 	if binary == "" {
-		t.Skip("REPOGATE_TEST_UPSTREAM_NGINX is not set")
+		t.Skip("MIRRORRELAY_TEST_UPSTREAM_NGINX is not set")
 	}
 
 	const repetitions = 512
-	pattern := bytes.Repeat([]byte("RepoGate-stream-check-"), 1536)
+	pattern := bytes.Repeat([]byte("MirrorRelay-stream-check-"), 1536)
 	expectedHash := sha256.New()
 	for range repetitions {
 		_, _ = expectedHash.Write(pattern)
@@ -124,7 +124,7 @@ func TestRealManagedUpstreamNginxStreamsRepositoryResponse(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	runtimeDirectory, err := os.MkdirTemp(os.Getenv("TMPDIR"), "repogate-stream-")
+	runtimeDirectory, err := os.MkdirTemp(os.Getenv("TMPDIR"), "mirrorrelay-stream-")
 	if err != nil {
 		t.Fatal(err)
 	}

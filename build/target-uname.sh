@@ -9,11 +9,11 @@ case "${1:-}" in
     printf 'cross\n'
     ;;
   -m)
-    case "${REPOGATE_TARGETARCH:-}" in
+    case "${MIRRORRELAY_TARGETARCH:-}" in
       amd64) printf 'x86_64\n' ;;
       arm64) printf 'aarch64\n' ;;
       *)
-        echo "Unsupported target architecture: ${REPOGATE_TARGETARCH:-unset}" >&2
+        echo "Unsupported target architecture: ${MIRRORRELAY_TARGETARCH:-unset}" >&2
         exit 1
         ;;
     esac

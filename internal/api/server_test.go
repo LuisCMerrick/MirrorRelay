@@ -13,13 +13,13 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/auth"
-	"github.com/LuisCMerrick/RepoGate/internal/cluster"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/database"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/security"
+	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
+	"github.com/LuisCMerrick/MirrorRelay/internal/cluster"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 func TestWebHandlerServesConfiguredAdminIndexWithoutRedirect(t *testing.T) {
@@ -85,7 +85,7 @@ func TestHandlerScopesUIAndAPIUnderConfiguredAdminPath(t *testing.T) {
 }
 
 func TestWebSettingsValidatePersistAndReset(t *testing.T) {
-	store, err := database.Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 }
 
 func TestWebSettingsResetReportsRestartAfterAppliedOverride(t *testing.T) {
-	store, err := database.Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestClusterManifestAndHealthEndpoints(t *testing.T) {
 
 	// 2. Authenticated request with header -> 200
 	r2 := httptest.NewRequest(http.MethodGet, "/api/v1/cluster/manifest", nil)
-	r2.Header.Set("X-RepoGate-Cluster-Token", "secret-token-123")
+	r2.Header.Set("X-MirrorRelay-Cluster-Token", "secret-token-123")
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, r2)
 	if rec2.Code != http.StatusOK {
@@ -428,5 +428,60 @@ func TestCoordinatorDistributed307Redirect(t *testing.T) {
 	handler.ServeHTTP(rec3, r3)
 	if rec3.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when no healthy edge is available, got %d", rec3.Code)
+	}
+}
+
+func TestSystemRestartEndpoint(t *testing.T) {
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	triggered := make(chan struct{}, 1)
+	server := &Server{
+		cfg:      config.Default(),
+		store:    store,
+		sessions: auth.NewSessionsWithPath(store, time.Hour, "/admin/"),
+		web:      fstest.MapFS{"index.html": {Data: []byte("admin index")}},
+	}
+	server.SetRestartTrigger(func() {
+		triggered <- struct{}{}
+	})
+
+	handler := server.Handler(http.NotFoundHandler())
+
+	// 1. Unauthenticated request -> 401
+	r1 := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/system/restart", nil)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, r1)
+	if rec1.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated restart, got %d", rec1.Code)
+	}
+
+	// 2. Authenticated request with CSRF token -> 200 and triggers restart
+	if err := store.CreateUser(context.Background(), "admin", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	user, err := store.UserByName(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := server.sessions.Create(user.ID, user.Username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2 := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/system/restart", nil)
+	r2.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	r2.Header.Set("X-CSRF-Token", session.CSRFToken)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, r2)
+	if rec2.Code != http.StatusOK || !strings.Contains(rec2.Body.String(), `"restarting"`) {
+		t.Fatalf("expected 200 restarting, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+	select {
+	case <-triggered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("restart trigger was not called")
 	}
 }

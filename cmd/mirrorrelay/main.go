@@ -14,23 +14,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/accesslog"
-	"github.com/LuisCMerrick/RepoGate/internal/api"
-	"github.com/LuisCMerrick/RepoGate/internal/applog"
-	"github.com/LuisCMerrick/RepoGate/internal/auth"
-	"github.com/LuisCMerrick/RepoGate/internal/buildinfo"
-	"github.com/LuisCMerrick/RepoGate/internal/cachectl"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/database"
-	"github.com/LuisCMerrick/RepoGate/internal/devcert"
-	"github.com/LuisCMerrick/RepoGate/internal/health"
-	"github.com/LuisCMerrick/RepoGate/internal/ipc"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/proxy"
-	"github.com/LuisCMerrick/RepoGate/internal/stats"
-	"github.com/LuisCMerrick/RepoGate/internal/upstreamnginx"
-	webassets "github.com/LuisCMerrick/RepoGate/internal/web"
+	"github.com/LuisCMerrick/MirrorRelay/internal/accesslog"
+	"github.com/LuisCMerrick/MirrorRelay/internal/api"
+	"github.com/LuisCMerrick/MirrorRelay/internal/applog"
+	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
+	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
+	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/devcert"
+	"github.com/LuisCMerrick/MirrorRelay/internal/health"
+	"github.com/LuisCMerrick/MirrorRelay/internal/ipc"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/proxy"
+	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
+	"github.com/LuisCMerrick/MirrorRelay/internal/upstreamnginx"
+	webassets "github.com/LuisCMerrick/MirrorRelay/internal/web"
 )
 
 var (
@@ -40,10 +40,23 @@ var (
 	buildID        = ""
 )
 
+var errRestartRequested = errors.New("restart requested")
+
 func main() {
-	if err := run(); err != nil {
-		slog.Error("RepoGate stopped", "error", err)
-		os.Exit(1)
+	for {
+		err := run()
+		if errors.Is(err, errRestartRequested) {
+			slog.Info("restarting MirrorRelay process")
+			if executable, execErr := os.Executable(); execErr == nil {
+				_ = syscall.Exec(executable, os.Args, os.Environ())
+			}
+			continue
+		}
+		if err != nil {
+			slog.Error("MirrorRelay stopped", "error", err)
+			os.Exit(1)
+		}
+		break
 	}
 }
 
@@ -54,7 +67,7 @@ func run() error {
 	}
 	var configPath string
 	var dev bool
-	flag.StringVar(&configPath, "config", "/etc/repogate/config.yaml", "configuration file")
+	flag.StringVar(&configPath, "config", "/etc/mirrorrelay/config.yaml", "configuration file")
 	flag.BoolVar(&dev, "dev", false, "development mode: managed localhost ingress, self-signed TLS and local data directory")
 	flag.Parse()
 
@@ -141,7 +154,14 @@ func run() error {
 	metric.StartPersistence(ctx)
 	cacheManager.StartReclaimer(ctx)
 	control.StartCluster(ctx)
-	return runProduct(ctx, cancel, cfg, handler, engine, checker, upstreamNginxController, registry, metric)
+	restartChannel := make(chan struct{}, 1)
+	control.SetRestartTrigger(func() {
+		select {
+		case restartChannel <- struct{}{}:
+		default:
+		}
+	})
+	return runProduct(ctx, cancel, cfg, handler, engine, checker, upstreamNginxController, registry, metric, restartChannel)
 }
 
 func applyStoredWebSettings(ctx context.Context, store *database.Store, base config.Config) (config.Config, error) {
@@ -191,6 +211,7 @@ func runProduct(
 	upstreamNginxController *upstreamnginx.Controller,
 	registry *mirror.Registry,
 	metric *stats.Stats,
+	restartChannel <-chan struct{},
 ) error {
 	listener, err := ipc.ListenLocal(cfg.Server.UnixSocketEnabled, cfg.Server.FrontendSocket, cfg.Server.FrontendSocketMode, cfg.Server.LocalPort)
 	if err != nil {
@@ -222,9 +243,13 @@ func runProduct(
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(signalChannel)
+	var isRestart bool
 	select {
 	case signal := <-signalChannel:
-		slog.Info("RepoGate shutdown requested", "signal", signal.String())
+		slog.Info("MirrorRelay shutdown requested", "signal", signal.String())
+	case <-restartChannel:
+		slog.Info("MirrorRelay restart requested from Web UI")
+		isRestart = true
 	case serveErr := <-errorChannel:
 		if !errors.Is(serveErr, http.ErrServerClosed) {
 			return serveErr
@@ -245,13 +270,16 @@ func runProduct(
 	if flushErr != nil {
 		return fmt.Errorf("persist statistics: %w", flushErr)
 	}
-	if cfg.UpstreamNginx.StopOnRepoGateExit {
+	if !isRestart && cfg.UpstreamNginx.StopOnMirrorRelayExit {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		stopErr := upstreamNginxController.Stop(stopCtx)
 		stopCancel()
 		if stopErr != nil {
 			return stopErr
 		}
+	}
+	if isRestart {
+		return errRestartRequested
 	}
 	return nil
 }
@@ -265,7 +293,7 @@ func bootstrapAdmin(ctx context.Context, store *database.Store, cfg config.Confi
 		return nil
 	}
 	if cfg.Admin.InitialPassword == "" {
-		return errors.New("no administrator exists: set REPOGATE_ADMIN_PASSWORD for the first startup")
+		return errors.New("no administrator exists: set MIRRORRELAY_ADMIN_PASSWORD for the first startup")
 	}
 	hash, err := auth.HashPassword(cfg.Admin.InitialPassword)
 	if err != nil {

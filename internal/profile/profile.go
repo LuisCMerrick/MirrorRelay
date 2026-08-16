@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Profile struct {

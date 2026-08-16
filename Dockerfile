@@ -11,26 +11,26 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/repogate ./cmd/repogate
+    -o /out/mirrorrelay ./cmd/mirrorrelay
 
 FROM --platform=linux/amd64 alpine:3.22.2
 RUN apk add --no-cache ca-certificates \
-    && addgroup -S -g 65532 repogate \
-    && adduser -S -D -H -u 65532 -G repogate repogate \
+    && addgroup -S -g 65532 mirrorrelay \
+    && adduser -S -D -H -u 65532 -G mirrorrelay mirrorrelay \
     && mkdir -p \
-        /opt/repogate/nginx/sbin \
-        /var/lib/repogate/runtime \
-        /var/lib/repogate/integration/external-nginx \
-        /var/cache/repogate \
-        /var/log/repogate \
-        /run/repogate \
+        /opt/mirrorrelay/nginx/sbin \
+        /var/lib/mirrorrelay/runtime \
+        /var/lib/mirrorrelay/integration/external-nginx \
+        /var/cache/mirrorrelay \
+        /var/log/mirrorrelay \
+        /run/mirrorrelay \
     && chown -R 65532:65532 \
-        /var/lib/repogate \
-        /var/cache/repogate \
-        /var/log/repogate \
-        /run/repogate
-COPY --from=build /out/repogate /usr/local/bin/repogate
-COPY --chmod=0755 nginx/sbin/nginx /opt/repogate/nginx/sbin/nginx
+        /var/lib/mirrorrelay \
+        /var/cache/mirrorrelay \
+        /var/log/mirrorrelay \
+        /run/mirrorrelay
+COPY --from=build /out/mirrorrelay /usr/local/bin/mirrorrelay
+COPY --chmod=0755 nginx/sbin/nginx /opt/mirrorrelay/nginx/sbin/nginx
 USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/repogate"]
-CMD ["-config", "/etc/repogate/config.yaml"]
+ENTRYPOINT ["/usr/local/bin/mirrorrelay"]
+CMD ["-config", "/etc/mirrorrelay/config.yaml"]

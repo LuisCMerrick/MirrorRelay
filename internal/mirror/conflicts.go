@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type publicPathRoute struct {
@@ -31,7 +31,7 @@ func ValidateRouteConflicts(repositories []model.Mirror, adminPath, publicBaseUR
 		{path: "/healthz/", slug: "health endpoint"},
 		{path: "/metrics/", slug: "metrics endpoint"},
 		{path: "/_mirror_auth/", slug: "registry authentication endpoint"},
-		{path: "/_repogate/", slug: "upstream auxiliary resource endpoint"},
+		{path: "/_mirrorrelay/", slug: "upstream auxiliary resource endpoint"},
 	}
 	if adminPath != "" {
 		reserved = append(reserved, publicPathRoute{path: adminPath, slug: "administration"})

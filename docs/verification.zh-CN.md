@@ -2,7 +2,7 @@
 
 [English](verification.md) | [简体中文](verification.zh-CN.md)
 
-RepoGate 本地测试覆盖路由隔离、Desired/Active 发布、配置验证、数据库 Round Trip、Cache Generation、Metadata Adapter、Registry Challenge 解析、SSRF 地址策略、Unix/TCP 端点、内嵌资源和生成的 Nginx 语法。生产可用性还取决于目标入口、DNS、上游、客户端、文件系统和实际负载。
+MirrorRelay 本地测试覆盖路由隔离、Desired/Active 发布、配置验证、数据库 Round Trip、Cache Generation、Metadata Adapter、Registry Challenge 解析、SSRF 地址策略、Unix/TCP 端点、内嵌资源和生成的 Nginx 语法。生产可用性还取决于目标入口、DNS、上游、客户端、文件系统和实际负载。
 
 ## 发布检查
 
@@ -15,15 +15,15 @@ go vet ./...
 go test -count=1 ./...
 go test -race -p 1 -count=1 ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -buildvcs=false -o /tmp/repogate-amd64 ./cmd/repogate
+  go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-amd64 ./cmd/mirrorrelay
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -buildvcs=false -o /tmp/repogate-arm64 ./cmd/repogate
+  go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-arm64 ./cmd/mirrorrelay
 node --check internal/web/dist/app.js
 (cd nginx/sbin && sha256sum -c nginx.sha256)
 file nginx/sbin/nginx
 ldd nginx/sbin/nginx || true
 readelf -l nginx/sbin/nginx
-REPOGATE_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
+MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
 ```
@@ -36,7 +36,7 @@ Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/
 
 ## 真实客户端矩阵
 
-使用隔离的测试域名与仓库。每个用例都记录客户端版本、RepoGate 配置版本、对象 Digest、状态、耗时、Cache 状态和 Managed Upstream Nginx 日志。
+使用隔离的测试域名与仓库。每个用例都记录客户端版本、MirrorRelay 配置版本、对象 Digest、状态、耗时、Cache 状态和 Managed Upstream Nginx 日志。
 
 | 领域 | 最低验收 |
 |---|---|
@@ -44,7 +44,7 @@ Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/
 | APT | 通过 Path Mode 执行 `apt update` 及软件包下载/安装 |
 | RPM | DNF/YUM Metadata 刷新和软件包下载 |
 | APK/OPKG | 索引刷新和软件包下载 |
-| PyPI | 用 Simple Index 执行 `pip install`，文件 URL 必须继续经过 RepoGate |
+| PyPI | 用 Simple Index 执行 `pip install`，文件 URL 必须继续经过 MirrorRelay |
 | npm | Metadata 与 Tarball 安装，改写 URL 必须保持本地闭环 |
 | Maven/Go/NuGet/Cargo/Conda | 使用生成的客户端示例完成 Metadata 解析和 Artifact 下载 |
 | Registry | Docker 与 Podman Pull；Bearer Token scope/service 保留；Manifest/Blob Digest 相等 |
@@ -52,8 +52,8 @@ Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/
 | Cache | MISS 后 HIT、并发首次填充、全局/仓库/单对象逻辑失效、物理回收状态真实 |
 | 配置 | 无效 Candidate 不改变 Active；有效变更和回滚均使用 Graceful Reload |
 | Web UI | 每个仓库操作都能调用对应 API，`/` 列出已启用且可见的仓库，保存的设置在重启后生效 |
-| 可浏览 HTML | 开启仓库开关后，相对/根 URL 正确解析，Base 内链接留在公开 Namespace，同源 Base 外资源使用 `/_repogate/upstream/<ID>/`，跨 Origin URL 保持不变 |
-| 入口 | 安装或重启 RepoGate 时，External Shared Nginx 上的其他既有站点继续服务 |
+| 可浏览 HTML | 开启仓库开关后，相对/根 URL 正确解析，Base 内链接留在公开 Namespace，同源 Base 外资源使用 `/_mirrorrelay/upstream/<ID>/`，跨 Origin URL 保持不变 |
+| 入口 | 安装或重启 MirrorRelay 时，External Shared Nginx 上的其他既有站点继续服务 |
 
 ## 大对象与连续性测试
 
@@ -64,7 +64,7 @@ Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/
 3. 中断一个客户端，确认其上游 Body、Goroutine 和 FD 被释放。
 4. 对同一冷对象发起并发请求，确认 Cache Lock 防止 Cache Stampede。
 5. 活动下载期间应用 No-op 配置和真实仓库变更，确认 Graceful Reload 行为，并记录每个客户端是否保持连续。
-6. 使用 `upstream_nginx.stop_on_repogate_exit: false` 只重启 RepoGate，确认它 Attach 到 Hash 一致的既有 Managed Upstream Nginx。
+6. 使用 `upstream_nginx.stop_on_mirrorrelay_exit: false` 只重启 MirrorRelay，确认它 Attach 到 Hash 一致的既有 Managed Upstream Nginx。
 7. 比较直连上游、代理响应和 Cache HIT 响应的 SHA-256/Digest。
 
 每种对象大小都要保留报告，包括峰值/基线 RSS 与 Heap、分配/GC、吞吐中位数、CPU、FD/Goroutine 变化、Cache MISS/HIT 和客户端结果。不能用小型单元测试推断 10 GiB 行为。

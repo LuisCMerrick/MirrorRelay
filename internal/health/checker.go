@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Store interface {
@@ -171,7 +171,7 @@ func (c *Checker) check(parent context.Context, repository model.Mirror, upstrea
 	defer cancel()
 	healthPath := strings.TrimLeft(repository.HealthCheckPath, "/")
 	internalPath := "/_health/" + strconv.FormatInt(repository.ID, 10) + "/" + strconv.FormatInt(upstream.ID, 10) + "/" + healthPath
-	requestURL := &url.URL{Scheme: "http", Host: "repogate-upstream-nginx-internal", Path: internalPath}
+	requestURL := &url.URL{Scheme: "http", Host: "mirrorrelay-upstream-nginx-internal", Path: internalPath}
 	method := repository.HealthMethod
 	if method == "" {
 		method = http.MethodHead

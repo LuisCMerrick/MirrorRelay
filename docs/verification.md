@@ -2,7 +2,7 @@
 
 [English](verification.md) | [简体中文](verification.zh-CN.md)
 
-RepoGate's local test suite covers routing isolation, Desired/Active publication, configuration validation, database round trips, cache generations, metadata adapters, Registry challenge parsing, SSRF address policy, Unix/TCP endpoints, embedded assets and generated Nginx syntax. Production readiness additionally depends on the target ingress, DNS, upstreams, clients, filesystem and workload.
+MirrorRelay's local test suite covers routing isolation, Desired/Active publication, configuration validation, database round trips, cache generations, metadata adapters, Registry challenge parsing, SSRF address policy, Unix/TCP endpoints, embedded assets and generated Nginx syntax. Production readiness additionally depends on the target ingress, DNS, upstreams, clients, filesystem and workload.
 
 ## Release checks
 
@@ -15,15 +15,15 @@ go vet ./...
 go test -count=1 ./...
 go test -race -p 1 -count=1 ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -buildvcs=false -o /tmp/repogate-amd64 ./cmd/repogate
+  go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-amd64 ./cmd/mirrorrelay
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -buildvcs=false -o /tmp/repogate-arm64 ./cmd/repogate
+  go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-arm64 ./cmd/mirrorrelay
 node --check internal/web/dist/app.js
 (cd nginx/sbin && sha256sum -c nginx.sha256)
 file nginx/sbin/nginx
 ldd nginx/sbin/nginx || true
 readelf -l nginx/sbin/nginx
-REPOGATE_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
+MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
 ```
@@ -36,7 +36,7 @@ The opt-in real-Nginx tests validate generated syntax and stream a 16 MiB respon
 
 ## Functional client matrix
 
-Use isolated test hostnames and repositories. Record the client version, RepoGate configuration version, object digest, status, elapsed time, cache state and Managed Upstream Nginx logs for every case.
+Use isolated test hostnames and repositories. Record the client version, MirrorRelay configuration version, object digest, status, elapsed time, cache state and Managed Upstream Nginx logs for every case.
 
 | Area | Minimum acceptance |
 |---|---|
@@ -44,7 +44,7 @@ Use isolated test hostnames and repositories. Record the client version, RepoGat
 | APT | `apt update` and package download/install through a path-mode repository |
 | RPM | DNF/YUM metadata refresh and package download |
 | APK/OPKG | Index refresh and package download |
-| PyPI | `pip install` with simple-index and file URL closure through RepoGate |
+| PyPI | `pip install` with simple-index and file URL closure through MirrorRelay |
 | npm | Metadata and tarball install; verify rewritten URLs stay local |
 | Maven/Go/NuGet/Cargo/Conda | Metadata resolution and artifact download using generated client examples |
 | Registry | Docker and Podman pull, Bearer token scope/service preservation, manifest digest and blob digest equality |
@@ -52,8 +52,8 @@ Use isolated test hostnames and repositories. Record the client version, RepoGat
 | Cache | MISS then HIT, concurrent first fill, global/repository/object logical purge, truthful reclaim states |
 | Configuration | Invalid candidate leaves Active state unchanged; valid change and rollback use graceful reload |
 | Web UI | Every repository action reaches its API, `/` lists enabled visible repositories, and saved Settings apply after restart |
-| Browsable HTML | With the repository switch on, relative/root URLs resolve correctly, in-base links stay in the public namespace, same-origin out-of-base assets use `/_repogate/upstream/<id>/`, and cross-origin URLs stay unchanged |
-| Ingress | Multiple existing External Shared Nginx sites continue serving while RepoGate is installed/restarted |
+| Browsable HTML | With the repository switch on, relative/root URLs resolve correctly, in-base links stay in the public namespace, same-origin out-of-base assets use `/_mirrorrelay/upstream/<id>/`, and cross-origin URLs stay unchanged |
+| Ingress | Multiple existing External Shared Nginx sites continue serving while MirrorRelay is installed/restarted |
 
 ## Large-object and continuity test
 
@@ -64,7 +64,7 @@ Test at least 1 GiB, 5 GiB and 10 GiB immutable objects plus a representative Re
 3. Interrupt one client and verify its upstream body, goroutine and file descriptor are released.
 4. Start concurrent requests for the same cold object and verify cache locking prevents a cache stampede.
 5. Apply a no-op configuration and a real repository change during active downloads; confirm graceful reload behavior and document whether each client remained uninterrupted.
-6. Restart only RepoGate with `upstream_nginx.stop_on_repogate_exit: false`; confirm it attaches to the existing matching Managed Upstream Nginx configuration.
+6. Restart only MirrorRelay with `upstream_nginx.stop_on_mirrorrelay_exit: false`; confirm it attaches to the existing matching Managed Upstream Nginx configuration.
 7. Compare SHA-256/digest values from direct upstream and proxied/cache-hit responses.
 
 For each object size, retain a report containing peak/baseline RSS and heap, allocation/GC observations, median throughput, CPU usage, FD/goroutine deltas, cache MISS/HIT behavior and client result. Do not infer 10 GiB behavior solely from a small unit test.

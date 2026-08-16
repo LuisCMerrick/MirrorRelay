@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LuisCMerrick/RepoGate/internal/buildinfo"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 const ClusterProtocolVersion = 1
@@ -190,14 +190,14 @@ func ExtractCapabilities(repositories []model.Mirror) []string {
 func GenerateManifest(cfg config.Config, repositories []model.Mirror, build buildinfo.Info, configGeneration int64) model.ClusterManifest {
 	nodeID := cfg.Distributed.Node.Name
 	if nodeID == "" {
-		nodeID = "repogate-node"
+		nodeID = "mirrorrelay-node"
 	}
 	return model.ClusterManifest{
-		ProtocolVersion:   ClusterProtocolVersion,
-		RepoGateVersion:   build.Version,
-		NodeID:            nodeID,
-		ConfigGeneration:  configGeneration,
-		ConfigFingerprint: CanonicalFingerprint(repositories),
-		Capabilities:      ExtractCapabilities(repositories),
+		ProtocolVersion:    ClusterProtocolVersion,
+		MirrorRelayVersion: build.Version,
+		NodeID:             nodeID,
+		ConfigGeneration:   configGeneration,
+		ConfigFingerprint:  CanonicalFingerprint(repositories),
+		Capabilities:       ExtractCapabilities(repositories),
 	}
 }

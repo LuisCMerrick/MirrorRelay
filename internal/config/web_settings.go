@@ -136,7 +136,7 @@ type WebUpstreamNginxSettings struct {
 	WorkerProcesses       string `json:"worker_processes"`
 	WorkerUser            string `json:"worker_user"`
 	WorkerConnections     int    `json:"worker_connections"`
-	StopOnRepoGateExit    bool   `json:"stop_on_repogate_exit"`
+	StopOnMirrorRelayExit bool   `json:"stop_on_mirrorrelay_exit"`
 }
 
 func WebSettingsFrom(c Config) WebSettings {
@@ -169,7 +169,7 @@ func WebSettingsFrom(c Config) WebSettings {
 			RestartMaxFailures: c.UpstreamNginx.RestartMaxFailures, RestartWindow: c.UpstreamNginx.RestartWindow.String(),
 			RestartInitialBackoff: c.UpstreamNginx.RestartInitialBackoff.String(), RestartMaxBackoff: c.UpstreamNginx.RestartMaxBackoff.String(),
 			WorkerProcesses: c.UpstreamNginx.WorkerProcesses, WorkerUser: c.UpstreamNginx.WorkerUser,
-			WorkerConnections: c.UpstreamNginx.WorkerConnections, StopOnRepoGateExit: c.UpstreamNginx.StopOnRepoGateExit},
+			WorkerConnections: c.UpstreamNginx.WorkerConnections, StopOnMirrorRelayExit: c.UpstreamNginx.StopOnMirrorRelayExit},
 	}
 }
 
@@ -197,7 +197,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.UpstreamNginx.TLSVerifyDepth, candidate.UpstreamNginx.Resolver = w.UpstreamNginx.TLSVerifyDepth, w.UpstreamNginx.Resolver
 	candidate.UpstreamNginx.HistoryLimit, candidate.UpstreamNginx.RestartMaxFailures = w.UpstreamNginx.HistoryLimit, w.UpstreamNginx.RestartMaxFailures
 	candidate.UpstreamNginx.WorkerProcesses, candidate.UpstreamNginx.WorkerUser = w.UpstreamNginx.WorkerProcesses, w.UpstreamNginx.WorkerUser
-	candidate.UpstreamNginx.WorkerConnections, candidate.UpstreamNginx.StopOnRepoGateExit = w.UpstreamNginx.WorkerConnections, w.UpstreamNginx.StopOnRepoGateExit
+	candidate.UpstreamNginx.WorkerConnections, candidate.UpstreamNginx.StopOnMirrorRelayExit = w.UpstreamNginx.WorkerConnections, w.UpstreamNginx.StopOnMirrorRelayExit
 
 	durations := []struct {
 		name      string

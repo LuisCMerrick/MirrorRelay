@@ -29,9 +29,9 @@ case "$architecture" in
   *) usage ;;
 esac
 
-deb_archive="$release_directory/repogate_${version}_${deb_architecture}.deb"
-rpm_archive="$release_directory/repogate-${version}.${rpm_architecture}.rpm"
-tar_archive="$release_directory/repogate-${version}-linux-${architecture}.tar.gz"
+deb_archive="$release_directory/mirrorrelay_${version}_${deb_architecture}.deb"
+rpm_archive="$release_directory/mirrorrelay-${version}.${rpm_architecture}.rpm"
+tar_archive="$release_directory/mirrorrelay-${version}-linux-${architecture}.tar.gz"
 manifest="$release_directory/SHA256SUMS-$architecture"
 
 for required_file in "$deb_archive" "$rpm_archive" "$tar_archive" "$manifest"; do
@@ -59,28 +59,28 @@ mkdir -p "$deb_root" "$rpm_root" "$tar_root"
 dpkg-deb -x "$deb_archive" "$deb_root"
 rpm2cpio "$rpm_archive" | (cd "$rpm_root" && cpio -idm --quiet)
 tar -xzf "$tar_archive" -C "$tar_root"
-tar_payload="$tar_root/repogate-$version"
+tar_payload="$tar_root/mirrorrelay-$version"
 
 check_payload() {
   payload_root=$1
   nginx_path=$2
-  repogate_path=$3
+  mirrorrelay_path=$3
   config_path=$4
   service_path=$5
   build_info_path=$6
   license_path=$7
 
-  for required_path in "$nginx_path" "$repogate_path" "$config_path" "$service_path" "$build_info_path" "$license_path"; do
+  for required_path in "$nginx_path" "$mirrorrelay_path" "$config_path" "$service_path" "$build_info_path" "$license_path"; do
     if [ ! -f "$payload_root/$required_path" ]; then
       echo "Package content is missing: $required_path" >&2
       exit 1
     fi
   done
   [ "$(stat -c %a "$payload_root/$nginx_path")" = 755 ]
-  [ "$(stat -c %a "$payload_root/$repogate_path")" = 755 ]
+  [ "$(stat -c %a "$payload_root/$mirrorrelay_path")" = 755 ]
   file "$payload_root/$nginx_path" | grep -F "$elf_pattern" >/dev/null
-  file "$payload_root/$repogate_path" | grep -F "$elf_pattern" >/dev/null
-  grep -F "RepoGate Version: $version" "$payload_root/$build_info_path" >/dev/null
+  file "$payload_root/$mirrorrelay_path" | grep -F "$elf_pattern" >/dev/null
+  grep -F "MirrorRelay Version: $version" "$payload_root/$build_info_path" >/dev/null
   grep -F "Target Architecture: $architecture" "$payload_root/$build_info_path" >/dev/null
   grep -F "with xx/Clang for linux/$architecture" "$payload_root/$build_info_path" >/dev/null
   printf '%s  %s\n' \
@@ -90,7 +90,7 @@ check_payload() {
     'Git Commit:' \
     'Build Timestamp:' \
     'Go Version:' \
-    'RepoGate Build ID:' \
+    'MirrorRelay Build ID:' \
     'Managed Upstream Nginx Version:' \
     'Nginx Source SHA256:' \
     'Configure Arguments:' \
@@ -102,9 +102,9 @@ check_payload() {
     'Managed Upstream Nginx SHA256:'; do
     grep -F "$metadata_label" "$payload_root/$build_info_path" >/dev/null
   done
-  repogate_checksum=$(sha256sum "$payload_root/$repogate_path" | awk '{print $1}')
+  mirrorrelay_checksum=$(sha256sum "$payload_root/$mirrorrelay_path" | awk '{print $1}')
   upstream_checksum=$(sha256sum "$payload_root/$nginx_path" | awk '{print $1}')
-  grep -F "RepoGate SHA256: $repogate_checksum" "$payload_root/$build_info_path" >/dev/null
+  grep -F "MirrorRelay SHA256: $mirrorrelay_checksum" "$payload_root/$build_info_path" >/dev/null
   grep -F "Managed Upstream Nginx SHA256: $upstream_checksum" "$payload_root/$build_info_path" >/dev/null
 
   ldd "$payload_root/$nginx_path" > "$temporary_directory/ldd.txt" 2>&1 || true
@@ -117,8 +117,8 @@ check_payload() {
     echo "Packaged Managed Upstream Nginx has a dynamic interpreter." >&2
     exit 1
   fi
-  if readelf -l "$payload_root/$repogate_path" | grep -q INTERP; then
-    echo "Packaged RepoGate has a dynamic interpreter." >&2
+  if readelf -l "$payload_root/$mirrorrelay_path" | grep -q INTERP; then
+    echo "Packaged MirrorRelay has a dynamic interpreter." >&2
     exit 1
   fi
   if [ -n "$expected_upstream" ]; then
@@ -127,26 +127,26 @@ check_payload() {
 }
 
 check_payload "$deb_root" \
-  usr/lib/repogate/nginx/nginx \
-  usr/bin/repogate \
-  etc/repogate/config.yaml \
-  usr/lib/systemd/system/repogate.service \
-  usr/share/doc/repogate/BUILD-INFO \
-  usr/share/doc/repogate/LICENSE
+  usr/lib/mirrorrelay/nginx/nginx \
+  usr/bin/mirrorrelay \
+  etc/mirrorrelay/config.yaml \
+  usr/lib/systemd/system/mirrorrelay.service \
+  usr/share/doc/mirrorrelay/BUILD-INFO \
+  usr/share/doc/mirrorrelay/LICENSE
 
 check_payload "$rpm_root" \
-  usr/lib/repogate/nginx/nginx \
-  usr/bin/repogate \
-  etc/repogate/config.yaml \
-  usr/lib/systemd/system/repogate.service \
-  usr/share/doc/repogate/BUILD-INFO \
-  usr/share/licenses/repogate/LICENSE
+  usr/lib/mirrorrelay/nginx/nginx \
+  usr/bin/mirrorrelay \
+  etc/mirrorrelay/config.yaml \
+  usr/lib/systemd/system/mirrorrelay.service \
+  usr/share/doc/mirrorrelay/BUILD-INFO \
+  usr/share/licenses/mirrorrelay/LICENSE
 
 check_payload "$tar_payload" \
   nginx/nginx \
-  repogate \
+  mirrorrelay \
   config/config.example.yaml \
-  systemd/repogate.service \
+  systemd/mirrorrelay.service \
   BUILD-INFO \
   LICENSE
 
@@ -175,7 +175,7 @@ for package_root in "$deb_root" "$rpm_root"; do
     verification.zh-CN.md \
     web-ui.md \
     web-ui.zh-CN.md; do
-    test -f "$package_root/usr/share/doc/repogate/$documentation"
+    test -f "$package_root/usr/share/doc/mirrorrelay/$documentation"
   done
 done
 for documentation in \
@@ -198,47 +198,47 @@ dpkg-deb -f "$deb_archive" Depends | grep -F 'passwd' >/dev/null
 rpm -qp --qf '%{ARCH}\n' "$rpm_archive" | grep -Fx "$rpm_architecture" >/dev/null
 dpkg_contents="$temporary_directory/deb-contents.txt"
 dpkg-deb --contents "$deb_archive" > "$dpkg_contents"
-grep -E '^-rwxr-xr-x root/root .* \./usr/bin/repogate$' "$dpkg_contents" >/dev/null
-grep -E '^-rwxr-xr-x root/root .* \./usr/lib/repogate/nginx/nginx$' "$dpkg_contents" >/dev/null
-grep -E '^-rw-r----- root/root .* \./etc/repogate/config.yaml$' "$dpkg_contents" >/dev/null
-grep -E '^-rw-r--r-- root/root .* \./usr/lib/systemd/system/repogate.service$' "$dpkg_contents" >/dev/null
-rpm -qpl "$rpm_archive" | grep -Fx '/usr/lib/repogate/nginx/nginx' >/dev/null
-tar -tzf "$tar_archive" | grep -Fx "repogate-$version/nginx/nginx" >/dev/null
+grep -E '^-rwxr-xr-x root/root .* \./usr/bin/mirrorrelay$' "$dpkg_contents" >/dev/null
+grep -E '^-rwxr-xr-x root/root .* \./usr/lib/mirrorrelay/nginx/nginx$' "$dpkg_contents" >/dev/null
+grep -E '^-rw-r----- root/root .* \./etc/mirrorrelay/config.yaml$' "$dpkg_contents" >/dev/null
+grep -E '^-rw-r--r-- root/root .* \./usr/lib/systemd/system/mirrorrelay.service$' "$dpkg_contents" >/dev/null
+rpm -qpl "$rpm_archive" | grep -Fx '/usr/lib/mirrorrelay/nginx/nginx' >/dev/null
+tar -tzf "$tar_archive" | grep -Fx "mirrorrelay-$version/nginx/nginx" >/dev/null
 
 rpm_metadata="$temporary_directory/rpm-metadata.txt"
 rpm -qp --qf '[%{FILENAMES}|%{FILEMODES:perms}|%{FILEUSERNAME}|%{FILEGROUPNAME}\n]' "$rpm_archive" > "$rpm_metadata"
-grep -Fx '/usr/bin/repogate|-rwxr-xr-x|root|root' "$rpm_metadata" >/dev/null
-grep -Fx '/usr/lib/repogate/nginx/nginx|-rwxr-xr-x|root|root' "$rpm_metadata" >/dev/null
-grep -Fx '/etc/repogate/config.yaml|-rw-r-----|root|repogate' "$rpm_metadata" >/dev/null
-grep -Fx '/usr/lib/systemd/system/repogate.service|-rw-r--r--|root|root' "$rpm_metadata" >/dev/null
+grep -Fx '/usr/bin/mirrorrelay|-rwxr-xr-x|root|root' "$rpm_metadata" >/dev/null
+grep -Fx '/usr/lib/mirrorrelay/nginx/nginx|-rwxr-xr-x|root|root' "$rpm_metadata" >/dev/null
+grep -Fx '/etc/mirrorrelay/config.yaml|-rw-r-----|root|mirrorrelay' "$rpm_metadata" >/dev/null
+grep -Fx '/usr/lib/systemd/system/mirrorrelay.service|-rw-r--r--|root|root' "$rpm_metadata" >/dev/null
 
 for service_root in "$deb_root" "$rpm_root"; do
-  service_file="$service_root/usr/lib/systemd/system/repogate.service"
-  grep -Fx 'User=repogate' "$service_file" >/dev/null
-  grep -Fx 'Group=repogate' "$service_file" >/dev/null
-  grep -Fx 'RuntimeDirectory=repogate' "$service_file" >/dev/null
+  service_file="$service_root/usr/lib/systemd/system/mirrorrelay.service"
+  grep -Fx 'User=mirrorrelay' "$service_file" >/dev/null
+  grep -Fx 'Group=mirrorrelay' "$service_file" >/dev/null
+  grep -Fx 'RuntimeDirectory=mirrorrelay' "$service_file" >/dev/null
   grep -Fx 'RuntimeDirectoryMode=0750' "$service_file" >/dev/null
   grep -Fx 'RuntimeDirectoryPreserve=yes' "$service_file" >/dev/null
   grep -Fx 'UMask=0007' "$service_file" >/dev/null
-  grep -Fx 'ExecStart=/usr/bin/repogate -config /etc/repogate/config.yaml' "$service_file" >/dev/null
-  package_config="$service_root/etc/repogate/config.yaml"
+  grep -Fx 'ExecStart=/usr/bin/mirrorrelay -config /etc/mirrorrelay/config.yaml' "$service_file" >/dev/null
+  package_config="$service_root/etc/mirrorrelay/config.yaml"
   grep -Fx '  frontend_socket_mode: "0660"' "$package_config" >/dev/null
-  grep -Fx '  upstream_socket_mode: "0660"' "$package_config" >/dev/null
-  grep -Fx '  binary: /usr/lib/repogate/nginx/nginx' "$package_config" >/dev/null
-  grep -Fx '  prefix: /var/lib/repogate/runtime/upstream-nginx' "$package_config" >/dev/null
-  grep -Fx '  pid: /run/repogate/upstream-nginx.pid' "$package_config" >/dev/null
+  grep -Fx '  upstream_socket_mode: "0600"' "$package_config" >/dev/null
+  grep -Fx '  binary: /usr/lib/mirrorrelay/nginx/nginx' "$package_config" >/dev/null
+  grep -Fx '  prefix: /var/lib/mirrorrelay/runtime/upstream-nginx' "$package_config" >/dev/null
+  grep -Fx '  pid: /run/mirrorrelay/upstream-nginx.pid' "$package_config" >/dev/null
   grep -Fx '  path: /admin/' "$package_config" >/dev/null
 done
-grep -Fx '  ca_bundle: /etc/ssl/certs/ca-certificates.crt' "$deb_root/etc/repogate/config.yaml" >/dev/null
-grep -Fx '  ca_bundle: /etc/pki/tls/certs/ca-bundle.crt' "$rpm_root/etc/repogate/config.yaml" >/dev/null
+grep -Fx '  ca_bundle: /etc/ssl/certs/ca-certificates.crt' "$deb_root/etc/mirrorrelay/config.yaml" >/dev/null
+grep -Fx '  ca_bundle: /etc/pki/tls/certs/ca-bundle.crt' "$rpm_root/etc/mirrorrelay/config.yaml" >/dev/null
 grep -Fx '  ca_bundle: /etc/ssl/certs/ca-certificates.crt' "$tar_payload/config/config.example.yaml" >/dev/null
 
 if ! dpkg-deb --ctrl-tarfile "$deb_archive" | tar -tf - | grep -Fx './conffiles' >/dev/null; then
   echo "DEB conffiles metadata is missing." >&2
   exit 1
 fi
-dpkg-deb --ctrl-tarfile "$deb_archive" | tar -xOf - ./postinst | grep -F 'chown root:repogate /etc/repogate/config.yaml' >/dev/null
-rpm -qp --configfiles "$rpm_archive" | grep -Fx '/etc/repogate/config.yaml' >/dev/null
+dpkg-deb --ctrl-tarfile "$deb_archive" | tar -xOf - ./postinst | grep -F 'chown root:mirrorrelay /etc/mirrorrelay/config.yaml' >/dev/null
+rpm -qp --configfiles "$rpm_archive" | grep -Fx '/etc/mirrorrelay/config.yaml' >/dev/null
 
 deb_postinst="$temporary_directory/deb-postinst.txt"
 deb_prerm="$temporary_directory/deb-prerm.txt"
@@ -247,8 +247,8 @@ rpm_scripts="$temporary_directory/rpm-scripts.txt"
 dpkg-deb --ctrl-tarfile "$deb_archive" | tar -xOf - ./postinst > "$deb_postinst"
 dpkg-deb --ctrl-tarfile "$deb_archive" | tar -xOf - ./prerm > "$deb_prerm"
 dpkg-deb --ctrl-tarfile "$deb_archive" | tar -xOf - ./postrm > "$deb_postrm"
-grep -F '/var/lib/repogate/.package-active' "$deb_prerm" >/dev/null
-grep -F '/var/lib/repogate/.package-active' "$deb_postinst" >/dev/null
+grep -F '/var/lib/mirrorrelay/.package-active' "$deb_prerm" >/dev/null
+grep -F '/var/lib/mirrorrelay/.package-active' "$deb_postinst" >/dev/null
 grep -F 'stop_managed_upstream_nginx' "$deb_prerm" >/dev/null
 # shellcheck disable=SC2016
 grep -F 'kill -QUIT "$managed_pid"' "$deb_prerm" >/dev/null

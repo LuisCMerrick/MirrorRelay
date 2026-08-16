@@ -1,6 +1,6 @@
-server: {unix_socket_enabled: true, frontend_socket: "/run/repogate/frontend.sock", frontend_socket_mode: "0660", local_port: 9081}
-runtime: {root: "/var/lib/repogate/runtime", run_dir: "/run/repogate"}
-ingress: {mode: external, generate_snippet: true, snippet_path: "/var/lib/repogate/integration/external-nginx"}
+server: {unix_socket_enabled: true, frontend_socket: "/run/mirrorrelay/frontend.sock", frontend_socket_mode: "0660", local_port: 9081}
+runtime: {root: "/var/lib/mirrorrelay/runtime", run_dir: "/run/mirrorrelay"}
+ingress: {mode: external, generate_snippet: true, snippet_path: "/var/lib/mirrorrelay/integration/external-nginx"}
 performance: {stream_buffer_size_bytes: 65536, go_memory_limit_bytes: 0, gogc: 100}
 metadata: {rewrite_buffer_limit_bytes: 8388608, output_compression: auto, gzip_min_length_bytes: 1024, validator_entries: 2048}
 redirect: {max_hops: 5, pin_validated_ip: true, reject_mixed_dns_result: true}
@@ -11,12 +11,12 @@ http:
   read_timeout: 15s
   idle_timeout: 2m
 tls:
-  certificate: "/etc/repogate/certs/fullchain.pem"
-  private_key: "/etc/repogate/certs/privkey.pem"
+  certificate: "/etc/mirrorrelay/certs/fullchain.pem"
+  private_key: "/etc/mirrorrelay/certs/privkey.pem"
   min_version: "1.2"
-database: {path: "/var/lib/repogate/repogate.db"}
+database: {path: "/var/lib/mirrorrelay/mirrorrelay.db"}
 cache:
-  path: "/var/cache/repogate"
+  path: "/var/cache/mirrorrelay"
   max_size_bytes: 536870912000
   max_files: 1000000
   inactive: 720h
@@ -25,7 +25,7 @@ cache:
   cleanup_interval: 10m
   wait_for_fill: 30m
   minimum_free_bytes: 1073741824
-logging: {path: "/var/log/repogate", queue_size: 8192, max_size_mb: 1024, keep_days: 30}
+logging: {path: "/var/log/mirrorrelay", queue_size: 8192, max_size_mb: 1024, keep_days: 30}
 security: {allow_http_upstream: false, allow_private_upstream: false, expose_client_ip: false, session_timeout: 12h, login_window: 15m, login_max_failures: 5, admin_cidrs: []}
 transport: {dial_timeout: 10s, keep_alive: 30s, tls_handshake_timeout: 10s, response_header_timeout: 30s, idle_connection_timeout: 90s, max_idle_connections: 512, max_idle_connections_per_host: 64}
 limits: {max_total_concurrency: 0, max_ip_concurrency: 0, bandwidth_limit_bps: 0}
@@ -34,12 +34,12 @@ admin: {host: "", path: /admin/, initial_username: "admin", initial_password: ""
 shutdown: {grace_period: 30m}
 upstream_nginx:
   mode: managed
-  binary: /opt/repogate/nginx/sbin/nginx
-  prefix: /var/lib/repogate/runtime/upstream-nginx
-  pid: /run/repogate/upstream-nginx.pid
-  log_path: /var/log/repogate/upstream-nginx
+  binary: /opt/mirrorrelay/nginx/sbin/nginx
+  prefix: /var/lib/mirrorrelay/runtime/upstream-nginx
+  pid: /run/mirrorrelay/upstream-nginx.pid
+  log_path: /var/log/mirrorrelay/upstream-nginx
   upstream_unix_socket_enabled: true
-  upstream_socket: /run/repogate/upstream.sock
+  upstream_socket: /run/mirrorrelay/upstream.sock
   upstream_socket_mode: "0600"
   upstream_local_port: 9082
   ca_bundle: /etc/ssl/certs/ca-certificates.crt
@@ -54,7 +54,7 @@ upstream_nginx:
   worker_processes: auto
   worker_user: ""
   worker_connections: 4096
-  stop_on_repogate_exit: false
+  stop_on_mirrorrelay_exit: false
 distributed:
   enabled: false
   role: standalone

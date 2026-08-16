@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type dummyStore struct{}

@@ -1,13 +1,13 @@
 [Unit]
-Description=RepoGate Repository and Registry Reverse Proxy
+Description=MirrorRelay Repository and Registry Reverse Proxy
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=repogate
-Group=repogate
-ExecStart=/usr/bin/repogate -config /etc/repogate/config.yaml
+User=mirrorrelay
+Group=mirrorrelay
+ExecStart=/usr/bin/mirrorrelay -config /etc/mirrorrelay/config.yaml
 Restart=on-failure
 RestartSec=5s
 KillMode=process
@@ -15,12 +15,12 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-RuntimeDirectory=repogate
+RuntimeDirectory=mirrorrelay
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
 UMask=0007
-ReadWritePaths=/run/repogate /var/lib/repogate /var/cache/repogate /var/log/repogate
-EnvironmentFile=-/etc/repogate/environment
+ReadWritePaths=/run/mirrorrelay /var/lib/mirrorrelay /var/cache/mirrorrelay /var/log/mirrorrelay
+EnvironmentFile=-/etc/mirrorrelay/environment
 LimitNOFILE=1048576
 TimeoutStopSec=30min
 

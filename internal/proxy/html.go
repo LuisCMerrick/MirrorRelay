@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 	"golang.org/x/net/html"
 )
 
-const auxiliaryUpstreamPrefix = "/_repogate/upstream/"
+const auxiliaryUpstreamPrefix = "/_mirrorrelay/upstream/"
 
 var browsableURLAttributes = map[string]bool{
 	"action": true, "background": true, "cite": true, "formaction": true,
@@ -108,10 +108,10 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 		encoding = "gzip"
 	}
 	hash := sha256.New()
-	_, _ = hash.Write([]byte("repogate-browsable-html-v1\x00" + strconv.FormatInt(repository.ID, 10) + "\x00" +
+	_, _ = hash.Write([]byte("mirrorrelay-browsable-html-v1\x00" + strconv.FormatInt(repository.ID, 10) + "\x00" +
 		repository.PublicMode + "\x00" + repository.PublicPath + "\x00" + repository.StripPrefix + "\x00" + upstream.URL + "\x00" + encoding + "\x00"))
 	_, _ = hash.Write(output)
-	etag := `"repogate-html-v1-` + hex.EncodeToString(hash.Sum(nil)) + `"`
+	etag := `"mirrorrelay-html-v1-` + hex.EncodeToString(hash.Sum(nil)) + `"`
 
 	response.Body = io.NopCloser(bytes.NewReader(output))
 	response.ContentLength = int64(len(output))

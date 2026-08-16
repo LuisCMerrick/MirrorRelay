@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/database"
 )
 
 func TestApplyStoredWebSettingsAtStartup(t *testing.T) {
-	store, err := database.Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

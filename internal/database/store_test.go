@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/stats"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 )
 
 func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
 		CacheEnabled: true, CacheProfile: "registry", HealthCheckEnabled: true, HealthMethod: "HEAD", HealthExpected: 200,
 		ProfileName: "Docker Hub", ProfileVersion: "1.0.0", AuthMode: "full_proxy", BlobRedirectMode: "full_proxy",
 		PullOnly: true, ConfigState: "pending", HTMLRewriteEnabled: true, RewriteHosts: []string{"auth.docker.io", "production.cloudfront.docker.com"},
-		HeaderAdd: map[string]string{"X-Repository-Client": "RepoGate"}, HeaderRemove: []string{"X-Legacy"},
+		HeaderAdd: map[string]string{"X-Repository-Client": "MirrorRelay"}, HeaderRemove: []string{"X-Legacy"},
 		ConnectTimeoutSec: 7, ReadTimeoutSec: 7200, SendTimeoutSec: 7100, MetadataLimitBytes: 64 << 20,
 		MetadataTTLSec: 60, PackageTTLSec: 7200, ImmutableTTLSec: 86400, BlobTTLSec: 172800, CacheAuthenticated: true,
 		Upstreams: []model.Upstream{{URL: "https://registry-1.docker.io/", Host: "registry-1.docker.io", Priority: 10, Weight: 1, Enabled: true}}}
@@ -31,7 +31,7 @@ func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if created.Type != repository.Type || created.PublicHost != repository.PublicHost || len(created.Upstreams) != 1 || created.Upstreams[0].Host != "registry-1.docker.io" ||
-		created.HeaderAdd["X-Repository-Client"] != "RepoGate" || len(created.HeaderRemove) != 1 || created.MetadataLimitBytes != 64<<20 ||
+		created.HeaderAdd["X-Repository-Client"] != "MirrorRelay" || len(created.HeaderRemove) != 1 || created.MetadataLimitBytes != 64<<20 ||
 		created.ConnectTimeoutSec != 7 || created.BlobTTLSec != 172800 || !created.CacheAuthenticated || !created.HTMLRewriteEnabled || len(created.RewriteHosts) != 2 {
 		t.Fatalf("repository round trip mismatch: %+v", created)
 	}
@@ -52,7 +52,7 @@ func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
 }
 
 func TestListMirrorsReturnsEmptySliceForEmptyStore(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestListMirrorsReturnsEmptySliceForEmptyStore(t *testing.T) {
 }
 
 func TestSettingsRoundTripAndDelete(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestSettingsRoundTripAndDelete(t *testing.T) {
 }
 
 func TestHourlyStatisticsRoundTrip(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestHourlyStatisticsRoundTrip(t *testing.T) {
 }
 
 func TestSessionPersistenceAndUserCascade(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestSessionPersistenceAndUserCascade(t *testing.T) {
 }
 
 func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
 }
 
 func TestClusterNodeAndSettingStore(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "repogate.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

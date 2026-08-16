@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Store interface {
@@ -107,7 +107,7 @@ func (c *Checker) CheckNode(ctx context.Context, node model.ClusterNode) (model.
 		return c.recordFailure(ctx, node, fmt.Sprintf("create manifest request: %v", err))
 	}
 	if token != "" {
-		req.Header.Set("X-RepoGate-Cluster-Token", token)
+		req.Header.Set("X-MirrorRelay-Cluster-Token", token)
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -133,7 +133,7 @@ func (c *Checker) CheckNode(ctx context.Context, node model.ClusterNode) (model.
 		return c.recordFailure(ctx, node, fmt.Sprintf("create health request: %v", err))
 	}
 	if token != "" {
-		reqH.Header.Set("X-RepoGate-Cluster-Token", token)
+		reqH.Header.Set("X-MirrorRelay-Cluster-Token", token)
 		reqH.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -253,14 +253,14 @@ func (c *Checker) recordSuccess(ctx context.Context, node model.ClusterNode, man
 	node.HealthStatus = newHealth
 	node.ConfigStatus = newConfigStatus
 	node.ConfigFingerprint = manifest.ConfigFingerprint
-	node.Version = manifest.RepoGateVersion
+	node.Version = manifest.MirrorRelayVersion
 	node.ProtocolVersion = manifest.ProtocolVersion
 	node.Capabilities = manifest.Capabilities
 	node.LastError = ""
 	node.LastCheck = now
 
 	if c.store != nil {
-		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, newConfigStatus, manifest.ConfigFingerprint, manifest.RepoGateVersion, manifest.ProtocolVersion, manifest.Capabilities, "", now)
+		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, newConfigStatus, manifest.ConfigFingerprint, manifest.MirrorRelayVersion, manifest.ProtocolVersion, manifest.Capabilities, "", now)
 	}
 
 	return node, nil

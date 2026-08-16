@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type memoryStore struct {
@@ -51,7 +51,7 @@ func TestCanonicalObjectIDNormalizesQueryAndPath(t *testing.T) {
 func TestKeyUsesLoadedGenerationSnapshotAndPurgeUpdatesAtomically(t *testing.T) {
 	store := &memoryStore{values: []model.CacheGeneration{{Scope: "global", Generation: 4}, {Scope: "repository", RepositoryID: 7, Generation: 9}}}
 	cfg := config.Default()
-	cfg.Cache.Path = "/nonexistent/repogate-cache-test"
+	cfg.Cache.Path = "/nonexistent/mirrorrelay-cache-test"
 	manager := New(cfg, store)
 	if err := manager.Load(context.Background()); err != nil {
 		t.Fatal(err)

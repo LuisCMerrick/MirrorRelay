@@ -3,7 +3,7 @@ package profile
 import (
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestFindDefaultsToLatestStableAndApplyPinsVersion(t *testing.T) {

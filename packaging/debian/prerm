@@ -2,8 +2,8 @@
 set -e
 
 stop_managed_upstream_nginx() {
-  binary=/usr/lib/repogate/nginx/nginx
-  pid_file=/run/repogate/upstream-nginx.pid
+  binary=/usr/lib/mirrorrelay/nginx/nginx
+  pid_file=/run/mirrorrelay/upstream-nginx.pid
   is_managed_upstream_nginx() {
     managed_executable=$(readlink "/proc/$managed_pid/exe" 2>/dev/null || true)
     case "$managed_executable" in
@@ -44,17 +44,17 @@ stop_managed_upstream_nginx() {
 
 case "${1:-}" in
   upgrade)
-    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet repogate.service; then
-      touch /var/lib/repogate/.package-active
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet mirrorrelay.service; then
+      touch /var/lib/mirrorrelay/.package-active
     fi
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl stop repogate.service || true
+      systemctl stop mirrorrelay.service || true
     fi
     stop_managed_upstream_nginx
     ;;
   remove|deconfigure)
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl stop repogate.service || true
+      systemctl stop mirrorrelay.service || true
     fi
     stop_managed_upstream_nginx
     ;;

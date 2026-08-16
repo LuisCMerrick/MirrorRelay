@@ -1,4 +1,4 @@
-module github.com/LuisCMerrick/RepoGate
+module github.com/LuisCMerrick/MirrorRelay
 
 go 1.24.0
 

@@ -46,15 +46,15 @@ func TestHourlyStatisticsSurviveReloadAndFlush(t *testing.T) {
 	}
 }
 
-func TestMetricsUseRepoGateNamespace(t *testing.T) {
+func TestMetricsUseMirrorRelayNamespace(t *testing.T) {
 	metric := New()
 	metric.Record(7, 200, 10, 0, 10, "HIT", false, time.Millisecond)
 	recorder := httptest.NewRecorder()
 	metric.Metrics(recorder, map[int64]string{7: "example"})
 	body := recorder.Body.String()
 	for _, expected := range []string{
-		"repogate_requests_total 1",
-		`repogate_requests_today{repository_id="7",repository="example"} 1`,
+		"mirrorrelay_requests_total 1",
+		`mirrorrelay_requests_today{repository_id="7",repository="example"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics do not contain %q:\n%s", expected, body)

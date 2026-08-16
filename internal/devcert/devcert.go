@@ -28,7 +28,7 @@ func Ensure(certPath, keyPath string) (caPath string, generated bool, err error)
 	if err != nil {
 		return caPath, false, err
 	}
-	caTemplate := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "RepoGate Development CA"},
+	caTemplate := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "MirrorRelay Development CA"},
 		NotBefore: now, NotAfter: now.Add(10 * 365 * 24 * time.Hour), IsCA: true, BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
 	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)

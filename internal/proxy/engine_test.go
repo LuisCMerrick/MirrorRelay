@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestRegistryBlobRedirectModeOverridesGenericPolicy(t *testing.T) {
@@ -201,7 +201,7 @@ func TestSanitizeLogURI(t *testing.T) {
 
 func TestStripUntrustedHeadersSanitizesSessionCookie(t *testing.T) {
 	h := http.Header{}
-	h.Set("Cookie", "repogate_session=secret_token; foo=bar; another=value")
+	h.Set("Cookie", "mirrorrelay_session=secret_token; foo=bar; another=value")
 	h.Set("X-Mirror-Internal-Foo", "bar")
 	h.Set("X-Forwarded-For", "1.2.3.4")
 	stripUntrustedHeaders(h)
@@ -210,8 +210,8 @@ func TestStripUntrustedHeadersSanitizesSessionCookie(t *testing.T) {
 		t.Fatal("internal headers not stripped")
 	}
 	cookie := h.Get("Cookie")
-	if strings.Contains(cookie, "repogate_session") {
-		t.Fatalf("repogate_session was not stripped: %s", cookie)
+	if strings.Contains(cookie, "mirrorrelay_session") {
+		t.Fatalf("mirrorrelay_session was not stripped: %s", cookie)
 	}
 	if !strings.Contains(cookie, "foo=bar") || !strings.Contains(cookie, "another=value") {
 		t.Fatalf("legitimate cookies removed: %s", cookie)

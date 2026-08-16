@@ -16,13 +16,32 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	localeEn, err := fs.ReadFile(assets, "locales/en.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localeZh, err := fs.ReadFile(assets, "locales/zh.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, test := range map[string]struct {
 		content  string
 		expected []string
 	}{
-		"index": {content: string(index), expected: []string{`<html lang="en">`, `data-lang="en"`, `data-lang="zh"`, `data-page="settings"`, `id="html-rewrite-enabled"`, `href="app.css"`, `src="app.js"`}},
+		"index": {content: string(index), expected: []string{
+			`<html lang="en">`, `data-lang="en"`, `data-lang="zh"`, `data-page="settings"`,
+			`id="html-rewrite-enabled"`, `href="app.css"`, `src="locales/en.js"`, `src="locales/zh.js"`, `src="app.js"`,
+		}},
+		"localeEn": {content: string(localeEn), expected: []string{
+			"window.MIRRORRELAY_LOCALES.en", "Linux repository reverse-proxy gateway",
+			"Local endpoints and ingress", "Frontend Unix socket",
+		}},
+		"localeZh": {content: string(localeZh), expected: []string{
+			"window.MIRRORRELAY_LOCALES.zh", "Linux 软件仓库反向代理网关",
+			"本地端点与入口", "前端 Unix Socket",
+		}},
 		"script": {content: string(script), expected: []string{
-			"navigator.languages", "repogate.language", "Linux 软件仓库反向代理网关",
+			"navigator.languages", "mirrorrelay.language", "getLocale",
 			"fetch('api/v1' + path, request)",
 			"const repositories = repositoryValues || [];", "mirrors = (await api('/mirrors')) || [];",
 			`data-action="show-repository"`, `data-action="copy-repository-url"`, `data-action="check-mirror"`,
@@ -40,10 +59,12 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			}
 		})
 	}
-	if strings.Contains(string(index), "onclick=") || strings.Contains(string(script), "onclick=") {
-		t.Fatal("strict-CSP Web UI contains an inline click handler")
-	}
-	if strings.Contains(string(index), "/admin/") || strings.Contains(string(script), "fetch('/api/v1") {
-		t.Fatal("embedded assets contain a fixed administration path")
+	for _, assetContent := range []string{string(index), string(script), string(localeEn), string(localeZh)} {
+		if strings.Contains(assetContent, "onclick=") {
+			t.Fatal("strict-CSP Web UI contains an inline click handler")
+		}
+		if strings.Contains(assetContent, "/admin/") || strings.Contains(assetContent, "fetch('/api/v1") {
+			t.Fatal("embedded assets contain a fixed administration path")
+		}
 	}
 }

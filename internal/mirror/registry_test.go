@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type fakeLoader struct{ values []model.Mirror }
@@ -59,7 +59,7 @@ func TestNormalizeAndValidateRejectsGeneratedConfigInjection(t *testing.T) {
 		"public path root":       func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/" },
 		"public path traversal":  func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/safe/../other/" },
 		"public path escape":     func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/safe%2fother/" },
-		"public auxiliary route": func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/_repogate/upstream/" },
+		"public auxiliary route": func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/_mirrorrelay/upstream/" },
 		"host rewrite directive": func(m *model.Mirror) { m.HostRewrite = "repo.example;return" },
 		"rewrite host directive": func(m *model.Mirror) { m.RewriteHosts = []string{"cdn.example;return"} },
 	} {

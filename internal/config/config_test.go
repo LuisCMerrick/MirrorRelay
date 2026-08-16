@@ -95,7 +95,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	settings.UpstreamNginx.WorkerProcesses = "2"
 	settings.UpstreamNginx.WorkerUser = ""
 	settings.UpstreamNginx.WorkerConnections = 2048
-	settings.UpstreamNginx.StopOnRepoGateExit = true
+	settings.UpstreamNginx.StopOnMirrorRelayExit = true
 
 	applied, err := settings.Apply(base)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestAdminPathIsNormalizedAndValidated(t *testing.T) {
 	if cfg.Admin.Path != "/private-console/" || cfg.AdminAPIPath() != "/private-console/api/v1/" {
 		t.Fatalf("administration paths were not normalized: %+v", cfg.Admin)
 	}
-	for _, invalid := range []string{"/", "relative/", "/metrics/private/", "/_repogate/private/", "/unsafe%2fpath/", "/two//slashes/"} {
+	for _, invalid := range []string{"/", "relative/", "/metrics/private/", "/_mirrorrelay/private/", "/unsafe%2fpath/", "/two//slashes/"} {
 		candidate := Default()
 		candidate.Admin.Path = invalid
 		if err := candidate.NormalizeRuntime(); err == nil {
@@ -184,7 +184,7 @@ func TestExternalIngressDoesNotPrepareUnusedTLSDirectories(t *testing.T) {
 	root := t.TempDir()
 	cfg := Default()
 	cfg.Ingress.Mode = "external"
-	cfg.Database.Path = filepath.Join(root, "data", "repogate.db")
+	cfg.Database.Path = filepath.Join(root, "data", "mirrorrelay.db")
 	cfg.Cache.Path = filepath.Join(root, "cache")
 	cfg.Logging.Path = filepath.Join(root, "logs")
 	cfg.UpstreamNginx.Prefix = filepath.Join(root, "runtime", "upstream-nginx")

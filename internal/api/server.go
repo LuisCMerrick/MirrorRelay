@@ -21,19 +21,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/auth"
-	"github.com/LuisCMerrick/RepoGate/internal/buildinfo"
-	"github.com/LuisCMerrick/RepoGate/internal/cachectl"
-	"github.com/LuisCMerrick/RepoGate/internal/cluster"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/database"
-	"github.com/LuisCMerrick/RepoGate/internal/health"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/profile"
-	"github.com/LuisCMerrick/RepoGate/internal/security"
-	"github.com/LuisCMerrick/RepoGate/internal/stats"
-	"github.com/LuisCMerrick/RepoGate/internal/upstreamnginx"
+	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
+	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
+	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
+	"github.com/LuisCMerrick/MirrorRelay/internal/cluster"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/health"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/profile"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
+	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
+	"github.com/LuisCMerrick/MirrorRelay/internal/upstreamnginx"
 )
 
 type Store interface {
@@ -112,6 +112,23 @@ type Server struct {
 	build          buildinfo.Info
 	started        time.Time
 	mutationMu     sync.Mutex
+	restartMu      sync.RWMutex
+	restartTrigger func()
+}
+
+func (s *Server) SetRestartTrigger(trigger func()) {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+	s.restartTrigger = trigger
+}
+
+func (s *Server) triggerRestart() {
+	s.restartMu.RLock()
+	trigger := s.restartTrigger
+	s.restartMu.RUnlock()
+	if trigger != nil {
+		trigger()
+	}
 }
 
 func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, cacheManager *cachectl.Manager, metric *stats.Stats, checker *health.Checker, upstreamNginx *upstreamnginx.Controller, web fs.FS, build buildinfo.Info) (*Server, error) {
@@ -236,7 +253,7 @@ func (s *Server) verifyClusterToken(r *http.Request) bool {
 	if s.cfg.Distributed.Token == "" {
 		return true
 	}
-	hdr := r.Header.Get("X-RepoGate-Cluster-Token")
+	hdr := r.Header.Get("X-MirrorRelay-Cluster-Token")
 	if hdr == "" {
 		authHdr := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHdr, "Bearer ") {
@@ -303,7 +320,7 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 						}
 						writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 							"error":   "no_available_edge",
-							"message": "No healthy RepoGate edge node is available",
+							"message": "No healthy MirrorRelay edge node is available",
 						})
 						return
 					}
@@ -353,7 +370,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(repositories[i].Name) < strings.ToLower(repositories[j].Name)
 	})
 	var body strings.Builder
-	body.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RepoGate Repository Index</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:3rem auto;padding:0 1.25rem;color:#20242b}h1{margin-bottom:.25rem}p{color:#667085}table{width:100%;border-collapse:collapse;margin-top:2rem}th,td{text-align:left;padding:.7rem;border-bottom:1px solid #dfe3e8}a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}code{font-family:ui-monospace,monospace}@media(prefers-color-scheme:dark){body{background:#11151b;color:#e6edf3}p{color:#9da7b3}th,td{border-color:#30363d}a{color:#58a6ff}}</style></head><body><h1>RepoGate Repository Index</h1><p>Available repositories / 可用仓库</p><table><thead><tr><th>Repository / 仓库</th><th>Type / 类型</th><th>Description / 说明</th></tr></thead><tbody>`)
+	body.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MirrorRelay Repository Index</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:3rem auto;padding:0 1.25rem;color:#20242b}h1{margin-bottom:.25rem}p{color:#667085}table{width:100%;border-collapse:collapse;margin-top:2rem}th,td{text-align:left;padding:.7rem;border-bottom:1px solid #dfe3e8}a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}code{font-family:ui-monospace,monospace}@media(prefers-color-scheme:dark){body{background:#11151b;color:#e6edf3}p{color:#9da7b3}th,td{border-color:#30363d}a{color:#58a6ff}}</style></head><body><h1>MirrorRelay Repository Index</h1><p>Available repositories / 可用仓库</p><table><thead><tr><th>Repository / 仓库</th><th>Type / 类型</th><th>Description / 说明</th></tr></thead><tbody>`)
 	visible := 0
 	for _, repository := range repositories {
 		if !repository.Enabled || (repository.AccessPolicy == "admin" && !allowAdministrative) {
@@ -510,6 +527,13 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			"frontend_address": frontendAddress, "upstream_network": upstreamNetwork,
 			"upstream_address": upstreamAddress, "upstream_nginx": s.upstreamNginx.Status(),
 		})
+	case (path == "/system/restart" || path == "/restart") && r.Method == http.MethodPost:
+		_ = s.audit(r, session.Username, "system_restart", "system", "service restart requested from Web UI", true)
+		writeJSON(w, 200, map[string]any{"ok": true, "status": "restarting", "message": "restart initiated"})
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			s.triggerRestart()
+		}()
 	case path == "/settings" && r.Method == http.MethodGet:
 		s.webSettings(w, r)
 	case path == "/settings" && r.Method == http.MethodPut:
@@ -1332,7 +1356,7 @@ func (s *Server) healthStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"status":                 status,
-		"repogate":               "healthy",
+		"mirrorrelay":            "healthy",
 		"frontend_socket":        "healthy",
 		"frontend_endpoint":      "healthy",
 		"frontend_network":       frontendNetwork,
@@ -1397,14 +1421,14 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if s.clusterMetrics != nil {
 		s.clusterMetrics.WritePrometheus(w)
 	}
-	fmt.Fprintln(w, "# TYPE repogate_up gauge")
-	fmt.Fprintln(w, "repogate_up 1")
-	fmt.Fprintln(w, "# TYPE repogate_managed_upstream_nginx_up gauge")
+	fmt.Fprintln(w, "# TYPE mirrorrelay_up gauge")
+	fmt.Fprintln(w, "mirrorrelay_up 1")
+	fmt.Fprintln(w, "# TYPE mirrorrelay_managed_upstream_nginx_up gauge")
 	upstreamNginxUp := 0
 	if s.upstreamNginx.Status().State == "running" {
 		upstreamNginxUp = 1
 	}
-	fmt.Fprintf(w, "repogate_managed_upstream_nginx_up %d\n", upstreamNginxUp)
+	fmt.Fprintf(w, "mirrorrelay_managed_upstream_nginx_up %d\n", upstreamNginxUp)
 }
 func (s *Server) audit(r *http.Request, user, action, object, detail string, ok bool) error {
 	entry := model.AuditEntry{

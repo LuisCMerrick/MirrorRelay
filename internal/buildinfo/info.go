@@ -48,11 +48,11 @@ func New(version, gitCommit, buildTimestamp, buildID string) Info {
 }
 
 func (i Info) Short() string {
-	return fmt.Sprintf("repogate %s (build %s)", i.Version, i.BuildID)
+	return fmt.Sprintf("mirrorrelay %s (build %s)", i.Version, i.BuildID)
 }
 
 func (i Info) Verbose() string {
-	return fmt.Sprintf(`RepoGate Version: %s
+	return fmt.Sprintf(`MirrorRelay Version: %s
 Git Commit: %s
 Build Timestamp: %s
 Go Version: %s

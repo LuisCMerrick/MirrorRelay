@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Metrics struct {
@@ -102,38 +102,38 @@ func (m *Metrics) UpdateNodeStats(nodes []model.ClusterNode, clusterFingerprint 
 }
 
 func (m *Metrics) WritePrometheus(w io.Writer) {
-	fmt.Fprintln(w, "# TYPE repogate_cluster_nodes gauge")
-	fmt.Fprintf(w, "repogate_cluster_nodes %d\n", atomic.LoadInt64(&m.totalNodes))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_nodes gauge")
+	fmt.Fprintf(w, "mirrorrelay_cluster_nodes %d\n", atomic.LoadInt64(&m.totalNodes))
 
-	fmt.Fprintln(w, "# TYPE repogate_cluster_nodes_healthy gauge")
-	fmt.Fprintf(w, "repogate_cluster_nodes_healthy %d\n", atomic.LoadInt64(&m.healthyNodes))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_nodes_healthy gauge")
+	fmt.Fprintf(w, "mirrorrelay_cluster_nodes_healthy %d\n", atomic.LoadInt64(&m.healthyNodes))
 
-	fmt.Fprintln(w, "# TYPE repogate_cluster_nodes_routable gauge")
-	fmt.Fprintf(w, "repogate_cluster_nodes_routable %d\n", atomic.LoadInt64(&m.routableNodes))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_nodes_routable gauge")
+	fmt.Fprintf(w, "mirrorrelay_cluster_nodes_routable %d\n", atomic.LoadInt64(&m.routableNodes))
 
-	fmt.Fprintln(w, "# TYPE repogate_cluster_config_mismatch gauge")
-	fmt.Fprintf(w, "repogate_cluster_config_mismatch %d\n", atomic.LoadInt64(&m.configMismatchNodes))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_config_mismatch gauge")
+	fmt.Fprintf(w, "mirrorrelay_cluster_config_mismatch %d\n", atomic.LoadInt64(&m.configMismatchNodes))
 
-	fmt.Fprintln(w, "# TYPE repogate_cluster_no_available_edge_total counter")
-	fmt.Fprintf(w, "repogate_cluster_no_available_edge_total %d\n", atomic.LoadUint64(&m.noAvailableEdgeTotal))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_no_available_edge_total counter")
+	fmt.Fprintf(w, "mirrorrelay_cluster_no_available_edge_total %d\n", atomic.LoadUint64(&m.noAvailableEdgeTotal))
 
-	fmt.Fprintln(w, "# TYPE repogate_cluster_redirect_total counter")
-	fmt.Fprintf(w, "repogate_cluster_redirect_total %d\n", atomic.LoadUint64(&m.redirectTotal))
+	fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_redirect_total counter")
+	fmt.Fprintf(w, "mirrorrelay_cluster_redirect_total %d\n", atomic.LoadUint64(&m.redirectTotal))
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if len(m.redirectByNode) > 0 {
-		fmt.Fprintln(w, "# TYPE repogate_cluster_redirect_by_node_total counter")
+		fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_redirect_by_node_total counter")
 		for node, ptr := range m.redirectByNode {
-			fmt.Fprintf(w, "repogate_cluster_redirect_by_node_total{node=%q} %d\n", node, atomic.LoadUint64(ptr))
+			fmt.Fprintf(w, "mirrorrelay_cluster_redirect_by_node_total{node=%q} %d\n", node, atomic.LoadUint64(ptr))
 		}
 	}
 
 	if len(m.healthCheckFailures) > 0 {
-		fmt.Fprintln(w, "# TYPE repogate_cluster_health_check_failures_total counter")
+		fmt.Fprintln(w, "# TYPE mirrorrelay_cluster_health_check_failures_total counter")
 		for node, ptr := range m.healthCheckFailures {
-			fmt.Fprintf(w, "repogate_cluster_health_check_failures_total{node=%q} %d\n", node, atomic.LoadUint64(ptr))
+			fmt.Fprintf(w, "mirrorrelay_cluster_health_check_failures_total{node=%q} %d\n", node, atomic.LoadUint64(ptr))
 		}
 	}
 }

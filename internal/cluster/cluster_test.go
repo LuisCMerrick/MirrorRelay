@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/buildinfo"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestCanonicalFingerprintStability(t *testing.T) {
@@ -214,12 +214,12 @@ func (a *mockAudit) Record(user, action, object, detail string, ok bool) {
 func TestCheckerProbeAndDrift(t *testing.T) {
 	// Mock Edge server
 	manifest := model.ClusterManifest{
-		ProtocolVersion:   1,
-		RepoGateVersion:   "0.0.1",
-		NodeID:            "tokyo-01",
-		ConfigGeneration:  1,
-		ConfigFingerprint: "sha256:valid_fingerprint",
-		Capabilities:      []string{"apt", "rpm"},
+		ProtocolVersion:    1,
+		MirrorRelayVersion: "0.0.1",
+		NodeID:             "tokyo-01",
+		ConfigGeneration:   1,
+		ConfigFingerprint:  "sha256:valid_fingerprint",
+		Capabilities:       []string{"apt", "rpm"},
 	}
 	health := model.ClusterHealth{
 		Status:            "healthy",

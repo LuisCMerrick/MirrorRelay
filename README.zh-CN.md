@@ -1,17 +1,17 @@
-# RepoGate
+# MirrorRelay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![CI](https://github.com/LuisCMerrick/RepoGate/actions/workflows/ci.yml/badge.svg)](https://github.com/LuisCMerrick/RepoGate/actions/workflows/ci.yml)
-[![Release Build](https://github.com/LuisCMerrick/RepoGate/actions/workflows/build.yml/badge.svg)](https://github.com/LuisCMerrick/RepoGate/actions/workflows/build.yml)
+[![CI](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/ci.yml/badge.svg)](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/ci.yml)
+[![Release Build](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/build.yml/badge.svg)](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/build.yml)
 
-RepoGate 是面向 Linux 软件仓库与 Docker/OCI Registry 的 Pull-through 网关，提供仓库路由、缓存、健康检查、配置历史以及中英文管理后台。
+MirrorRelay 是面向 Linux 软件仓库与 Docker/OCI Registry 的 Pull-through 网关，提供仓库路由、缓存、健康检查、配置历史以及中英文管理后台。
 
 ```text
-客户端 -> External Shared Nginx -> RepoGate -> 受管上游 Nginx -> 原始上游
+客户端 -> External Shared Nginx -> MirrorRelay -> 受管上游 Nginx -> 原始上游
 ```
 
-只有受管上游 Nginx 可以连接原始上游。RepoGate 会先验证每次数据面变更，再原子发布并执行 Graceful Reload。
+只有受管上游 Nginx 可以连接原始上游。MirrorRelay 会先验证每次数据面变更，再原子发布并执行 Graceful Reload。
 
 ## 主要功能
 
@@ -29,16 +29,16 @@ Release Build 同时生成两个架构的 DEB、RPM 和 tar.gz：
 
 | 架构 | DEB | RPM | 压缩包 |
 |---|---|---|---|
-| amd64 | `repogate_<version>_amd64.deb` | `repogate-<version>.x86_64.rpm` | `repogate-<version>-linux-amd64.tar.gz` |
-| arm64 | `repogate_<version>_arm64.deb` | `repogate-<version>.aarch64.rpm` | `repogate-<version>-linux-arm64.tar.gz` |
+| amd64 | `mirrorrelay_<version>_amd64.deb` | `mirrorrelay-<version>.x86_64.rpm` | `mirrorrelay-<version>-linux-amd64.tar.gz` |
+| arm64 | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
 
 主要安装路径：
 
 ```text
-/usr/bin/repogate
-/usr/lib/repogate/nginx/nginx
-/etc/repogate/config.yaml
-/usr/lib/systemd/system/repogate.service
+/usr/bin/mirrorrelay
+/usr/lib/mirrorrelay/nginx/nginx
+/etc/mirrorrelay/config.yaml
+/usr/lib/systemd/system/mirrorrelay.service
 ```
 
 内置 Nginx 使用固定版本的 musl、OpenSSL、PCRE2 和 zlib 静态构建。安装包不会修改或 Reload 现有的 External Shared Nginx。
@@ -46,7 +46,7 @@ Release Build 同时生成两个架构的 DEB、RPM 和 tar.gz：
 ## 快速开发启动
 
 ```sh
-go run ./cmd/repogate -dev
+go run ./cmd/mirrorrelay -dev
 ```
 
 打开 `https://127.0.0.1:8443/admin/`，使用 `admin` / `adminadmin` 登录。开发模式的数据和证书位于 `dev-data/`，生产环境禁止使用该密码。
@@ -67,4 +67,4 @@ make upstream-nginx-musl ARCH=arm64
 - [验证说明](docs/verification.zh-CN.md) ([English](docs/verification.md))
 - [配置示例](configs/config.example.yaml)
 
-RepoGate 的程序版本从 `0.0.1` 开始，并采用 [GNU GPL v3.0 only](LICENSE) 许可证。内置第三方组件声明见 [nginx/NOTICE.md](nginx/NOTICE.md)。
+MirrorRelay 的程序版本从 `0.0.1` 开始，并采用 [GNU GPL v3.0 only](LICENSE) 许可证。内置第三方组件声明见 [nginx/NOTICE.md](nginx/NOTICE.md)。

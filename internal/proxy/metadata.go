@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 var absoluteURLPattern = regexp.MustCompile(`https?://[^\s"'<>\\]+`)
@@ -149,7 +149,7 @@ func rewriteResponseBody(response *http.Response, repository model.Mirror, publi
 	sum := sha256.New()
 	_, _ = sum.Write([]byte("mirror-metadata-v5\x00" + repository.ProfileName + "\x00" + repository.ProfileVersion + "\x00" + repository.RewriteProfile + "\x00" + publicBase + "\x00" + encoding + "\x00"))
 	_, _ = sum.Write(output)
-	etag := `"repogate-v5-` + hex.EncodeToString(sum.Sum(nil)) + `"`
+	etag := `"mirrorrelay-v5-` + hex.EncodeToString(sum.Sum(nil)) + `"`
 	response.Body = io.NopCloser(bytes.NewReader(output))
 	response.ContentLength = int64(len(output))
 	response.Header.Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))

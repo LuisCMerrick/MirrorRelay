@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestRewriteResponseBodyOnlyAllowedHostsAndOwnsValidator(t *testing.T) {
@@ -42,7 +42,7 @@ func TestRewriteResponseBodyOnlyAllowedHostsAndOwnsValidator(t *testing.T) {
 	if !strings.Contains(text, `href="https://evil.example/x"`) {
 		t.Fatalf("unapproved URL changed: %s", text)
 	}
-	if response.Header.Get("ETag") != validator.ETag || !strings.HasPrefix(validator.ETag, `"repogate-v5-`) {
+	if response.Header.Get("ETag") != validator.ETag || !strings.HasPrefix(validator.ETag, `"mirrorrelay-v5-`) {
 		t.Fatalf("proxy ETag missing: response=%q validator=%q", response.Header.Get("ETag"), validator.ETag)
 	}
 	if response.Header.Get("Last-Modified") != "" || response.Header.Get("Digest") != "" || validator.LastModified != "" {

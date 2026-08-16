@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/database"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestRecoverLastActivePublishesPersistedRoutingSnapshot(t *testing.T) {

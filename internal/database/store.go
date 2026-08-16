@@ -11,8 +11,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/stats"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 )
 
 type Store struct{ db *sql.DB }

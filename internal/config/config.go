@@ -99,7 +99,7 @@ type UpstreamNginxConfig struct {
 	WorkerProcesses        string        `yaml:"worker_processes"`
 	WorkerUser             string        `yaml:"worker_user"`
 	WorkerConnections      int           `yaml:"worker_connections"`
-	StopOnRepoGateExit     bool          `yaml:"stop_on_repogate_exit"`
+	StopOnMirrorRelayExit  bool          `yaml:"stop_on_mirrorrelay_exit"`
 }
 
 type HTTPConfig struct {
@@ -233,34 +233,34 @@ type DistributedNodeSeed struct {
 
 func Default() Config {
 	return Config{
-		Server: ServerConfig{UnixSocketEnabled: true, FrontendSocket: "/run/repogate/frontend.sock",
+		Server: ServerConfig{UnixSocketEnabled: true, FrontendSocket: "/run/mirrorrelay/frontend.sock",
 			FrontendSocketModeText: "0660", FrontendSocketMode: 0o660, LocalPort: 9081},
-		Runtime:     RuntimeConfig{Root: "/var/lib/repogate/runtime", RunDir: "/run/repogate"},
-		Ingress:     IngressConfig{Mode: "external", GenerateSnippet: true, SnippetPath: "/var/lib/repogate/integration/external-nginx"},
+		Runtime:     RuntimeConfig{Root: "/var/lib/mirrorrelay/runtime", RunDir: "/run/mirrorrelay"},
+		Ingress:     IngressConfig{Mode: "external", GenerateSnippet: true, SnippetPath: "/var/lib/mirrorrelay/integration/external-nginx"},
 		Performance: PerformanceConfig{StreamBufferSize: 64 << 10, GOGC: 100},
 		Metadata:    MetadataConfig{RewriteBufferLimit: 8 << 20, OutputCompression: "auto", GzipMinLength: 1024, ValidatorEntries: 2048},
 		Redirect:    RedirectConfig{MaxHops: 5, PinValidatedIP: true, RejectMixedResult: true},
 		HTTP:        HTTPConfig{Listen: ":80", HTTPSListen: ":443", ReadTimeout: 15 * time.Second, IdleTimeout: 2 * time.Minute},
-		TLS:         TLSConfig{Certificate: "/etc/repogate/certs/fullchain.pem", PrivateKey: "/etc/repogate/certs/privkey.pem", MinVersion: "1.2"},
-		Database:    DatabaseConfig{Path: "/var/lib/repogate/repogate.db"},
-		Cache:       CacheConfig{Path: "/var/cache/repogate", MaxSizeBytes: 500 << 30, MaxFiles: 1_000_000, Inactive: 30 * 24 * time.Hour, MetadataTTL: 5 * time.Minute, PackageTTL: 30 * 24 * time.Hour, CleanupInterval: 10 * time.Minute, WaitForFill: 30 * time.Minute, MinimumFreeBytes: 1 << 30},
-		Logging:     LoggingConfig{Path: "/var/log/repogate", QueueSize: 8192, MaxSizeMB: 1024, KeepDays: 30},
+		TLS:         TLSConfig{Certificate: "/etc/mirrorrelay/certs/fullchain.pem", PrivateKey: "/etc/mirrorrelay/certs/privkey.pem", MinVersion: "1.2"},
+		Database:    DatabaseConfig{Path: "/var/lib/mirrorrelay/mirrorrelay.db"},
+		Cache:       CacheConfig{Path: "/var/cache/mirrorrelay", MaxSizeBytes: 500 << 30, MaxFiles: 1_000_000, Inactive: 30 * 24 * time.Hour, MetadataTTL: 5 * time.Minute, PackageTTL: 30 * 24 * time.Hour, CleanupInterval: 10 * time.Minute, WaitForFill: 30 * time.Minute, MinimumFreeBytes: 1 << 30},
+		Logging:     LoggingConfig{Path: "/var/log/mirrorrelay", QueueSize: 8192, MaxSizeMB: 1024, KeepDays: 30},
 		Security:    SecurityConfig{SessionTimeout: 12 * time.Hour, LoginWindow: 15 * time.Minute, LoginMaxFailures: 5},
 		Transport:   TransportConfig{DialTimeout: 10 * time.Second, KeepAlive: 30 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 512, MaxIdleConnsPerHost: 64},
 		Limits:      LimitsConfig{MaxTotalConcurrency: 0, MaxIPConcurrency: 0},
 		Health:      HealthConfig{WorkerInterval: 15 * time.Second},
 		Admin:       AdminConfig{Path: "/admin/", InitialUsername: "admin"},
 		Shutdown:    ShutdownConfig{GracePeriod: 30 * time.Minute},
-		UpstreamNginx: UpstreamNginxConfig{Mode: "managed", Binary: "/usr/lib/repogate/nginx/nginx", Prefix: "/var/lib/repogate/runtime/upstream-nginx",
-			PID:                   "/run/repogate/upstream-nginx.pid",
-			LogPath:               "/var/log/repogate/upstream-nginx",
-			UpstreamSocketEnabled: true, UpstreamSocket: "/run/repogate/upstream.sock",
+		UpstreamNginx: UpstreamNginxConfig{Mode: "managed", Binary: "/usr/lib/mirrorrelay/nginx/nginx", Prefix: "/var/lib/mirrorrelay/runtime/upstream-nginx",
+			PID:                   "/run/mirrorrelay/upstream-nginx.pid",
+			LogPath:               "/var/log/mirrorrelay/upstream-nginx",
+			UpstreamSocketEnabled: true, UpstreamSocket: "/run/mirrorrelay/upstream.sock",
 			UpstreamSocketModeText: "0600", UpstreamSocketMode: 0o600, UpstreamLocalPort: 9082,
 			CABundle: "/etc/ssl/certs/ca-certificates.crt", TLSVerifyDepth: 5,
 			Resolver: "1.1.1.1 8.8.8.8", ResolverRefresh: 5 * time.Minute,
 			HistoryLimit: 20, RestartMaxFailures: 5, RestartWindow: 2 * time.Minute,
-			RestartInitialBackoff: time.Second, RestartMaxBackoff: 30 * time.Second, WorkerProcesses: "auto", WorkerUser: "repogate", WorkerConnections: 4096,
-			StopOnRepoGateExit: false},
+			RestartInitialBackoff: time.Second, RestartMaxBackoff: 30 * time.Second, WorkerProcesses: "auto", WorkerUser: "mirrorrelay", WorkerConnections: 4096,
+			StopOnMirrorRelayExit: false},
 		Distributed: DistributedConfig{
 			Enabled: false,
 			Role:    "standalone",
@@ -324,7 +324,7 @@ func applyDevDefaults(cfg *Config) {
 	if cfg.HTTP.HTTPSListen == ":443" {
 		cfg.HTTP.HTTPSListen = "127.0.0.1:8443"
 	}
-	cfg.Database.Path = filepath.Join(devRoot, "repogate.db")
+	cfg.Database.Path = filepath.Join(devRoot, "mirrorrelay.db")
 	cfg.Cache.Path = filepath.Join(devRoot, "cache")
 	cfg.Logging.Path = filepath.Join(devRoot, "logs")
 	cfg.TLS.Certificate = filepath.Join(devRoot, "certs", "server.pem")
@@ -336,10 +336,10 @@ func applyDevDefaults(cfg *Config) {
 	cfg.UpstreamNginx.PID = filepath.Join(cfg.Runtime.RunDir, "upstream-nginx.pid")
 	cfg.UpstreamNginx.LogPath = filepath.Join(devRoot, "logs", "upstream-nginx")
 	cfg.Ingress.SnippetPath = filepath.Join(devRoot, "integration", "external-nginx")
-	if cfg.UpstreamNginx.Prefix == "/var/lib/repogate/runtime/upstream-nginx" {
+	if cfg.UpstreamNginx.Prefix == "/var/lib/mirrorrelay/runtime/upstream-nginx" {
 		cfg.UpstreamNginx.Prefix = filepath.Join(devRoot, "runtime", "upstream-nginx")
 	}
-	if cfg.UpstreamNginx.Binary == "/usr/lib/repogate/nginx/nginx" {
+	if cfg.UpstreamNginx.Binary == "/usr/lib/mirrorrelay/nginx/nginx" {
 		cfg.UpstreamNginx.Binary = "nginx"
 	}
 	if os.Geteuid() == 0 {
@@ -353,41 +353,41 @@ func applyDevDefaults(cfg *Config) {
 }
 
 func applyEnvironment(cfg *Config) {
-	if v := os.Getenv("REPOGATE_ADMIN_USERNAME"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_ADMIN_USERNAME"); v != "" {
 		cfg.Admin.InitialUsername = v
 	}
-	if v := os.Getenv("REPOGATE_ADMIN_PASSWORD_FILE"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_ADMIN_PASSWORD_FILE"); v != "" {
 		if content, err := os.ReadFile(v); err == nil {
 			cfg.Admin.InitialPassword = strings.TrimSpace(string(content))
 		}
 	}
-	if v := os.Getenv("REPOGATE_ADMIN_PASSWORD"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_ADMIN_PASSWORD"); v != "" {
 		cfg.Admin.InitialPassword = v
 	}
-	if v := os.Getenv("REPOGATE_ADMIN_HOST"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_ADMIN_HOST"); v != "" {
 		cfg.Admin.Host = v
 	}
-	if v := os.Getenv("REPOGATE_DISTRIBUTED_ROLE"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_ROLE"); v != "" {
 		cfg.Distributed.Role = v
 		if v == "coordinator" || v == "edge" {
 			cfg.Distributed.Enabled = true
 		}
 	}
-	if v := os.Getenv("REPOGATE_DISTRIBUTED_ENABLED"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			cfg.Distributed.Enabled = b
 		}
 	}
-	if v := os.Getenv("REPOGATE_DISTRIBUTED_TOKEN"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_TOKEN"); v != "" {
 		cfg.Distributed.Token = v
 	}
-	if v := os.Getenv("REPOGATE_NODE_NAME"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_NODE_NAME"); v != "" {
 		cfg.Distributed.Node.Name = v
 	}
-	if v := os.Getenv("REPOGATE_NODE_PUBLIC_BASE_URL"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_NODE_PUBLIC_BASE_URL"); v != "" {
 		cfg.Distributed.Node.PublicBaseURL = v
 	}
-	if v := os.Getenv("REPOGATE_NODE_REGION"); v != "" {
+	if v := os.Getenv("MIRRORRELAY_NODE_REGION"); v != "" {
 		cfg.Distributed.Node.Region = v
 	}
 }
@@ -709,7 +709,7 @@ func normalizeAdminPath(value string) (string, error) {
 		}
 	}
 	first := strings.ToLower(segments[0])
-	if first == "healthz" || first == "metrics" || first == "_mirror_auth" || first == "_repogate" {
+	if first == "healthz" || first == "metrics" || first == "_mirror_auth" || first == "_mirrorrelay" {
 		return "", errors.New("admin.path conflicts with a reserved system path")
 	}
 	return "/" + strings.Join(segments, "/") + "/", nil

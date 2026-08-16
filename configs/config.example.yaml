@@ -1,15 +1,15 @@
 server:
   unix_socket_enabled: true
-  frontend_socket: "/run/repogate/frontend.sock"
+  frontend_socket: "/run/mirrorrelay/frontend.sock"
   frontend_socket_mode: "0660"
   local_port: 9081
 runtime:
-  root: "/var/lib/repogate/runtime"
-  run_dir: "/run/repogate"
+  root: "/var/lib/mirrorrelay/runtime"
+  run_dir: "/run/mirrorrelay"
 ingress:
   mode: external
   generate_snippet: true
-  snippet_path: "/var/lib/repogate/integration/external-nginx"
+  snippet_path: "/var/lib/mirrorrelay/integration/external-nginx"
 performance:
   stream_buffer_size_bytes: 65536
   go_memory_limit_bytes: 0
@@ -31,13 +31,13 @@ http:
   write_timeout: 0s
   idle_timeout: 2m
 tls:
-  certificate: "/etc/repogate/certs/fullchain.pem"
-  private_key: "/etc/repogate/certs/privkey.pem"
+  certificate: "/etc/mirrorrelay/certs/fullchain.pem"
+  private_key: "/etc/mirrorrelay/certs/privkey.pem"
   min_version: "1.2"
 database:
-  path: "/var/lib/repogate/repogate.db"
+  path: "/var/lib/mirrorrelay/mirrorrelay.db"
 cache:
-  path: "/var/cache/repogate"
+  path: "/var/cache/mirrorrelay"
   max_size_bytes: 536870912000
   max_files: 1000000
   inactive: 720h
@@ -47,7 +47,7 @@ cache:
   wait_for_fill: 30m
   minimum_free_bytes: 1073741824
 logging:
-  path: "/var/log/repogate"
+  path: "/var/log/mirrorrelay"
   queue_size: 8192
   max_size_mb: 1024
   keep_days: 30
@@ -82,12 +82,12 @@ shutdown:
   grace_period: 30m
 upstream_nginx:
   mode: managed
-  binary: /usr/lib/repogate/nginx/nginx
-  prefix: /var/lib/repogate/runtime/upstream-nginx
-  pid: /run/repogate/upstream-nginx.pid
-  log_path: /var/log/repogate/upstream-nginx
+  binary: /usr/lib/mirrorrelay/nginx/nginx
+  prefix: /var/lib/mirrorrelay/runtime/upstream-nginx
+  pid: /run/mirrorrelay/upstream-nginx.pid
+  log_path: /var/log/mirrorrelay/upstream-nginx
   upstream_unix_socket_enabled: true
-  upstream_socket: /run/repogate/upstream.sock
+  upstream_socket: /run/mirrorrelay/upstream.sock
   upstream_socket_mode: "0600"
   upstream_local_port: 9082
   ca_bundle: /etc/ssl/certs/ca-certificates.crt
@@ -100,9 +100,9 @@ upstream_nginx:
   restart_initial_backoff: 1s
   restart_max_backoff: 30s
   worker_processes: auto
-  worker_user: repogate
+  worker_user: mirrorrelay
   worker_connections: 4096
-  stop_on_repogate_exit: false
+  stop_on_mirrorrelay_exit: false
 distributed:
   enabled: false
   role: standalone

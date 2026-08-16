@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestValidateRouteConflicts(t *testing.T) {
@@ -24,7 +24,7 @@ func TestValidateRouteConflicts(t *testing.T) {
 		{name: "administration path", repositories: appendCopy(base, model.Mirror{Slug: "console", PublicMode: "path", PublicPath: "/private-console/"}), want: "reserved administration"},
 		{name: "nested administration path", repositories: appendCopy(base, model.Mirror{Slug: "console-child", PublicMode: "path", PublicPath: "/private-console/assets/"}), want: "reserved administration"},
 		{name: "system path", repositories: appendCopy(base, model.Mirror{Slug: "auth", PublicMode: "path", PublicPath: "/_mirror_auth/custom/"}), want: "registry authentication endpoint"},
-		{name: "auxiliary resource path", repositories: appendCopy(base, model.Mirror{Slug: "auxiliary", PublicMode: "path", PublicPath: "/_repogate/upstream/"}), want: "upstream auxiliary resource endpoint"},
+		{name: "auxiliary resource path", repositories: appendCopy(base, model.Mirror{Slug: "auxiliary", PublicMode: "path", PublicPath: "/_mirrorrelay/upstream/"}), want: "upstream auxiliary resource endpoint"},
 		{name: "duplicate path", repositories: appendCopy(base, model.Mirror{Slug: "other", PublicMode: "path", PublicPath: "/packages/"}), want: "overlaps"},
 		{name: "nested repository path", repositories: appendCopy(base, model.Mirror{Slug: "nested", PublicMode: "path", PublicPath: "/packages/stable/"}), want: "overlaps"},
 		{name: "duplicate host", repositories: appendCopy(base, model.Mirror{Slug: "other", PublicMode: "host", PublicHost: "REGISTRY.EXAMPLE.COM"}), want: "used by both"},

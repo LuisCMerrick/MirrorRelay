@@ -170,12 +170,12 @@ type ClusterNode struct {
 }
 
 type ClusterManifest struct {
-	ProtocolVersion   int      `json:"protocol_version"`
-	RepoGateVersion   string   `json:"repogate_version"`
-	NodeID            string   `json:"node_id"`
-	ConfigGeneration  int64    `json:"config_generation"`
-	ConfigFingerprint string   `json:"config_fingerprint"`
-	Capabilities      []string `json:"capabilities"`
+	ProtocolVersion    int      `json:"protocol_version"`
+	MirrorRelayVersion string   `json:"mirrorrelay_version"`
+	NodeID             string   `json:"node_id"`
+	ConfigGeneration   int64    `json:"config_generation"`
+	ConfigFingerprint  string   `json:"config_fingerprint"`
+	Capabilities       []string `json:"capabilities"`
 }
 
 type ClusterHealth struct {

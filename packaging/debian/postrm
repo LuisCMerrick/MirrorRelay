@@ -6,17 +6,17 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 case "${1:-}" in
-  remove|purge) rm -rf -- /run/repogate ;;
+  remove|purge) rm -rf -- /run/mirrorrelay ;;
 esac
 
 if [ "${1:-}" = "purge" ]; then
   rm -rf -- \
-    /etc/repogate \
-    /var/lib/repogate \
-    /var/cache/repogate \
-    /var/log/repogate
-  userdel repogate >/dev/null 2>&1 || true
-  groupdel repogate >/dev/null 2>&1 || true
+    /etc/mirrorrelay \
+    /var/lib/mirrorrelay \
+    /var/cache/mirrorrelay \
+    /var/log/mirrorrelay
+  userdel mirrorrelay >/dev/null 2>&1 || true
+  groupdel mirrorrelay >/dev/null 2>&1 || true
 fi
 
 exit 0

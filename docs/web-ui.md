@@ -2,7 +2,7 @@
 
 [English](web-ui.md) | [简体中文](web-ui.zh-CN.md)
 
-RepoGate embeds its administration UI under `admin.path`, which defaults to `/admin/`. Its same-origin API is nested at `<admin.path>api/v1/`. The UI manages repositories, profiles, Managed Upstream Nginx, cache operations, health, logs and administrator accounts.
+MirrorRelay embeds its administration UI under `admin.path`, which defaults to `/admin/`. Its same-origin API is nested at `<admin.path>api/v1/`. The UI manages repositories, profiles, Managed Upstream Nginx, cache operations, health, logs and administrator accounts.
 
 The public shared-domain root `/` is a lightweight repository index. It lists every enabled repository visible to the requesting client and links path-mode repositories to their published paths, but it does not disclose the administration path. A dedicated host-mode repository still owns `/` on its configured host. The generated External Shared Nginx snippet includes exact index and configured administration locations without claiming unrelated paths.
 
@@ -14,13 +14,13 @@ Use the HTTPS URL published by External Shared Nginx, for example:
 https://repo.example.com/admin/
 ```
 
-Change `admin.path` only in `config.yaml`, then restart RepoGate and update the reviewed External Shared Nginx snippet. The value is normalized to a trailing slash and may use multiple safe path segments. A non-default path reduces unsolicited discovery but is not an authentication control; HTTPS, administrator credentials and `security.admin_cidrs` remain required controls.
+Change `admin.path` only in `config.yaml`, then restart MirrorRelay and update the reviewed External Shared Nginx snippet. The value is normalized to a trailing slash and may use multiple safe path segments. A non-default path reduces unsolicited discovery but is not an authentication control; HTTPS, administrator credentials and `security.admin_cidrs` remain required controls.
 
 The session cookie is `Secure`, `HttpOnly` and `SameSite=Strict`. Production sign-in therefore requires HTTPS and the UI and API must remain on the same origin. A plain-HTTP address on a non-loopback host can accept the login request but the browser will not retain the session cookie. Do not expose the private frontend socket or loopback fallback port directly to a network.
 
-On the first start, RepoGate creates the initial administrator from `REPOGATE_ADMIN_USERNAME` and `REPOGATE_ADMIN_PASSWORD`. These values are used only when the database contains no users. Configure `security.admin_cidrs` when the administration surface must be restricted to specific networks.
+On the first start, MirrorRelay creates the initial administrator from `MIRRORRELAY_ADMIN_USERNAME` and `MIRRORRELAY_ADMIN_PASSWORD`. These values are used only when the database contains no users. Configure `security.admin_cidrs` when the administration surface must be restricted to specific networks.
 
-The UI starts in English unless the browser's preferred languages include Chinese. Use `EN` or `中文` in the upper-right corner to choose manually; the selection is saved in browser local storage. Sign out from the bottom of the sidebar when the session is no longer needed.
+The UI starts in English unless the browser's preferred languages include Chinese. Use `EN` or `中文` in the upper-right corner to choose manually; the selection is saved in browser local storage. Language resources are cleanly decoupled into dedicated locale files (`locales/en.js` and `locales/zh.js`). Sign out from the bottom of the sidebar when the session is no longer needed.
 
 ## Operating model
 
@@ -35,8 +35,8 @@ A failed validation or reload leaves the previous active routing configuration i
 
 ## Recommended first-use sequence
 
-1. Open **System** and confirm the RepoGate and Managed Upstream Nginx versions, architecture and endpoints.
-2. Open **Health** and confirm that RepoGate, the frontend endpoint, Go Router, Managed Upstream Nginx and the upstream endpoint are healthy or running.
+1. Open **System** and confirm the MirrorRelay and Managed Upstream Nginx versions, architecture and endpoints.
+2. Open **Health** and confirm that MirrorRelay, the frontend endpoint, Go Router, Managed Upstream Nginx and the upstream endpoint are healthy or running.
 3. Open **Ingress integration**, review the generated snippet and apply it through the existing ingress administrator's normal process.
 4. Add one repository, test its upstreams and inspect its generated configuration.
 5. Open the public domain root and confirm that the repository appears in the index.
@@ -52,7 +52,7 @@ Dashboard summarizes:
 - active requests, request counts and traffic for today, 24 hours and 7 days;
 - cache hit rate and observed cache use;
 - per-repository traffic, status classes, cache hits/misses and upstream errors;
-- RepoGate and Managed Upstream Nginx versions, build IDs, architecture and uptime.
+- MirrorRelay and Managed Upstream Nginx versions, build IDs, architecture and uptime.
 
 Dashboard counters are operational observations, not billing records. Cache usage is scanned asynchronously, so it can lag behind a purge or filesystem change.
 
@@ -82,11 +82,11 @@ Enter one upstream per line as `priority URL`:
 
 Lower priority numbers are considered first. URLs must include `http://` or `https://`; HTTP and private-address origins require both the global security switch and the repository switch. TLS verification cannot be disabled.
 
-For path mode, supply a public path such as `/debian/`. RepoGate rejects paths that equal or contain the administration/system paths, overlap another repository path, or replace the root index. It also rejects duplicate public hosts and, when `http.public_base_url` is set, a host-mode repository that would claim the shared host. For host mode, supply a dedicated public host and complete the TLS/server block in External Shared Nginx. Use **Admin CIDR only** only when `security.admin_cidrs` defines the intended clients.
+For path mode, supply a public path such as `/debian/`. MirrorRelay rejects paths that equal or contain the administration/system paths, overlap another repository path, or replace the root index. It also rejects duplicate public hosts and, when `http.public_base_url` is set, a host-mode repository that would claim the shared host. For host mode, supply a dedicated public host and complete the TLS/server block in External Shared Nginx. Use **Admin CIDR only** only when `security.admin_cidrs` defines the intended clients.
 
-**Rewrite same-origin URLs in browsable HTML** is a per-repository compatibility switch and is off by default. It resolves HTML `href`, `src`, `srcset`, `action` and related URL attributes against the actual upstream page URL. A target inside the configured upstream repository base maps back into the public repository namespace. A target outside that base but on the same upstream origin maps to `/_repogate/upstream/<repository-id>/...`, so upstream icons, stylesheets, scripts and images remain available without changing their content. Cross-origin URLs and non-HTTP(S) schemes are left unchanged.
+**Rewrite same-origin URLs in browsable HTML** is a per-repository compatibility switch and is off by default. It resolves HTML `href`, `src`, `srcset`, `action` and related URL attributes against the actual upstream page URL. A target inside the configured upstream repository base maps back into the public repository namespace. A target outside that base but on the same upstream origin maps to `/_mirrorrelay/upstream/<repository-id>/...`, so upstream icons, stylesheets, scripts and images remain available without changing their content. Cross-origin URLs and non-HTTP(S) schemes are left unchanged.
 
-The auxiliary route accepts only `GET` and `HEAD`, remains bound to the repository's public host/access policy, and uses the same pinned upstream, TLS verification, headers, cache policy and limits as that repository. Enabling it intentionally makes same-origin upstream paths outside the configured repository base reachable through the auxiliary scope; enable it only when that upstream surface is appropriate to expose. The generated External Shared Nginx snippet includes `/_repogate/upstream/` when an enabled path-mode repository needs it. Apply the refreshed snippet to the shared ingress. HTML bodies use the repository metadata rewrite limit, compression policy and generated representation validators.
+The auxiliary route accepts only `GET` and `HEAD`, remains bound to the repository's public host/access policy, and uses the same pinned upstream, TLS verification, headers, cache policy and limits as that repository. Enabling it intentionally makes same-origin upstream paths outside the configured repository base reachable through the auxiliary scope; enable it only when that upstream surface is appropriate to expose. The generated External Shared Nginx snippet includes `/_mirrorrelay/upstream/` when an enabled path-mode repository needs it. Apply the refreshed snippet to the shared ingress. HTML bodies use the repository metadata rewrite limit, compression policy and generated representation validators.
 
 Select **Validate, save and activate** to submit the candidate. Success means candidate generation, validation, persistence, atomic publication and graceful reload all completed. An error remains in the form and does not replace the active configuration.
 
@@ -126,11 +126,11 @@ Do not treat rollback as a text-only Nginx rollback: it changes the persisted re
 
 Custom fragments target a controlled `http`, `server`, `location`, `upstream` or repository context. Use repository ID `0` for a global fragment. Saving or deleting a fragment generates and validates the complete candidate before activation.
 
-RepoGate rejects directives that could escape the selected context, create listeners/routes/upstream targets, weaken TLS validation, alter cache identity or bypass, access the filesystem or environment, or use reserved variables and internal headers. Custom fragments are an advanced escape hatch; prefer repository fields whenever they express the requirement.
+MirrorRelay rejects directives that could escape the selected context, create listeners/routes/upstream targets, weaken TLS validation, alter cache identity or bypass, access the filesystem or environment, or use reserved variables and internal headers. Custom fragments are an advanced escape hatch; prefer repository fields whenever they express the requirement.
 
 ## Ingress integration
 
-This page reports the ingress mode and frontend network/address, then displays the generated External Shared Nginx snippet. RepoGate does not install, edit or reload the shared ingress. Review the file, complete any certificate placeholders and apply it using that ingress deployment's normal change procedure.
+This page reports the ingress mode and frontend network/address, then displays the generated External Shared Nginx snippet. MirrorRelay does not install, edit or reload the shared ingress. Review the file, complete any certificate placeholders and apply it using that ingress deployment's normal change procedure.
 
 ## Cache
 
@@ -140,13 +140,13 @@ The purge/reclaim table distinguishes immediate logical invalidation from delaye
 
 ## Health
 
-Health separates RepoGate, the frontend endpoint, External Shared Nginx, Go Router, Managed Upstream Nginx, the upstream endpoint and each repository. An unknown repository usually means no successful check has completed; an unhealthy repository should be investigated with **Repositories → Test**, its upstream details and the logs.
+Health separates MirrorRelay, the frontend endpoint, External Shared Nginx, Go Router, Managed Upstream Nginx, the upstream endpoint and each repository. An unknown repository usually means no successful check has completed; an unhealthy repository should be investigated with **Repositories → Test**, its upstream details and the logs.
 
 ## Access log, audit log and system
 
 - **Access log** displays the latest Managed Upstream Nginx access records and supports manual refresh.
 - **Audit log** records administrative users, client addresses, actions, objects/details and success or failure.
-- **System** reports RepoGate build/runtime information, memory and file-descriptor counters, ingress/TLS endpoints and the exact Managed Upstream Nginx checksum and lifecycle status.
+- **System** reports MirrorRelay build/runtime information, memory and file-descriptor counters, ingress/TLS endpoints and the exact Managed Upstream Nginx checksum and lifecycle status.
 
 Use the audit log to establish who changed configuration; use the access log for data-plane requests; use the application and Nginx error logs on disk for startup, validation and upstream failures.
 
@@ -154,13 +154,13 @@ Use the audit log to establish who changed configuration; use the access log for
 
 The **Settings** page manages most operational values that also exist in `config.yaml`: local Unix/TCP endpoints, ingress mode, HTTP/TLS behavior, performance, metadata, redirects, cache defaults, security and administrator CIDRs, transport pools and timeouts, concurrency and bandwidth limits, log rotation, health scheduling, shutdown and Managed Upstream Nginx lifecycle settings.
 
-Selecting **Validate and save** validates the complete merged configuration before storing the override in SQLite. The saved Web UI values take precedence over matching YAML values on the next RepoGate start. They do not hot-reload the running process; use the displayed command after saving:
+Selecting **Validate and save** validates the complete merged configuration before storing the override in SQLite. The saved Web UI values take precedence over matching YAML values on the next MirrorRelay start. They do not hot-reload the running process. You can select **Restart now** / **Restart MirrorRelay** directly in the Web UI or execute the displayed CLI command:
 
 ```sh
-sudo systemctl restart repogate
+sudo systemctl restart mirrorrelay
 ```
 
-After restart, the page reports that the running process matches the saved values. **Reset to YAML after restart** removes the Web UI override; restart again to make the YAML values active.
+After restart, the page automatically reconnects and reports that the running process matches the saved values. A **Restart service** button is also available directly on the **System** page. **Reset to YAML after restart** removes the Web UI override; restart again to make the YAML values active.
 
 Bootstrap, credential, filesystem and executable locations remain file-only so the running service cannot relocate its own trust boundary or database. The page displays the exact protected list, including socket paths/modes, runtime paths, ingress snippet path, TLS key/certificate paths, database/cache/log paths, initial administrator settings and Managed Upstream Nginx binary, prefix, PID, log, socket and CA-bundle paths.
 
@@ -181,10 +181,10 @@ Administrator accounts have the same UI privileges in this release. Use separate
 | `403 forbidden` before login | The effective client address is outside `security.admin_cidrs` |
 | Repository remains Desired/Failed | Open Details for the validation error, then inspect generated config and Managed Upstream Nginx status |
 | Upstream is unhealthy | Run Test; verify URL, DNS, CA bundle, expected status, private/HTTP authorization and redirect hosts |
-| Directory page loads without icons or styles | Enable **Rewrite same-origin URLs in browsable HTML**, activate the repository, and apply the refreshed `/_repogate/upstream/` External Shared Nginx location |
+| Directory page loads without icons or styles | Enable **Rewrite same-origin URLs in browsable HTML**, activate the repository, and apply the refreshed `/_mirrorrelay/upstream/` External Shared Nginx location |
 | Purge completed but disk use did not immediately fall | Logical invalidation is immediate; wait for asynchronous physical reclaim and the next usage scan |
 | A repository action does nothing after an upgrade | Hard-refresh the configured `admin.path` once so the browser loads the current embedded script; then inspect the visible error and Audit log |
 | Copy buttons fail | The UI automatically uses its local copy fallback; if the browser still blocks it, copy from the displayed value manually |
-| Saved Settings do not affect the process | Restart RepoGate and confirm that the page no longer reports pending saved values |
+| Saved Settings do not affect the process | Restart MirrorRelay and confirm that the page no longer reports pending saved values |
 
 For host-level diagnosis, continue with [Configuration](configuration.md), [Installation](installation.md) and [Verification](verification.md).

@@ -21,15 +21,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/accesslog"
-	"github.com/LuisCMerrick/RepoGate/internal/auth"
-	"github.com/LuisCMerrick/RepoGate/internal/cachectl"
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/limit"
-	"github.com/LuisCMerrick/RepoGate/internal/mirror"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
-	"github.com/LuisCMerrick/RepoGate/internal/security"
-	"github.com/LuisCMerrick/RepoGate/internal/stats"
+	"github.com/LuisCMerrick/MirrorRelay/internal/accesslog"
+	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
+	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/limit"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
+	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 )
 
 type requestMetaKey struct{}
@@ -327,8 +327,8 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 
 func (e *Engine) rewrite(proxyRequest *httputil.ProxyRequest) {
 	proxyRequest.Out.URL.Scheme = "http"
-	proxyRequest.Out.URL.Host = "repogate-upstream-nginx-internal"
-	proxyRequest.Out.Host = "repogate-upstream-nginx-internal"
+	proxyRequest.Out.URL.Host = "mirrorrelay-upstream-nginx-internal"
+	proxyRequest.Out.Host = "mirrorrelay-upstream-nginx-internal"
 	stripUntrustedHeaders(proxyRequest.Out.Header)
 }
 
@@ -734,8 +734,8 @@ func credentialPartitionKey(repository model.Mirror, header http.Header) string 
 
 func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestMeta, upstreamID int64) (*http.Response, error) {
 	out := original.Clone(context.WithValue(original.Context(), requestMetaKey{}, meta))
-	out.URL = &url.URL{Scheme: "http", Host: "repogate-upstream-nginx-internal"}
-	out.Host = "repogate-upstream-nginx-internal"
+	out.URL = &url.URL{Scheme: "http", Host: "mirrorrelay-upstream-nginx-internal"}
+	out.Host = "mirrorrelay-upstream-nginx-internal"
 	out.RequestURI = ""
 	stripUntrustedHeaders(out.Header)
 	out.Header.Set("X-Mirror-Internal-Repository-ID", strconv.FormatInt(meta.repository.ID, 10))

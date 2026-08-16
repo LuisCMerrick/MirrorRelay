@@ -1,30 +1,30 @@
 #!/bin/sh
 set -e
 
-if ! getent group repogate >/dev/null 2>&1; then
-  groupadd --system repogate
+if ! getent group mirrorrelay >/dev/null 2>&1; then
+  groupadd --system mirrorrelay
 fi
-if ! getent passwd repogate >/dev/null 2>&1; then
-  useradd --system --gid repogate --home-dir /var/lib/repogate --no-create-home --shell /usr/sbin/nologin repogate
+if ! getent passwd mirrorrelay >/dev/null 2>&1; then
+  useradd --system --gid mirrorrelay --home-dir /var/lib/mirrorrelay --no-create-home --shell /usr/sbin/nologin mirrorrelay
 fi
 
-install -d -m 0750 -o repogate -g repogate \
-  /var/lib/repogate \
-  /var/lib/repogate/runtime/upstream-nginx \
-  /var/cache/repogate \
-  /var/log/repogate \
-  /var/log/repogate/upstream-nginx
+install -d -m 0750 -o mirrorrelay -g mirrorrelay \
+  /var/lib/mirrorrelay \
+  /var/lib/mirrorrelay/runtime/upstream-nginx \
+  /var/cache/mirrorrelay \
+  /var/log/mirrorrelay \
+  /var/log/mirrorrelay/upstream-nginx
 
-if [ -f /etc/repogate/config.yaml ]; then
-  chown root:repogate /etc/repogate/config.yaml
-  chmod 0640 /etc/repogate/config.yaml
+if [ -f /etc/mirrorrelay/config.yaml ]; then
+  chown root:mirrorrelay /etc/mirrorrelay/config.yaml
+  chmod 0640 /etc/mirrorrelay/config.yaml
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
-  if [ -f /var/lib/repogate/.package-active ]; then
-    rm -f /var/lib/repogate/.package-active
-    systemctl start repogate.service || true
+  if [ -f /var/lib/mirrorrelay/.package-active ]; then
+    rm -f /var/lib/mirrorrelay/.package-active
+    systemctl start mirrorrelay.service || true
   fi
 fi
 

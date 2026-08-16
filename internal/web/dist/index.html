@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>RepoGate</title>
+  <title>MirrorRelay</title>
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="managed.css">
 </head>
@@ -14,7 +14,7 @@
   </div>
   <main id="login" class="login-wrap hidden">
     <form id="login-form" class="panel login-card">
-      <div class="brand-mark">R</div><h1>RepoGate</h1><p data-i18n="tagline">Linux repository reverse-proxy gateway</p>
+      <div class="brand-mark">M</div><h1>MirrorRelay</h1><p data-i18n="tagline">Linux repository reverse-proxy gateway</p>
       <label><span data-i18n="username">Username</span><input id="login-user" autocomplete="username" required></label>
       <label><span data-i18n="password">Password</span><input id="login-password" type="password" autocomplete="current-password" required></label>
       <button type="submit" data-i18n="signIn">Sign in</button><div id="login-error" class="error"></div>
@@ -23,7 +23,7 @@
 
   <div id="app" class="shell hidden">
     <aside>
-      <div class="brand"><span class="brand-mark">R</span><div><strong>RepoGate</strong><small>Repository Gateway</small></div></div>
+      <div class="brand"><span class="brand-mark">M</span><div><strong>MirrorRelay</strong><small>Repository Gateway</small></div></div>
       <nav>
         <button data-page="dashboard" class="active" data-i18n="navDashboard">Dashboard</button>
         <button data-page="mirrors" data-i18n="navRepositories">Repositories</button>
@@ -162,6 +162,8 @@
     </div><footer><button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="save">Save</button></footer><div id="node-error" class="error"></div>
   </form></dialog>
 
+  <script src="locales/en.js" defer></script>
+  <script src="locales/zh.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

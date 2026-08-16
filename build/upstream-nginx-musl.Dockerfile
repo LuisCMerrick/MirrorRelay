@@ -19,7 +19,7 @@ ENV SOURCE_DATE_EPOCH=0
 ENV TZ=UTC
 
 COPY --from=xx / /
-COPY --chmod=0755 build/target-uname.sh /opt/repogate-cross/bin/uname
+COPY --chmod=0755 build/target-uname.sh /opt/mirrorrelay-cross/bin/uname
 
 RUN case "${TARGETARCH}" in amd64|arm64) ;; *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac
 RUN apk add --no-cache bash binutils build-base ca-certificates clang curl file lld llvm perl
@@ -52,8 +52,8 @@ RUN set -eu; \
     export AR="${target_triple}-ar"; \
     export RANLIB="${target_triple}-ranlib"; \
     export STRIP="${target_triple}-strip"; \
-    REPOGATE_TARGETARCH="${TARGETARCH}" PATH="/opt/repogate-cross/bin:${PATH}" ./configure \
-      --prefix=/usr/lib/repogate/nginx \
+    MIRRORRELAY_TARGETARCH="${TARGETARCH}" PATH="/opt/mirrorrelay-cross/bin:${PATH}" ./configure \
+      --prefix=/usr/lib/mirrorrelay/nginx \
       --sbin-path=nginx \
       --conf-path=conf/nginx.conf \
       --pid-path=run/nginx.pid \

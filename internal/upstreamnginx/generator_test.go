@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type fixedResolver map[string][]netip.Addr
@@ -19,10 +19,10 @@ func (r fixedResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.A
 }
 
 func TestWorkerUserDirectiveRequiresRootMaster(t *testing.T) {
-	if got := workerUserDirective("repogate", 1000); got != "" {
+	if got := workerUserDirective("mirrorrelay", 1000); got != "" {
 		t.Fatalf("non-root master received a user directive: %q", got)
 	}
-	if got := workerUserDirective("repogate", 0); got != "user repogate;\n" {
+	if got := workerUserDirective("mirrorrelay", 0); got != "user mirrorrelay;\n" {
 		t.Fatalf("root master user directive = %q", got)
 	}
 	if got := workerUserDirective("", 0); got != "" {
@@ -51,7 +51,7 @@ func TestGeneratePinsValidatedConfiguredAndDynamicTargets(t *testing.T) {
 	}
 	routes := generated.Files["repositories.conf"]
 	upstreamGroups := generated.Files["upstreams.conf"]
-	if !strings.Contains(upstreamGroups, `server 8.8.8.8:443`) || !strings.Contains(upstreamGroups, `server [2606:4700:4700::1111]:443`) || !strings.Contains(routes, `set $repo_1_origin "https://repogate_repo_1_11"`) {
+	if !strings.Contains(upstreamGroups, `server 8.8.8.8:443`) || !strings.Contains(upstreamGroups, `server [2606:4700:4700::1111]:443`) || !strings.Contains(routes, `set $repo_1_origin "https://mirrorrelay_repo_1_11"`) {
 		t.Fatalf("configured upstream must use the validated pinned address:\n%s", routes)
 	}
 	if !strings.Contains(routes, "proxy_ssl_name repo.example") || !strings.Contains(routes, "proxy_set_header Host repo.example") {
@@ -75,7 +75,7 @@ func TestGeneratePinsValidatedConfiguredAndDynamicTargets(t *testing.T) {
 	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "proxy_pass http://unix:/run/mm/frontend.sock:") || !strings.Contains(generated.Files["external-nginx-integration.conf"], "X-Mirror-Internal-Upstream-Address") {
 		t.Fatalf("External Shared Nginx integration security snippet missing:\n%s", generated.Files["external-nginx-integration.conf"])
 	}
-	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "server_name docker.example.com;") || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/apt/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/admin/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/_repogate/upstream/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location = "/"`) {
+	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "server_name docker.example.com;") || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/apt/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/admin/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location ^~ "/_mirrorrelay/upstream/"`) || !strings.Contains(generated.Files["external-nginx-integration.conf"], `location = "/"`) {
 		t.Fatalf("External Shared Nginx integration must generate host and path routes:\n%s", generated.Files["external-nginx-integration.conf"])
 	}
 }
@@ -174,7 +174,7 @@ func TestStaticCredentialsDisableCacheUnlessExplicitlyAllowed(t *testing.T) {
 	repository.CacheAuthenticated = true
 	out.Reset()
 	NewGenerator(cfg, nil).writeCache(&out, repository, "package", time.Hour)
-	if !strings.Contains(out.String(), "proxy_cache repogate_cache;") || strings.Contains(out.String(), "$http_authorization") || strings.Contains(out.String(), "$http_cookie") {
+	if !strings.Contains(out.String(), "proxy_cache mirrorrelay_cache;") || strings.Contains(out.String(), "$http_authorization") || strings.Contains(out.String(), "$http_cookie") {
 		t.Fatalf("explicit authenticated-cache policy was not applied:\n%s", out.String())
 	}
 }

@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/LuisCMerrick/RepoGate/internal/config"
-	"github.com/LuisCMerrick/RepoGate/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 type Store interface {
@@ -292,7 +292,7 @@ func (c *Controller) publishIntegration(generated Generated) {
 	}
 	target := c.cfg.Ingress.SnippetPath
 	if !strings.EqualFold(filepath.Ext(target), ".conf") {
-		target = filepath.Join(target, "repogate.conf")
+		target = filepath.Join(target, "mirrorrelay.conf")
 	}
 	err := os.MkdirAll(filepath.Dir(target), 0o750)
 	if err == nil {
