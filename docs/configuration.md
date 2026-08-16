@@ -157,9 +157,37 @@ MirrorRelay trusts forwarded client IP headers only when the immediate peer is t
 
 Managed Upstream Nginx access/error logs live under `upstream_nginx.log_path` and are rotated by MirrorRelay by date/size, followed by an Nginx log reopen. MirrorRelay access and application JSON logs are asynchronously written and use the same rotation and retention settings; audit events are stored in SQLite.
 
+## UI Enhancement and Appearance
+
+MirrorRelay provides optional appearance customization, color themes, directory browser rewriting, and repository client help guides.
+
+| Key | Description |
+|---|---|
+| `ui_enhancement.enabled` | Global UI enhancement switch (default `false`). When `false`, zero styling or rewriting interference occurs. |
+| `ui_enhancement.theme` | Theme mode: `system` (default), `light`, or `dark` |
+| `ui_enhancement.accent_color` | Accent color hex code (e.g. `#2563eb`) |
+| `ui_enhancement.branding.title` | Custom instance title / site name (default `MirrorRelay`) |
+| `ui_enhancement.branding.logo` | Custom logo image URL |
+| `ui_enhancement.branding.favicon` | Custom favicon image URL |
+| `ui_enhancement.login.title` | Login page heading title |
+| `ui_enhancement.login.subtitle` | Login page subtitle |
+| `ui_enhancement.custom_css.enabled` | Enable custom CSS stylesheet injection |
+| `ui_enhancement.custom_css.file` | Path to custom CSS file (served via `GET /ui/custom.css`) |
+| `ui_enhancement.repository_browser.enabled` | Enable modern responsive directory listing browser (default `true` when UI enhancement is active) |
+
+> **Safe Mode**: Append `?safe-ui=1` to any directory or help URL to bypass all UI enhancement styling and JavaScript, falling back directly to raw upstream HTML.
+
+## Client Configuration Help
+
+MirrorRelay supports built-in and customized interactive client configuration documentation for repositories (e.g. Debian, Ubuntu, Rocky Linux, Alpine, PyPI, npm, Docker CE, OpenWrt).
+
+- Public overview route: `GET /help/`
+- Interactive repository help route: `GET /help/<slug>/`
+- Credential scrubbing: Upstream URLs referenced in help templates automatically scrub embedded credentials and query strings.
+
 ## Repository overrides
 
-The Web UI and repository API expose profile/version, routing mode, multiple upstreams, strip/add prefixes, Host and request-header changes, connect/read/send timeouts, cache class TTLs, authenticated caching, metadata rewrite hosts/buffer limits, the per-repository `html_rewrite_enabled` switch, health policy, concurrency/bandwidth limits, access policy, Registry auth/token/blob policy and the HTTP/private permission switches. Repository validation rejects root/system/administration/`/_mirrorrelay/` path conflicts, duplicate or overlapping repository paths, duplicate public hosts and a host-mode repository that claims the configured shared host.
+The Web UI and repository API expose profile/version, routing mode, multiple upstreams, strip/add prefixes, Host and request-header changes, connect/read/send timeouts, cache class TTLs, authenticated caching, metadata rewrite hosts/buffer limits, the per-repository `html_rewrite_enabled` switch, health policy, concurrency/bandwidth limits, access policy, client help documentation settings (`help.enabled`, `help.template`, `help.title`, `help.summary`), Registry auth/token/blob policy and the HTTP/private permission switches. Repository validation rejects root/system/administration/`/_mirrorrelay/` path conflicts, duplicate or overlapping repository paths, duplicate public hosts and a host-mode repository that claims the configured shared host.
 
 `html_rewrite_enabled` defaults to `false`. When enabled for a browsable repository response, MirrorRelay resolves same-origin HTML URLs against the selected upstream page. URLs below the effective upstream base (including `add_prefix`) return to the public repository namespace (including `strip_prefix`); other paths on the same origin use `/_mirrorrelay/upstream/<repository-id>/`. The auxiliary scope never authorizes another origin and uses the repository's normal upstream group and policy. It does expand the reachable path surface on that origin, so treat the switch as an explicit publication decision. The generated shared-ingress snippet contains the required auxiliary location for path-mode repositories.
 

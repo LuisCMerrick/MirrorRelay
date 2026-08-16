@@ -38,6 +38,7 @@
         <button data-page="audit" data-i18n="navAudit">Audit log</button>
         <button data-page="system" data-i18n="navSystem">System</button>
         <button data-page="settings" data-i18n="navSettings">Settings</button>
+        <button data-page="appearance" data-i18n="navAppearance">Appearance</button>
         <button data-page="users" data-i18n="navUsers">Users</button>
         <button data-page="account" data-i18n="navAccount">My account</button>
       </nav>
@@ -60,6 +61,7 @@
       <section id="page-audit" class="page hidden"></section>
       <section id="page-system" class="page hidden"></section>
       <section id="page-settings" class="page hidden"></section>
+      <section id="page-appearance" class="page hidden"></section>
       <section id="page-users" class="page hidden"></section>
       <section id="page-account" class="page hidden"></section>
     </section>
@@ -132,6 +134,13 @@
       <label class="check"><input id="pull-only" type="checkbox" checked><span data-i18n="pullOnly">Pull only</span></label>
       <label class="check"><input id="allow-http" type="checkbox"><span data-i18n="allowHTTP">Allow HTTP upstream (requires system policy)</span></label>
       <label class="check"><input id="allow-private" type="checkbox"><span data-i18n="allowPrivate">Allow private upstream (requires system policy)</span></label>
+    </div></fieldset>
+
+    <fieldset><legend data-i18n="helpDocumentation">Help and documentation</legend><div class="form-grid">
+      <label class="check wide"><input id="help-enabled" type="checkbox"><span data-i18n="enableHelp">Enable client configuration help</span></label>
+      <label><span data-i18n="helpTemplate">Help template</span><select id="help-template"><option value="">None / 无</option></select></label>
+      <label><span data-i18n="helpTitle">Help title</span><input id="help-title" placeholder="Debian"></label>
+      <label class="wide"><span data-i18n="helpSummary">Help summary</span><input id="help-summary" placeholder="Debian 软件源使用说明"></label>
     </div></fieldset>
 
     <footer><button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="saveActivate">Validate, save and activate</button></footer><div id="form-error" class="error"></div>

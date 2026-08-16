@@ -7,26 +7,29 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 const WebSettingsKey = "web_settings_v1"
 
 type WebSettings struct {
-	Server        WebServerSettings        `json:"server"`
-	Ingress       WebIngressSettings       `json:"ingress"`
-	Performance   WebPerformanceSettings   `json:"performance"`
-	Metadata      WebMetadataSettings      `json:"metadata"`
-	Redirect      WebRedirectSettings      `json:"redirect"`
-	HTTP          WebHTTPSettings          `json:"http"`
-	TLS           WebTLSSettings           `json:"tls"`
-	Cache         WebCacheSettings         `json:"cache"`
-	Logging       WebLoggingSettings       `json:"logging"`
-	Security      WebSecuritySettings      `json:"security"`
-	Transport     WebTransportSettings     `json:"transport"`
-	Limits        WebLimitSettings         `json:"limits"`
-	Health        WebHealthSettings        `json:"health"`
-	Shutdown      WebShutdownSettings      `json:"shutdown"`
-	UpstreamNginx WebUpstreamNginxSettings `json:"upstream_nginx"`
+	Server        WebServerSettings         `json:"server"`
+	Ingress       WebIngressSettings        `json:"ingress"`
+	Performance   WebPerformanceSettings    `json:"performance"`
+	Metadata      WebMetadataSettings       `json:"metadata"`
+	Redirect      WebRedirectSettings       `json:"redirect"`
+	HTTP          WebHTTPSettings           `json:"http"`
+	TLS           WebTLSSettings            `json:"tls"`
+	Cache         WebCacheSettings          `json:"cache"`
+	Logging       WebLoggingSettings        `json:"logging"`
+	Security      WebSecuritySettings       `json:"security"`
+	Transport     WebTransportSettings      `json:"transport"`
+	Limits        WebLimitSettings          `json:"limits"`
+	Health        WebHealthSettings         `json:"health"`
+	Shutdown      WebShutdownSettings       `json:"shutdown"`
+	UpstreamNginx WebUpstreamNginxSettings  `json:"upstream_nginx"`
+	UIEnhancement model.UIEnhancementConfig `json:"ui_enhancement"`
 }
 
 type WebServerSettings struct {
@@ -170,6 +173,7 @@ func WebSettingsFrom(c Config) WebSettings {
 			RestartInitialBackoff: c.UpstreamNginx.RestartInitialBackoff.String(), RestartMaxBackoff: c.UpstreamNginx.RestartMaxBackoff.String(),
 			WorkerProcesses: c.UpstreamNginx.WorkerProcesses, WorkerUser: c.UpstreamNginx.WorkerUser,
 			WorkerConnections: c.UpstreamNginx.WorkerConnections, StopOnMirrorRelayExit: c.UpstreamNginx.StopOnMirrorRelayExit},
+		UIEnhancement: c.UIEnhancement,
 	}
 }
 
@@ -198,6 +202,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.UpstreamNginx.HistoryLimit, candidate.UpstreamNginx.RestartMaxFailures = w.UpstreamNginx.HistoryLimit, w.UpstreamNginx.RestartMaxFailures
 	candidate.UpstreamNginx.WorkerProcesses, candidate.UpstreamNginx.WorkerUser = w.UpstreamNginx.WorkerProcesses, w.UpstreamNginx.WorkerUser
 	candidate.UpstreamNginx.WorkerConnections, candidate.UpstreamNginx.StopOnMirrorRelayExit = w.UpstreamNginx.WorkerConnections, w.UpstreamNginx.StopOnMirrorRelayExit
+	candidate.UIEnhancement = w.UIEnhancement
 
 	durations := []struct {
 		name      string

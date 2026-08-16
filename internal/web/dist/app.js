@@ -181,7 +181,7 @@ document.querySelectorAll('nav button').forEach(button => button.addEventListene
 }));
 
 async function renderCurrentPage() {
-  const loaders = {dashboard: loadDashboard, mirrors: loadMirrors, profiles: loadProfiles, 'upstream-nginx': loadUpstreamNginx, custom: loadCustom, ingress: loadIngress, cluster: loadCluster, cache: loadCache, health: loadHealth, access: loadAccess, audit: loadAudit, system: loadSystem, settings: loadSettings, users: loadUsers, account: loadAccount};
+  const loaders = {dashboard: loadDashboard, mirrors: loadMirrors, profiles: loadProfiles, 'upstream-nginx': loadUpstreamNginx, custom: loadCustom, ingress: loadIngress, cluster: loadCluster, cache: loadCache, health: loadHealth, access: loadAccess, audit: loadAudit, system: loadSystem, settings: loadSettings, appearance: loadAppearance, users: loadUsers, account: loadAccount};
   try { await (loaders[currentPage] || loadDashboard)(); } catch (error) { notice(error.message, true); }
 }
 
@@ -233,8 +233,20 @@ async function loadDashboard() {
 function card(label, value, accent = false) { return `<div class="card"><small>${esc(label)}</small><strong class="${accent ? 'accent' : ''}">${esc(value)}</strong></div>`; }
 function kv(label, value) { return `<div class="kv"><span>${esc(label)}</span><span>${esc(value)}</span></div>`; }
 
+let helpTemplates = [];
+async function loadHelpTemplates() {
+  helpTemplates = (await api('/help/templates').catch(() => [])) || [];
+  const options = `<option value="">${L('None / 无')}</option>` + helpTemplates.map(t => `<option value="${esc(t.id)}">${esc(t.title)} (${esc(t.type)})</option>`).join('');
+  const el = $('#help-template');
+  if (el) el.innerHTML = options;
+}
+
 async function loadProfilesData() {
-  profiles = (await api('/profiles')) || [];
+  const [profileList] = await Promise.all([
+    api('/profiles').catch(() => []),
+    loadHelpTemplates()
+  ]);
+  profiles = profileList || [];
   $('#template').innerHTML = `<option value="">${L('Custom')}</option>` + profiles.map((profile, index) => `<option value="${index}">${esc(profile.name)} · ${esc(profile.version)}${profile.latest_stable ? ` · ${L('latest')}` : ''}</option>`).join('');
 }
 
@@ -250,13 +262,14 @@ async function loadMirrors() {
   const rows = mirrors.map(repository => {
     const active = activeUpstreamFor(repository);
     const health = healthFor(repository);
+    const helpBtn = repository.help?.enabled && repository.help?.template ? `<a class="button-link" href="/help/${esc(repository.slug)}/" target="_blank" style="padding:6px 10px;text-decoration:none;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:13px;display:inline-block;">${L('Help')}</a>` : '';
     return `<tr><td><button class="text-button" data-action="show-repository" data-id="${repository.id}"><strong>${esc(repository.name)}</strong></button><br><small>${esc(repository.slug)}</small></td>
       <td>${esc(repository.type)}<br><small>${esc(repository.profile_name || 'Custom')} ${esc(repository.profile_version || '')}</small></td>
       <td><code>${esc(publicURL(repository))}</code></td><td title="${esc(active.url || '')}">${esc((active.url || '').replace(/^https?:\/\//, '').slice(0, 42) || '—')}</td>
       <td><span class="badge ${health === 'healthy' ? 'ok' : health === 'unhealthy' ? 'bad' : ''}">${esc(stateLabel(health))}</span><br><small>${active.latency_ms ? `${number(active.latency_ms)} ms` : '—'}</small></td>
       <td><span class="badge ${repository.config_state === 'active' ? 'ok' : repository.config_state === 'failed' ? 'bad' : ''}" title="${esc(repository.config_error || '')}">${esc(stateLabel(repository.config_state))}</span></td>
       <td>${repository.cache_enabled ? `<span class="badge ok">${esc(repository.cache_profile)}</span>` : stateLabel('disabled')}</td>
-      <td class="actions"><button data-action="show-repository" data-id="${repository.id}">${L('Details')}</button><button data-action="copy-repository-url" data-id="${repository.id}">${L('Copy URL')}</button><button data-action="check-mirror" data-id="${repository.id}">${L('Test')}</button><button data-action="preview-repository-config" data-id="${repository.id}">${L('Config')}</button><button data-action="purge-repository" data-id="${repository.id}">${L('Purge')}</button><button data-action="edit-mirror" data-id="${repository.id}">${L('Edit')}</button><button data-action="toggle-mirror" data-id="${repository.id}" data-enabled="${!repository.enabled}">${repository.enabled ? L('Disable') : L('Enable')}</button><button class="danger" data-action="delete-mirror" data-id="${repository.id}">${L('Delete')}</button></td></tr>`;
+      <td class="actions">${helpBtn}<button data-action="show-repository" data-id="${repository.id}">${L('Details')}</button><button data-action="copy-repository-url" data-id="${repository.id}">${L('Copy URL')}</button><button data-action="check-mirror" data-id="${repository.id}">${L('Test')}</button><button data-action="preview-repository-config" data-id="${repository.id}">${L('Config')}</button><button data-action="purge-repository" data-id="${repository.id}">${L('Purge')}</button><button data-action="edit-mirror" data-id="${repository.id}">${L('Edit')}</button><button data-action="toggle-mirror" data-id="${repository.id}" data-enabled="${!repository.enabled}">${repository.enabled ? L('Disable') : L('Enable')}</button><button class="danger" data-action="delete-mirror" data-id="${repository.id}">${L('Delete')}</button></td></tr>`;
   }).join('');
   $('#mirror-list').innerHTML = `<div class="table-wrap"><table><thead><tr><th>${L('Name')}</th><th>${L('Type / profile')}</th><th>${L('Public URL')}</th><th>${L('Active upstream')}</th><th>${L('Health / latency')}</th><th>${L('Desired state')}</th><th>${L('Cache')}</th><th>${L('Actions')}</th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty">${L('No repositories yet.')}</td></tr>`}</tbody></table></div>`;
 }
@@ -295,6 +308,17 @@ $('#template').addEventListener('change', () => {
   $('#package-ttl').value = profile.package_ttl_sec || 0;
   $('#immutable-ttl').value = profile.immutable_ttl_sec || 0;
   $('#blob-ttl').value = profile.blob_ttl_sec || 0;
+  if (profile.help) {
+    $('#help-enabled').checked = Boolean(profile.help.enabled);
+    $('#help-template').value = profile.help.template || '';
+    $('#help-title').value = profile.help.title || '';
+    $('#help-summary').value = profile.help.summary || '';
+  } else {
+    $('#help-enabled').checked = false;
+    $('#help-template').value = '';
+    $('#help-title').value = '';
+    $('#help-summary').value = '';
+  }
 });
 
 function openMirrorForm(repository = null) {
@@ -320,6 +344,10 @@ function openMirrorForm(repository = null) {
   $('#mirror-enabled').checked = repository?.enabled ?? true; $('#cache-enabled').checked = repository?.cache_enabled ?? false; $('#cache-authenticated').checked = repository?.cache_authenticated ?? false;
   $('#rewrite-enabled').checked = repository?.rewrite_enabled ?? false; $('#html-rewrite-enabled').checked = repository?.html_rewrite_enabled ?? false; $('#health-enabled').checked = repository?.health_check_enabled ?? true; $('#pull-only').checked = repository?.pull_only ?? true;
   $('#allow-http').checked = repository?.allow_http_upstream ?? false; $('#allow-private').checked = repository?.allow_private_upstream ?? false;
+  $('#help-enabled').checked = Boolean(repository?.help?.enabled);
+  set('#help-template', repository?.help?.template || '');
+  set('#help-title', repository?.help?.title || '');
+  set('#help-summary', repository?.help?.summary || '');
   const profileIndex = profiles.findIndex(profile => profile.name === repository?.profile_name && profile.version === repository?.profile_version);
   $('#template').value = profileIndex >= 0 ? String(profileIndex) : '';
   $('#form-error').textContent = '';
@@ -367,7 +395,13 @@ $('#mirror-form').addEventListener('submit', async event => {
       health_timeout_sec: Number($('#health-timeout').value), health_method: $('#health-method').value, health_expected: Number($('#health-expected').value),
       rate_limit_profile: $('#rate-profile').value, max_concurrency: Number($('#max-concurrency').value), bandwidth_limit_bps: Number($('#bandwidth-limit').value),
       auth_mode: $('#auth-mode').value, token_upstream: $('#token-upstream').value, blob_redirect_mode: $('#blob-redirect').value, pull_only: $('#pull-only').checked,
-      allow_http_upstream: $('#allow-http').checked, allow_private_upstream: $('#allow-private').checked, insecure_skip_verify: false
+      allow_http_upstream: $('#allow-http').checked, allow_private_upstream: $('#allow-private').checked, insecure_skip_verify: false,
+      help: {
+        enabled: $('#help-enabled').checked,
+        template: $('#help-template').value,
+        title: $('#help-title').value,
+        summary: $('#help-summary').value
+      }
     };
     await api(id ? `/mirrors/${id}` : '/mirrors', {method: id ? 'PUT' : 'POST', body: JSON.stringify(body)});
     $('#mirror-dialog').close();
@@ -638,6 +672,103 @@ async function loadSettings() {
   $('#reset-settings').addEventListener('click', async () => {
     if (!confirm(L('Discard the Web UI override and restore YAML values after restart?'))) return;
     try { await api('/settings', {method: 'DELETE'}); notice(L('Web UI override removed; restart MirrorRelay.')); await loadSettings(); } catch (error) { $('#settings-error').textContent = error.message; }
+  });
+}
+
+async function loadAppearance() {
+  const appearance = await api('/appearance').catch(() => ({
+    enabled: false,
+    theme: 'system',
+    accent_color: '#2563eb',
+    branding: { title: 'MirrorRelay', logo: '', favicon: '' },
+    login: { title: 'MirrorRelay', subtitle: 'Repository Proxy Service' },
+    custom_css: { enabled: false, file: '/var/lib/mirrorrelay/ui/custom.css' },
+    repository_browser: { enabled: true }
+  }));
+
+  $('#page-appearance').innerHTML = `<div class="panel">
+    <h2>${L('Appearance & Branding')}</h2>
+    <p class="muted">${L('Configure Web UI appearance, color themes, branding, custom CSS and directory browser. Appearance settings apply immediately across all interface components.')}</p>
+  </div>
+  <form id="appearance-form" class="settings-form">
+    <fieldset><legend>${L('Theme and colors')}</legend><div class="form-grid">
+      <label class="check wide"><input id="app-ui-enabled" type="checkbox" ${appearance.enabled ? 'checked' : ''}><span>${L('Enable UI Enhancement (Themes & Repository Browser)')}</span></label>
+      <label><span>${L('Theme')}</span><select id="app-theme">
+        <option value="system" ${appearance.theme === 'system' ? 'selected' : ''}>System (自动跟随系统)</option>
+        <option value="light" ${appearance.theme === 'light' ? 'selected' : ''}>Light (浅色明亮)</option>
+        <option value="dark" ${appearance.theme === 'dark' ? 'selected' : ''}>Dark (深色暗黑)</option>
+      </select></label>
+      <label><span>${L('Accent Color')}</span><input type="color" id="app-accent-color" value="${esc(appearance.accent_color || '#2563eb')}"></label>
+    </div></fieldset>
+
+    <fieldset><legend>${L('Branding')}</legend><div class="form-grid">
+      <label><span>${L('Instance Name / Title')}</span><input id="app-brand-title" value="${esc(appearance.branding?.title || 'MirrorRelay')}"></label>
+      <label><span>${L('Logo URL (optional)')}</span><input id="app-brand-logo" value="${esc(appearance.branding?.logo || '')}"></label>
+      <label class="wide"><span>${L('Favicon URL (optional)')}</span><input id="app-brand-favicon" value="${esc(appearance.branding?.favicon || '')}"></label>
+    </div></fieldset>
+
+    <fieldset><legend>${L('Login page')}</legend><div class="form-grid">
+      <label><span>${L('Login Title')}</span><input id="app-login-title" value="${esc(appearance.login?.title || 'MirrorRelay')}"></label>
+      <label><span>${L('Login Subtitle')}</span><input id="app-login-subtitle" value="${esc(appearance.login?.subtitle || 'Repository Proxy Service')}"></label>
+    </div></fieldset>
+
+    <fieldset><legend>${L('Repository Browser')}</legend><div class="form-grid">
+      <label class="check wide"><input id="app-browser-enabled" type="checkbox" ${appearance.repository_browser?.enabled !== false ? 'checked' : ''}><span>${L('Enable Repository Directory Browser')}</span></label>
+    </div></fieldset>
+
+    <fieldset><legend>${L('Custom CSS')}</legend><div class="form-grid">
+      <label class="check wide"><input id="app-css-enabled" type="checkbox" ${appearance.custom_css?.enabled ? 'checked' : ''}><span>${L('Enable Custom CSS')}</span></label>
+      <label class="wide"><span>${L('Custom CSS File Path')}</span><input id="app-css-file" value="${esc(appearance.custom_css?.file || '/var/lib/mirrorrelay/ui/custom.css')}"></label>
+    </div></fieldset>
+
+    <footer>
+      <button type="button" class="secondary" id="reset-appearance-btn">${L('Reset appearance to defaults')}</button>
+      <button type="submit">${L('Save appearance settings')}</button>
+    </footer>
+    <div id="appearance-error" class="error"></div>
+  </form>`;
+
+  $('#appearance-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const payload = {
+      enabled: $('#app-ui-enabled').checked,
+      theme: $('#app-theme').value,
+      accent_color: $('#app-accent-color').value,
+      branding: {
+        title: $('#app-brand-title').value.trim() || 'MirrorRelay',
+        logo: $('#app-brand-logo').value.trim(),
+        favicon: $('#app-brand-favicon').value.trim()
+      },
+      login: {
+        title: $('#app-login-title').value.trim() || 'MirrorRelay',
+        subtitle: $('#app-login-subtitle').value.trim() || 'Repository Proxy Service'
+      },
+      repository_browser: {
+        enabled: $('#app-browser-enabled').checked
+      },
+      custom_css: {
+        enabled: $('#app-css-enabled').checked,
+        file: $('#app-css-file').value.trim() || '/var/lib/mirrorrelay/ui/custom.css'
+      }
+    };
+    try {
+      await api('/appearance', {method: 'PUT', body: JSON.stringify(payload)});
+      notice(L('Appearance settings saved successfully.'));
+      await loadAppearance();
+    } catch (err) {
+      $('#appearance-error').textContent = err.message;
+    }
+  });
+
+  $('#reset-appearance-btn').addEventListener('click', async () => {
+    if (!confirm(L('Reset appearance settings to default values?'))) return;
+    try {
+      await api('/appearance/reset', {method: 'POST'});
+      notice(L('Appearance settings reset to defaults.'));
+      await loadAppearance();
+    } catch (err) {
+      $('#appearance-error').textContent = err.message;
+    }
   });
 }
 

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -166,20 +167,29 @@ func run() error {
 }
 
 func applyStoredWebSettings(ctx context.Context, store *database.Store, base config.Config) (config.Config, error) {
+	applied := base
 	raw, found, err := store.Setting(ctx, config.WebSettingsKey)
 	if err != nil {
 		return base, fmt.Errorf("read Web UI configuration: %w", err)
 	}
-	if !found {
-		return base, nil
+	if found {
+		settings, err := config.DecodeWebSettings([]byte(raw))
+		if err != nil {
+			return base, fmt.Errorf("decode Web UI configuration: %w", err)
+		}
+		candidate, err := settings.Apply(base)
+		if err != nil {
+			return base, fmt.Errorf("validate Web UI configuration: %w", err)
+		}
+		applied = candidate
 	}
-	settings, err := config.DecodeWebSettings([]byte(raw))
-	if err != nil {
-		return base, fmt.Errorf("decode Web UI configuration: %w", err)
-	}
-	applied, err := settings.Apply(base)
-	if err != nil {
-		return base, fmt.Errorf("validate Web UI configuration: %w", err)
+	if rawApp, foundApp, err := store.Setting(ctx, database.AppearanceSettingsKey); err == nil && foundApp {
+		var appConfig model.UIEnhancementConfig
+		if err := json.Unmarshal([]byte(rawApp), &appConfig); err == nil {
+			if err := config.ValidateUIEnhancement(&appConfig); err == nil {
+				applied.UIEnhancement = appConfig
+			}
+		}
 	}
 	return applied, nil
 }

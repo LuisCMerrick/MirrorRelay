@@ -87,9 +87,9 @@ func TestBrowsableHTMLResponseGetsARepresentationValidator(t *testing.T) {
 	metadataConfig.OutputCompression = "identity"
 
 	validator, changed, err := rewriteHTMLResponseBody(response,
-		model.Mirror{ID: 7, Slug: "debian", PublicMode: "path", PublicPath: "/debian/"},
+		model.Mirror{ID: 7, Slug: "debian", PublicMode: "path", PublicPath: "/debian/", HTMLRewriteEnabled: true},
 		model.Upstream{URL: "https://deb.debian.org/debian/"}, mustParseURL(t, "https://deb.debian.org/debian/"),
-		metadataConfig, false, &gzipPool{})
+		metadataConfig, model.UIEnhancementConfig{}, false, &gzipPool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,4 +165,39 @@ func mustParseURL(t *testing.T, value string) *url.URL {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+func TestRepositoryBrowserRewritesDirectoryIndex(t *testing.T) {
+	source := `<html><head><title>Index of /debian/</title></head><body><h1>Index of /debian/</h1><hr><pre><a href="../">../</a>
+<a href="dists/">dists/</a>                                             20-Jun-2023 15:42                   -
+<a href="README">README</a>                                             23-May-2023 11:21                1234
+</pre><hr></body></html>`
+	response := &http.Response{
+		StatusCode:    http.StatusOK,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(strings.NewReader(source)),
+		ContentLength: int64(len(source)),
+	}
+	response.Header.Set("Content-Type", "text/html; charset=utf-8")
+	metadataConfig := config.Default().Metadata
+	uiEnhancement := model.UIEnhancementConfig{
+		Enabled:           true,
+		Theme:             "light",
+		RepositoryBrowser: model.RepositoryBrowserConfig{Enabled: true},
+	}
+
+	validator, changed, err := rewriteHTMLResponseBody(response,
+		model.Mirror{ID: 1, Name: "Debian", Slug: "debian", PublicMode: "path", PublicPath: "/debian/"},
+		model.Upstream{URL: "https://deb.debian.org/debian/"}, mustParseURL(t, "https://deb.debian.org/debian/"),
+		metadataConfig, uiEnhancement, false, &gzipPool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || validator.ETag == "" {
+		t.Fatalf("expected browser rewrite to succeed, changed=%v", changed)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil || !strings.Contains(string(body), "Index of /debian/") || !strings.Contains(string(body), "file-row") {
+		t.Fatalf("unexpected browser rendered output: %s", body)
+	}
 }

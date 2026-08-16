@@ -36,23 +36,129 @@ type Profile struct {
 	PackageTTLSec      int               `json:"package_ttl_sec"`
 	ImmutableTTLSec    int               `json:"immutable_ttl_sec"`
 	BlobTTLSec         int               `json:"blob_ttl_sec"`
+	Help               model.HelpConfig  `json:"help,omitempty"`
 }
 
 var builtins = []Profile{
 	{Name: "Generic HTTP", Version: "1.0.0", LatestStable: true, Type: "generic", ProxyMode: "transparent", Upstream: "https://example.com/", CacheProfile: "standard", PublicMode: "path"},
-	{Name: "Debian", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian/", HealthPath: "dists/stable/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Debian Security", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian-security/", HealthPath: "dists/stable-security/InRelease", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Ubuntu", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://archive.ubuntu.com/ubuntu/", HealthPath: "dists/noble/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Rocky Linux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://dl.rockylinux.org/pub/rocky/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "AlmaLinux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://repo.almalinux.org/almalinux/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
+	{
+		Name: "Debian", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian/", HealthPath: "dists/stable/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Debian", Summary: "Debian 软件源使用说明", Template: "builtin://help/debian.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "bookworm", Label: "Debian 12 (bookworm)", Codename: "bookworm", Default: true},
+				{Key: "bullseye", Label: "Debian 11 (bullseye)", Codename: "bullseye"},
+				{Key: "trixie", Label: "Debian 13 (trixie, testing)", Codename: "trixie"},
+				{Key: "sid", Label: "Debian unstable (sid)", Codename: "sid"},
+			},
+			Formats: []model.HelpFormat{
+				{Key: "sources.list", Label: "传统格式 (/etc/apt/sources.list)", Default: true},
+				{Key: "deb822", Label: "DEB822 格式 (/etc/apt/sources.list.d/*.sources)", Extension: ".sources"},
+			},
+		},
+	},
+	{
+		Name: "Debian Security", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://deb.debian.org/debian-security/", HealthPath: "dists/stable-security/InRelease", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Debian Security", Summary: "Debian Security 安全更新源使用说明", Template: "builtin://help/debian-security.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "bookworm-security", Label: "Debian 12 (bookworm-security)", Codename: "bookworm-security", Default: true},
+				{Key: "bullseye-security", Label: "Debian 11 (bullseye-security)", Codename: "bullseye-security"},
+			},
+		},
+	},
+	{
+		Name: "Ubuntu", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://archive.ubuntu.com/ubuntu/", HealthPath: "dists/noble/Release", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Ubuntu", Summary: "Ubuntu 软件源使用说明", Template: "builtin://help/ubuntu.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "noble", Label: "Ubuntu 24.04 LTS (noble)", Codename: "noble", Default: true},
+				{Key: "jammy", Label: "Ubuntu 22.04 LTS (jammy)", Codename: "jammy"},
+				{Key: "focal", Label: "Ubuntu 20.04 LTS (focal)", Codename: "focal"},
+			},
+			Formats: []model.HelpFormat{
+				{Key: "sources.list", Label: "传统格式 (/etc/apt/sources.list)", Default: true},
+				{Key: "deb822", Label: "DEB822 格式 (/etc/apt/sources.list.d/ubuntu.sources)", Extension: ".sources"},
+			},
+		},
+	},
+	{
+		Name: "Rocky Linux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://dl.rockylinux.org/pub/rocky/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Rocky Linux", Summary: "Rocky Linux 软件源使用说明", Template: "builtin://help/rocky.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "9", Label: "Rocky Linux 9", Codename: "9", Default: true},
+				{Key: "8", Label: "Rocky Linux 8", Codename: "8"},
+			},
+		},
+	},
+	{
+		Name: "AlmaLinux", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://repo.almalinux.org/almalinux/", HealthPath: "9/BaseOS/x86_64/os/repodata/repomd.xml", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "AlmaLinux", Summary: "AlmaLinux 软件源使用说明", Template: "builtin://help/almalinux.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "9", Label: "AlmaLinux 9", Codename: "9", Default: true},
+				{Key: "8", Label: "AlmaLinux 8", Codename: "8"},
+			},
+		},
+	},
 	{Name: "CentOS Stream", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://mirror.stream.centos.org/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Fedora", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://download.fedoraproject.org/pub/fedora/linux/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "EPEL", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://dl.fedoraproject.org/pub/epel/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Alpine", Version: "1.0.0", LatestStable: true, Type: "apk", ProxyMode: "transparent", Upstream: "https://dl-cdn.alpinelinux.org/alpine/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "OpenWrt", Version: "1.0.0", LatestStable: true, Type: "opkg", ProxyMode: "transparent", Upstream: "https://downloads.openwrt.org/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "Docker CE", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://download.docker.com/linux/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
-	{Name: "PyPI", Version: "1.0.0", LatestStable: true, Type: "pypi", ProxyMode: "rewrite", Upstream: "https://pypi.org/", HealthPath: "simple/", CacheEnabled: true, CacheProfile: "packages", Rewrite: true, RewriteProfile: "pypi", RewriteHosts: []string{"pypi.org", "files.pythonhosted.org"}, PublicMode: "path"},
-	{Name: "npm", Version: "1.0.0", LatestStable: true, Type: "npm", ProxyMode: "rewrite", Upstream: "https://registry.npmjs.org/", CacheEnabled: true, CacheProfile: "packages", Rewrite: true, RewriteProfile: "npm", RewriteHosts: []string{"registry.npmjs.org"}, PublicMode: "host", MetadataLimitBytes: 64 << 20},
+	{
+		Name: "Fedora", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://download.fedoraproject.org/pub/fedora/linux/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Fedora", Summary: "Fedora 软件源使用说明", Template: "builtin://help/fedora.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "40", Label: "Fedora 40", Codename: "40", Default: true},
+				{Key: "39", Label: "Fedora 39", Codename: "39"},
+			},
+		},
+	},
+	{
+		Name: "EPEL", Version: "1.0.0", LatestStable: true, Type: "rpm", ProxyMode: "transparent", Upstream: "https://dl.fedoraproject.org/pub/epel/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "EPEL", Summary: "EPEL 额外软件包仓库使用说明", Template: "builtin://help/epel.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "9", Label: "EPEL 9", Codename: "9", Default: true},
+				{Key: "8", Label: "EPEL 8", Codename: "8"},
+				{Key: "7", Label: "EPEL 7", Codename: "7"},
+			},
+		},
+	},
+	{
+		Name: "Alpine", Version: "1.0.0", LatestStable: true, Type: "apk", ProxyMode: "transparent", Upstream: "https://dl-cdn.alpinelinux.org/alpine/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Alpine Linux", Summary: "Alpine Linux apk 软件源使用说明", Template: "builtin://help/alpine.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "v3.20", Label: "v3.20", Codename: "v3.20", Default: true},
+				{Key: "v3.19", Label: "v3.19", Codename: "v3.19"},
+				{Key: "edge", Label: "edge", Codename: "edge"},
+			},
+		},
+	},
+	{
+		Name: "OpenWrt", Version: "1.0.0", LatestStable: true, Type: "opkg", ProxyMode: "transparent", Upstream: "https://downloads.openwrt.org/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "OpenWrt", Summary: "OpenWrt opkg 软件包仓库使用说明", Template: "builtin://help/openwrt.md", TemplateVersion: 1,
+		},
+	},
+	{
+		Name: "Docker CE", Version: "1.0.0", LatestStable: true, Type: "apt", ProxyMode: "transparent", Upstream: "https://download.docker.com/linux/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Docker CE", Summary: "Docker CE 社区版安装源使用说明", Template: "builtin://help/docker-ce.md", TemplateVersion: 1,
+		},
+	},
+	{
+		Name: "PyPI", Version: "1.0.0", LatestStable: true, Type: "pypi", ProxyMode: "rewrite", Upstream: "https://pypi.org/", HealthPath: "simple/", CacheEnabled: true, CacheProfile: "packages", Rewrite: true, RewriteProfile: "pypi", RewriteHosts: []string{"pypi.org", "files.pythonhosted.org"}, PublicMode: "path",
+		Help: model.HelpConfig{
+			Enabled: true, Title: "PyPI", Summary: "PyPI Python 镜像源使用说明", Template: "builtin://help/pypi.md", TemplateVersion: 1,
+		},
+	},
+	{
+		Name: "npm", Version: "1.0.0", LatestStable: true, Type: "npm", ProxyMode: "rewrite", Upstream: "https://registry.npmjs.org/", CacheEnabled: true, CacheProfile: "packages", Rewrite: true, RewriteProfile: "npm", RewriteHosts: []string{"registry.npmjs.org"}, PublicMode: "host", MetadataLimitBytes: 64 << 20,
+		Help: model.HelpConfig{
+			Enabled: true, Title: "npm", Summary: "npm 软件包注册表使用说明", Template: "builtin://help/npm.md", TemplateVersion: 1,
+		},
+	},
 	{Name: "Maven Central", Version: "1.0.0", LatestStable: true, Type: "maven", ProxyMode: "transparent", Upstream: "https://repo1.maven.org/maven2/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path"},
 	{Name: "Go Proxy", Version: "1.0.0", LatestStable: true, Type: "goproxy", ProxyMode: "transparent", Upstream: "https://proxy.golang.org/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "host"},
 	{Name: "NuGet", Version: "1.0.0", LatestStable: true, Type: "nuget", ProxyMode: "rewrite", Upstream: "https://api.nuget.org/", CacheEnabled: true, CacheProfile: "packages", Rewrite: true, RewriteProfile: "nuget", RewriteHosts: []string{"api.nuget.org", "globalcdn.nuget.org"}, PublicMode: "host"},
@@ -78,7 +184,8 @@ func Find(name, version string) (Profile, bool) {
 			return p, true
 		}
 		if version == "" && (!found || p.LatestStable) {
-			fallback, found = p, true
+			fallback = p
+			found = true
 			if p.LatestStable {
 				return p, true
 			}
@@ -109,6 +216,7 @@ func Apply(m *model.Mirror, name, version string) error {
 	m.MetadataLimitBytes = p.MetadataLimitBytes
 	m.MetadataTTLSec, m.PackageTTLSec = p.MetadataTTLSec, p.PackageTTLSec
 	m.ImmutableTTLSec, m.BlobTTLSec = p.ImmutableTTLSec, p.BlobTTLSec
+	m.Help = p.Help
 	if len(m.Upstreams) == 0 {
 		m.Upstreams = []model.Upstream{{URL: p.Upstream, Priority: 100, Weight: 1, Enabled: true}}
 	}

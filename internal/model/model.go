@@ -56,6 +56,7 @@ type Mirror struct {
 	InsecureTLS        bool              `json:"insecure_skip_verify"`
 	BandwidthLimitBPS  int64             `json:"bandwidth_limit_bps"`
 	MaxConcurrency     int               `json:"max_concurrency"`
+	Help               HelpConfig        `json:"help"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
 	Upstreams          []Upstream        `json:"upstreams"`
@@ -194,4 +195,58 @@ type ClusterOverview struct {
 	HealthyNodes       int    `json:"healthy_nodes"`
 	RoutableNodes      int    `json:"routable_nodes"`
 	RoutingMode        string `json:"routing_mode"`
+}
+
+type HelpConfig struct {
+	Enabled         bool          `json:"enabled" yaml:"enabled"`
+	Title           string        `json:"title,omitempty" yaml:"title,omitempty"`
+	Summary         string        `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Template        string        `json:"template,omitempty" yaml:"template,omitempty"`
+	TemplateVersion int           `json:"template_version,omitempty" yaml:"template_version,omitempty"`
+	Variants        []HelpVariant `json:"variants,omitempty" yaml:"variants,omitempty"`
+	Formats         []HelpFormat  `json:"formats,omitempty" yaml:"formats,omitempty"`
+}
+
+type HelpVariant struct {
+	Key      string `json:"key" yaml:"key"`
+	Label    string `json:"label" yaml:"label"`
+	Codename string `json:"codename,omitempty" yaml:"codename,omitempty"`
+	Default  bool   `json:"default,omitempty" yaml:"default,omitempty"`
+}
+
+type HelpFormat struct {
+	Key       string `json:"key" yaml:"key"`
+	Label     string `json:"label" yaml:"label"`
+	Extension string `json:"extension,omitempty" yaml:"extension,omitempty"`
+	Default   bool   `json:"default,omitempty" yaml:"default,omitempty"`
+}
+
+type UIEnhancementConfig struct {
+	Enabled           bool                    `json:"enabled" yaml:"enabled"`
+	Theme             string                  `json:"theme" yaml:"theme"`
+	AccentColor       string                  `json:"accent_color" yaml:"accent_color"`
+	Branding          BrandingConfig          `json:"branding" yaml:"branding"`
+	Login             LoginBrandingConfig     `json:"login" yaml:"login"`
+	CustomCSS         CustomCSSConfig         `json:"custom_css" yaml:"custom_css"`
+	RepositoryBrowser RepositoryBrowserConfig `json:"repository_browser" yaml:"repository_browser"`
+}
+
+type BrandingConfig struct {
+	Title   string `json:"title" yaml:"title"`
+	Logo    string `json:"logo" yaml:"logo"`
+	Favicon string `json:"favicon" yaml:"favicon"`
+}
+
+type LoginBrandingConfig struct {
+	Title    string `json:"title" yaml:"title"`
+	Subtitle string `json:"subtitle" yaml:"subtitle"`
+}
+
+type CustomCSSConfig struct {
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+	File    string `json:"file" yaml:"file"`
+}
+
+type RepositoryBrowserConfig struct {
+	Enabled bool `json:"enabled" yaml:"enabled"`
 }

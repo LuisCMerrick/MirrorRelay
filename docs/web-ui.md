@@ -166,6 +166,18 @@ Bootstrap, credential, filesystem and executable locations remain file-only so t
 
 Repository Desired/Active changes are separate from this page and continue to validate and activate immediately.
 
+## Appearance and Branding
+
+The **Appearance** page manages Web UI styling, color themes, branding identity, custom CSS, and directory browser settings:
+
+- **Theme Mode**: Choose between `System` (auto-detect OS preference), `Light`, or `Dark`.
+- **Accent Color**: Customize the primary theme accent color (default `#2563eb`).
+- **Branding**: Set the instance title/name, custom logo URL, and favicon URL.
+- **Login Page**: Customize login page heading title and subtitle.
+- **Directory Browser**: Enable modern responsive directory listing with breadcrumbs, instant filter, and SVG icons.
+- **Custom CSS**: Enable custom stylesheet file injection (served securely from `/ui/custom.css`).
+- **Reset to Defaults**: Restore default styling and branding settings at any time.
+
 ## Users and My account
 
 Users can create additional administrators with a 3–64 character non-space username and a password of at least 10 characters. The currently signed-in administrator cannot delete their own account. Use **My account** to change the current password by supplying the existing password and a new password.

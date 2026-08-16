@@ -157,9 +157,37 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 
 Managed Upstream Nginx Access/Error Log 位于 `upstream_nginx.log_path`，由 MirrorRelay 按日期/大小轮转，随后通知 Nginx 重新打开日志。MirrorRelay Access 与 Application JSON Log 异步写入，并使用相同的轮转和保留设置；Audit Event 存储在 SQLite。
 
+## 界面增强与外观设置
+
+MirrorRelay 提供可选的界面主题增强、颜色定制、统一仓库目录浏览与客户端使用帮助文档。
+
+| 配置项 | 说明 |
+|---|---|
+| `ui_enhancement.enabled` | 全局界面增强总开关（默认 `false`）。为 `false` 时完全不介入响应重写与样式注入。 |
+| `ui_enhancement.theme` | 主题模式：`system`（默认跟随系统）、`light`（浅色明亮）或 `dark`（深色暗黑） |
+| `ui_enhancement.accent_color` | 主色调十六进制颜色代码（如 `#2563eb`） |
+| `ui_enhancement.branding.title` | 自定义站点/实例标题（默认 `MirrorRelay`） |
+| `ui_enhancement.branding.logo` | 自定义 Logo 图片 URL |
+| `ui_enhancement.branding.favicon` | 自定义 Favicon 图标 URL |
+| `ui_enhancement.login.title` | 登录页主标题 |
+| `ui_enhancement.login.subtitle` | 登录页副标题 |
+| `ui_enhancement.custom_css.enabled` | 启用自定义 CSS 注入 |
+| `ui_enhancement.custom_css.file` | 自定义 CSS 文件路径（通过 `GET /ui/custom.css` 提供） |
+| `ui_enhancement.repository_browser.enabled` | 启用现代自适应仓库目录浏览器（界面增强启用时默认 `true`） |
+
+> **安全模式 (Safe Mode)**：在任何目录或帮助页面 URL 后添加 `?safe-ui=1` 参数即可绕过所有界面增强与脚本，直接回退并显示上游原始 HTML 响应。
+
+## 客户端配置帮助 (Help)
+
+MirrorRelay 提供常见 Linux 发行版与软件包管理器的开箱即用交互式客户端配置指南（如 Debian、Ubuntu、Rocky Linux、AlmaLinux、Fedora、EPEL、Alpine、PyPI、npm、Docker CE、OpenWrt 等）。
+
+- 公开帮助概览路由：`GET /help/`
+- 交互式仓库帮助路由：`GET /help/<slug>/`
+- 敏感信息脱敏：帮助文档中引用的上游 URL 会自动过滤凭证与查询参数。
+
 ## 仓库覆盖项
 
-Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Strip/Add Prefix、Host 与请求 Header 改写、连接/读取/发送超时、Cache 类别 TTL、认证响应缓存、Metadata Rewrite Host/缓冲上限、逐仓库 `html_rewrite_enabled` 开关、健康策略、并发/带宽限制、访问策略、Registry Auth/Token/Blob 策略，以及 HTTP/私网许可开关。仓库验证会拒绝根路径、系统路径、后台路径或 `/_mirrorrelay/` 冲突、重复或相互重叠的仓库路径、重复公开 Host，以及占用已配置共享 Host 的 Host Mode 仓库。
+Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Strip/Add Prefix、Host 与请求 Header 改写、连接/读取/发送超时、Cache 类别 TTL、认证响应缓存、Metadata Rewrite Host/缓冲上限、逐仓库 `html_rewrite_enabled` 开关、健康策略、并发/带宽限制、访问策略、客户端帮助配置（`help.enabled`、`help.template`、`help.title`、`help.summary`）、Registry Auth/Token/Blob 策略，以及 HTTP/私网许可开关。仓库验证会拒绝根路径、系统路径、后台路径或 `/_mirrorrelay/` 冲突、重复或相互重叠的仓库路径、重复公开 Host，以及占用已配置共享 Host 的 Host Mode 仓库。
 
 `html_rewrite_enabled` 默认值为 `false`。为可浏览仓库响应启用后，MirrorRelay 会相对所选上游页面解析同源 HTML URL。位于有效上游 Base（包含 `add_prefix`）下的 URL 会返回公开仓库 Namespace（包含 `strip_prefix`）；同一 Origin 上的其他路径使用 `/_mirrorrelay/upstream/<仓库ID>/`。辅助 Scope 不会许可其他 Origin，并复用仓库原有 Upstream Group 与策略；但它确实扩大了该 Origin 可经 MirrorRelay 访问的路径范围，因此应把此开关视为显式发布决定。生成的共享入口片段会为 Path Mode 仓库包含必需的辅助 Location。
 

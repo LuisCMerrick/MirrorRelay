@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LuisCMerrick/MirrorRelay/internal/browser"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 	"golang.org/x/net/html"
@@ -69,7 +70,7 @@ func shouldRewriteHTMLBody(response *http.Response) bool {
 }
 
 func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, upstream model.Upstream, pageURL *url.URL,
-	cfg config.MetadataConfig, acceptsGzip bool, compressors *gzipPool) (metadataValidator, bool, error) {
+	cfg config.MetadataConfig, uiEnhancement model.UIEnhancementConfig, acceptsGzip bool, compressors *gzipPool) (metadataValidator, bool, error) {
 	if encoding := strings.TrimSpace(response.Header.Get("Content-Encoding")); encoding != "" && !strings.EqualFold(encoding, "identity") {
 		return metadataValidator{}, false, &unexpectedHTMLEncodingError{encoding: encoding}
 	}
@@ -86,10 +87,29 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 	}
 	_ = response.Body.Close()
 
-	rewritten, changed, err := rewriteHTMLDocument(source, repository, upstream, pageURL)
-	if err != nil {
-		return metadataValidator{}, false, err
+	var rewritten []byte
+	var changed bool
+	safeUI := pageURL != nil && pageURL.Query().Get("safe-ui") == "1"
+
+	if uiEnhancement.Enabled && uiEnhancement.RepositoryBrowser.Enabled && !safeUI && browser.IsDirectoryIndex(source) {
+		reqPath := ""
+		if pageURL != nil {
+			reqPath = pageURL.Path
+		}
+		if listing, ok := browser.ParseDirectoryIndex(source, reqPath); ok {
+			rendered := browser.RenderHTML(listing, repository, reqPath, uiEnhancement.Branding, uiEnhancement.Theme, safeUI)
+			rewritten = []byte(rendered)
+			changed = true
+		}
 	}
+
+	if !changed && repository.HTMLRewriteEnabled {
+		rewritten, changed, err = rewriteHTMLDocument(source, repository, upstream, pageURL)
+		if err != nil {
+			return metadataValidator{}, false, err
+		}
+	}
+
 	if !changed {
 		response.Body = io.NopCloser(bytes.NewReader(source))
 		response.ContentLength = int64(len(source))
