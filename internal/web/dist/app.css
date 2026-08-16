@@ -23,10 +23,14 @@ aside { position: fixed; width: 250px; height: 100vh; padding: 24px 16px; backgr
 nav { display: grid; gap: 6px; overflow-y: auto; }
 nav button { border: 0; background: transparent; color: var(--muted); text-align: left; padding: 11px 14px; border-radius: 9px; cursor: pointer; }
 nav button:hover, nav button.active { background: #17263b; color: white; }
-.sidebar-foot { margin-top: auto; border-top: 1px solid var(--line); padding: 18px 10px 0; display: flex; justify-content: space-between; }
-.link { border: 0; background: transparent; color: var(--primary); cursor: pointer; }
+.sidebar-foot { margin-top: auto; border-top: 1px solid var(--line); padding: 18px 10px 0; display: flex; justify-content: space-between; align-items: center; }
+.sidebar-actions { display: flex; gap: 10px; align-items: center; }
+.link { border: 0; background: transparent; color: var(--primary); cursor: pointer; padding: 0; }
+.link.danger { color: var(--amber); }
 .content { grid-column: 2; padding: 30px; max-width: 1600px; width: 100%; }
 .content > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+.header-actions button { padding: 6px 12px; font-size: 13px; }
 .content h1 { margin: 0; font-size: 25px; }
 .content header p { margin: 4px 0; color: var(--muted); }
 .status { padding: 6px 11px; border-radius: 99px; background: #342b1b; color: var(--amber); }

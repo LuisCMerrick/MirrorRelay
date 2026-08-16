@@ -10,6 +10,8 @@ window.MIRRORRELAY_LOCALES.en = {
     "password": "Password",
     "signIn": "Sign in",
     "signOut": "Sign out",
+    "restart": "Restart",
+    "restartService": "Restart service",
     "navDashboard": "Dashboard",
     "navRepositories": "Repositories",
     "navProfiles": "Profiles",

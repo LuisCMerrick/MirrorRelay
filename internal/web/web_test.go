@@ -30,7 +30,8 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 	}{
 		"index": {content: string(index), expected: []string{
 			`<html lang="en">`, `data-lang="en"`, `data-lang="zh"`, `data-page="settings"`,
-			`id="html-rewrite-enabled"`, `href="app.css"`, `src="locales/en.js"`, `src="locales/zh.js"`, `src="app.js"`,
+			`id="html-rewrite-enabled"`, `id="restart-header"`, `id="restart-sidebar"`,
+			`href="app.css"`, `src="locales/en.js"`, `src="locales/zh.js"`, `src="app.js"`,
 		}},
 		"localeEn": {content: string(localeEn), expected: []string{
 			"window.MIRRORRELAY_LOCALES.en", "Linux repository reverse-proxy gateway",

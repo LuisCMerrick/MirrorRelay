@@ -10,6 +10,8 @@ window.MIRRORRELAY_LOCALES.zh = {
     "password": "密码",
     "signIn": "登录",
     "signOut": "退出",
+    "restart": "重启",
+    "restartService": "重启服务",
     "navDashboard": "概览",
     "navRepositories": "仓库",
     "navProfiles": "模板",

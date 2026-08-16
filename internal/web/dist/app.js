@@ -507,9 +507,58 @@ async function loadHealth() {
 async function loadAccess() { const lines = await api('/access'); $('#page-access').innerHTML = `<div class="panel"><div class="toolbar"><h2>access.log</h2><button id="refresh-access">${L('Refresh')}</button></div><pre class="config-preview">${esc((lines || []).join('\n') || L('No access records.'))}</pre></div>`; $('#refresh-access').addEventListener('click', loadAccess); }
 async function loadAudit() { const entries = (await api('/audit')) || []; $('#page-audit').innerHTML = `<div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('User')}</th><th>${L('Client')}</th><th>${L('Action')}</th><th>${L('Object / detail')}</th><th>${L('Result')}</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${date(entry.time)}</td><td>${esc(entry.username)}</td><td>${esc(entry.client_ip)}</td><td>${esc(entry.action)}</td><td>${esc(entry.object)} ${esc(entry.detail)}</td><td><span class="badge ${entry.succeeded ? 'ok' : 'bad'}">${entry.succeeded ? L('Success') : L('Failed')}</span></td></tr>`).join('')}</tbody></table></div>`; }
 
+async function triggerRestart() {
+  if (!confirm(L('Restart MirrorRelay service now? The application will reconnect automatically once ready.'))) return;
+  try {
+    notice(L('Requesting service restart...'));
+    await api('/system/restart', {method: 'POST'});
+  } catch (error) {
+    console.log('Restart response:', error);
+  }
+  notice(L('MirrorRelay is restarting, reconnecting...'));
+  document.querySelectorAll('#restart-header, #restart-sidebar, #restart-service-btn, #restart-settings-btn, #restart-system-btn').forEach(btn => {
+    btn.disabled = true;
+    btn.textContent = L('Restarting...');
+  });
+  let retries = 0;
+  const maxRetries = 30;
+  const poll = setInterval(async () => {
+    retries++;
+    try {
+      const ping = await api('/system');
+      if (ping && ping.version) {
+        clearInterval(poll);
+        notice(L('MirrorRelay restarted successfully.'));
+        document.querySelectorAll('#restart-header, #restart-sidebar, #restart-service-btn, #restart-settings-btn, #restart-system-btn').forEach(btn => {
+          btn.disabled = false;
+          if (btn.id === 'restart-sidebar') btn.textContent = L('Restart');
+          else if (btn.id === 'restart-service-btn') btn.textContent = L('Restart now');
+          else if (btn.id === 'restart-settings-btn') btn.textContent = L('Restart MirrorRelay');
+          else btn.textContent = L('Restart service');
+        });
+        await renderCurrentPage();
+      }
+    } catch (_) {
+      if (retries >= maxRetries) {
+        clearInterval(poll);
+        notice(L('Restart timed out. Please check server status.'), true);
+        document.querySelectorAll('#restart-header, #restart-sidebar, #restart-service-btn, #restart-settings-btn, #restart-system-btn').forEach(btn => {
+          btn.disabled = false;
+          if (btn.id === 'restart-sidebar') btn.textContent = L('Restart');
+          else if (btn.id === 'restart-service-btn') btn.textContent = L('Restart now');
+          else if (btn.id === 'restart-settings-btn') btn.textContent = L('Restart MirrorRelay');
+          else btn.textContent = L('Restart service');
+        });
+      }
+    }
+  }, 1000);
+}
+
 async function loadSystem() {
   const [system, dashboard] = await Promise.all([api('/system'), api('/stats')]); const runtime = dashboard.stats.runtime || {}, upstreamNginx = system.upstream_nginx || {};
-  $('#page-system').innerHTML = `<div class="grid2"><div class="panel"><h2>MirrorRelay</h2>${kv(L('Program version'), system.version)}${kv(L('Build ID'), system.build_id)}${kv(L('Architecture'), `${system.target_os}/${system.architecture}`)}${kv(L('Go version'), system.go_version)}${kv(L('Uptime'), duration(system.uptime_seconds))}${kv(L('Public base URL'), system.public_base_url || L('Not configured'))}</div><div class="panel"><h2>${L('Runtime resources')}</h2>${kv(L('Go heap allocated'), bytes(runtime.heap_alloc_bytes))}${kv(L('Go heap in use'), bytes(runtime.heap_inuse_bytes))}${kv(L('Go heap objects'), number(runtime.heap_objects))}${kv(L('Total allocations'), bytes(runtime.total_alloc_bytes))}${kv('Mallocs / Frees', `${number(runtime.mallocs)} / ${number(runtime.frees)}`)}${kv('RSS', bytes(runtime.rss_bytes))}${kv(L('Goroutines'), number(runtime.goroutines))}${kv(L('Open file descriptors'), number(runtime.open_fds))}${kv(L('GC cycles'), number(runtime.gc_count))}${kv(L('GC pause total'), `${((runtime.gc_pause_total_ns || 0) / 1e9).toFixed(3)} s`)}${kv(L('GC CPU fraction'), `${((runtime.gc_cpu_fraction || 0) * 100).toFixed(3)}%`)}</div></div><div class="grid2"><div class="panel"><h2>TLS / Ingress</h2>${kv(L('Ingress mode'), system.ingress_mode)}${kv(L('HTTPS listen'), system.https_listen)}${kv(L('Minimum TLS'), system.tls_min_version)}${system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) + kv(L('Private key'), system.tls_private_key) : ''}${kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`)}${kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`)}</div><div class="panel"><h2>Managed Upstream Nginx</h2>${kv(L('Mode'), upstreamNginx.mode)}${kv(L('State'), stateLabel(upstreamNginx.state))}${kv(L('Version'), upstreamNginx.version || '—')}${kv(L('Build ID'), upstreamNginx.build_id || '—')}${kv(L('Architecture'), upstreamNginx.architecture || '—')}${kv('SHA-256', upstreamNginx.sha256 || '—')}${kv(L('Uptime'), duration(upstreamNginx.uptime_seconds || 0))}${kv(L('Last exit'), exitSummary(upstreamNginx))}<p class="muted">${L('Repository changes become active only after candidate generation, nginx -t, atomic publication and graceful reload.')}</p></div></div>`;
+  $('#page-system').innerHTML = `<div class="grid2"><div class="panel"><div class="toolbar"><h2>MirrorRelay</h2><button type="button" class="secondary" id="restart-system-btn">${L('Restart service')}</button></div>${kv(L('Program version'), system.version)}${kv(L('Build ID'), system.build_id)}${kv(L('Architecture'), `${system.target_os}/${system.architecture}`)}${kv(L('Go version'), system.go_version)}${kv(L('Uptime'), duration(system.uptime_seconds))}${kv(L('Public base URL'), system.public_base_url || L('Not configured'))}</div><div class="panel"><h2>${L('Runtime resources')}</h2>${kv(L('Go heap allocated'), bytes(runtime.heap_alloc_bytes))}${kv(L('Go heap in use'), bytes(runtime.heap_inuse_bytes))}${kv(L('Go heap objects'), number(runtime.heap_objects))}${kv(L('Total allocations'), bytes(runtime.total_alloc_bytes))}${kv('Mallocs / Frees', `${number(runtime.mallocs)} / ${number(runtime.frees)}`)}${kv('RSS', bytes(runtime.rss_bytes))}${kv(L('Goroutines'), number(runtime.goroutines))}${kv(L('Open file descriptors'), number(runtime.open_fds))}${kv(L('GC cycles'), number(runtime.gc_count))}${kv(L('GC pause total'), `${((runtime.gc_pause_total_ns || 0) / 1e9).toFixed(3)} s`)}${kv(L('GC CPU fraction'), `${((runtime.gc_cpu_fraction || 0) * 100).toFixed(3)}%`)}</div></div><div class="grid2"><div class="panel"><h2>TLS / Ingress</h2>${kv(L('Ingress mode'), system.ingress_mode)}${kv(L('HTTPS listen'), system.https_listen)}${kv(L('Minimum TLS'), system.tls_min_version)}${system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) + kv(L('Private key'), system.tls_private_key) : ''}${kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`)}${kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`)}</div><div class="panel"><h2>Managed Upstream Nginx</h2>${kv(L('Mode'), upstreamNginx.mode)}${kv(L('State'), stateLabel(upstreamNginx.state))}${kv(L('Version'), upstreamNginx.version || '—')}${kv(L('Build ID'), upstreamNginx.build_id || '—')}${kv(L('Architecture'), upstreamNginx.architecture || '—')}${kv('SHA-256', upstreamNginx.sha256 || '—')}${kv(L('Uptime'), duration(upstreamNginx.uptime_seconds || 0))}${kv(L('Last exit'), exitSummary(upstreamNginx))}<p class="muted">${L('Repository changes become active only after candidate generation, nginx -t, atomic publication and graceful reload.')}</p></div></div>`;
+  const restartSysBtn = $('#restart-system-btn');
+  if (restartSysBtn) restartSysBtn.addEventListener('click', triggerRestart);
 }
 
 function nestedValue(object, path) {
@@ -543,11 +592,15 @@ async function loadSettings() {
   const loc = getLocale();
   const settingsGroups = loc.settingsGroups || [];
   const restart = response.restart_required
-    ? `<div class="notice error">${L('Saved values differ from the running process. Restart MirrorRelay to apply them.')} <code>sudo systemctl restart mirrorrelay</code></div>`
+    ? `<div class="notice error"><span>${L('Saved values differ from the running process. Restart MirrorRelay to apply them.')}</span> <div class="actions" style="display:inline-flex;gap:8px;margin-left:12px;align-items:center;"><button type="button" class="secondary" id="restart-service-btn" style="padding:4px 10px;font-size:13px;">${L('Restart now')}</button> <code>sudo systemctl restart mirrorrelay</code></div></div>`
     : `<div class="notice">${L('The running process matches the saved settings.')}</div>`;
   const groups = settingsGroups.map(group => `<fieldset><legend>${esc(group.title)}</legend><div class="form-grid">${group.fields.map(field => settingsInput(field, settings)).join('')}</div></fieldset>`).join('');
   $('#page-settings').innerHTML = `${restart}<div class="panel"><p>${L('These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.')}</p>${kv(L('Source'), response.source === 'web_ui' ? L('Web UI override') : L('Configuration file'))}<p class="muted">${L('File-only bootstrap settings:')} <code>${esc((response.file_only || []).join(', '))}</code></p></div>
-    <form id="settings-form" class="settings-form">${groups}<footer><button type="button" class="secondary" id="reset-settings">${L('Reset to YAML after restart')}</button><button type="submit">${L('Validate and save')}</button></footer><div id="settings-error" class="error"></div></form>`;
+    <form id="settings-form" class="settings-form">${groups}<footer><button type="button" class="secondary" id="reset-settings">${L('Reset to YAML after restart')}</button><button type="button" class="secondary" id="restart-settings-btn">${L('Restart MirrorRelay')}</button><button type="submit">${L('Validate and save')}</button></footer><div id="settings-error" class="error"></div></form>`;
+  const restartNoticeBtn = $('#restart-service-btn');
+  if (restartNoticeBtn) restartNoticeBtn.addEventListener('click', triggerRestart);
+  const restartFooterBtn = $('#restart-settings-btn');
+  if (restartFooterBtn) restartFooterBtn.addEventListener('click', triggerRestart);
   $('#settings-form').addEventListener('submit', async event => {
     event.preventDefault();
     const next = JSON.parse(JSON.stringify(settings));
@@ -781,5 +834,9 @@ document.addEventListener('click', event => {
     .finally(() => { if (button.isConnected) button.disabled = false; });
 });
 
+$('#restart-header')?.addEventListener('click', triggerRestart);
+$('#restart-sidebar')?.addEventListener('click', triggerRestart);
+
 applyLanguage(language);
 boot();
+

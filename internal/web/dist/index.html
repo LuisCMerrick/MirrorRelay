@@ -41,11 +41,11 @@
         <button data-page="users" data-i18n="navUsers">Users</button>
         <button data-page="account" data-i18n="navAccount">My account</button>
       </nav>
-      <div class="sidebar-foot"><span id="user-name"></span><button id="logout" class="link" data-i18n="signOut">Sign out</button></div>
+      <div class="sidebar-foot"><span id="user-name"></span><div class="sidebar-actions"><button id="restart-sidebar" class="link danger" type="button" data-i18n="restart">Restart</button><button id="logout" class="link" type="button" data-i18n="signOut">Sign out</button></div></div>
     </aside>
 
     <section class="content">
-      <header><div><h1 id="page-title">Dashboard</h1><p id="page-subtitle">Live service status</p></div><span id="status" class="status online">Online</span></header>
+      <header><div><h1 id="page-title">Dashboard</h1><p id="page-subtitle">Live service status</p></div><div class="header-actions"><span id="status" class="status online">Online</span><button id="restart-header" type="button" class="secondary" data-i18n="restartService">Restart service</button></div></header>
       <div id="notice"></div>
       <section id="page-dashboard" class="page"></section>
       <section id="page-mirrors" class="page hidden"><div class="toolbar"><div></div><button id="add-mirror" data-i18n="addRepository">Add repository</button></div><div id="mirror-list"></div></section>
