@@ -1,7 +1,4 @@
-'use strict';
-
-window.MIRRORRELAY_LOCALES = window.MIRRORRELAY_LOCALES || {};
-window.MIRRORRELAY_LOCALES.zh = {
+export default {
   lang: 'zh',
   locale: 'zh-CN',
   dictionary: {

@@ -33,7 +33,7 @@ Open `https://127.0.0.1:8443/admin/` and sign in with default credentials `admin
 ### Web UI Guidelines
 - Keep the Web UI zero-dependency (vanilla JavaScript, HTML5, and CSS).
 - Maintain bilingual resource decoupling: all user-facing strings must be defined in both `internal/web/dist/locales/en.js` and `locales/zh.js`.
-- Always validate JavaScript syntax: `node --check internal/web/dist/app.js`.
+- Always validate JavaScript syntax: `find internal/web/dist -name "*.js" -exec node --check {} +`.
 
 ### Documentation Parity
 - When modifying user-visible features, configuration options, or APIs, always update both the English documentation (`docs/*.md`) and the paired Chinese translation (`docs/*.zh-CN.md`).

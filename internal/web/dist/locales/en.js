@@ -1,7 +1,4 @@
-'use strict';
-
-window.MIRRORRELAY_LOCALES = window.MIRRORRELAY_LOCALES || {};
-window.MIRRORRELAY_LOCALES.en = {
+export default {
   lang: 'en',
   locale: 'en-US',
   dictionary: {

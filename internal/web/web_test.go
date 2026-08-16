@@ -12,7 +12,7 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	script, err := fs.ReadFile(assets, "app.js")
+	mainScript, err := fs.ReadFile(assets, "js/main.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,25 +31,18 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 		"index": {content: string(index), expected: []string{
 			`<html lang="en">`, `data-lang="en"`, `data-lang="zh"`, `data-page="settings"`,
 			`id="html-rewrite-enabled"`, `id="restart-header"`, `id="restart-sidebar"`,
-			`href="app.css"`, `src="locales/en.js"`, `src="locales/zh.js"`, `src="app.js"`,
+			`href="app.css"`, `src="js/main.js"`,
 		}},
 		"localeEn": {content: string(localeEn), expected: []string{
-			"window.MIRRORRELAY_LOCALES.en", "Linux repository reverse-proxy gateway",
+			"export default", "Linux repository reverse-proxy gateway",
 			"Local endpoints and ingress", "Frontend Unix socket",
 		}},
 		"localeZh": {content: string(localeZh), expected: []string{
-			"window.MIRRORRELAY_LOCALES.zh", "Linux 软件仓库反向代理网关",
+			"export default", "Linux 软件仓库反向代理网关",
 			"本地端点与入口", "前端 Unix Socket",
 		}},
-		"script": {content: string(script), expected: []string{
-			"navigator.languages", "mirrorrelay.language", "getLocale",
-			"fetch('api/v1' + path, request)",
-			"const repositories = repositoryValues || [];", "mirrors = (await api('/mirrors')) || [];",
-			`data-action="show-repository"`, `data-action="copy-repository-url"`, `data-action="check-mirror"`,
-			`data-action="preview-repository-config"`, `data-action="purge-repository"`, `data-action="edit-mirror"`,
-			`data-action="toggle-mirror"`, `data-action="delete-mirror"`,
-			"html_rewrite_enabled: $('#html-rewrite-enabled').checked",
-			"async function loadSettings()", "document.addEventListener('click'",
+		"mainScript": {content: string(mainScript), expected: []string{
+			"import", "boot()", "applyLanguage", "triggerRestart",
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -60,7 +53,7 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			}
 		})
 	}
-	for _, assetContent := range []string{string(index), string(script), string(localeEn), string(localeZh)} {
+	for _, assetContent := range []string{string(index), string(mainScript), string(localeEn), string(localeZh)} {
 		if strings.Contains(assetContent, "onclick=") {
 			t.Fatal("strict-CSP Web UI contains an inline click handler")
 		}

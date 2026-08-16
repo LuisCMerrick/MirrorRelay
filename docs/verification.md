@@ -18,7 +18,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-amd64 ./cmd/mirrorrelay
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-arm64 ./cmd/mirrorrelay
-node --check internal/web/dist/app.js
+find internal/web/dist -name "*.js" -exec node --check {} +
 (cd nginx/sbin && sha256sum -c nginx.sha256)
 file nginx/sbin/nginx
 ldd nginx/sbin/nginx || true

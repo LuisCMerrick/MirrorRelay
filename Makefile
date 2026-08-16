@@ -32,9 +32,7 @@ check:
 	go mod verify
 	go vet ./...
 	go test ./...
-	node --check internal/web/dist/app.js
-	node --check internal/web/dist/locales/en.js
-	node --check internal/web/dist/locales/zh.js
+	find internal/web/dist -name "*.js" -exec node --check {} +
 
 release-mirrorrelay:
 	mkdir -p dist/mirrorrelay-linux-$(ARCH)
