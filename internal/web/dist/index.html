@@ -262,6 +262,52 @@
     </div>
   </dialog>
 
+  <dialog id="custom-dialog">
+    <form id="custom-form" method="dialog">
+      <header>
+        <h2 id="custom-title">Custom Managed Upstream Nginx configuration</h2>
+        <button type="button" class="icon" id="close-custom" aria-label="Close">×</button>
+      </header>
+      <input id="custom-id" type="hidden">
+      <div class="form-grid">
+        <label><span data-i18n="name">Name</span><input id="custom-name" required maxlength="100"></label>
+        <label><span data-i18n="context">Context</span><select id="custom-context"><option value="http">HTTP</option><option value="server">Server</option><option value="location">Location</option><option value="upstream">Upstream</option><option value="repository">Repository</option></select></label>
+        <label><span data-i18n="repositoryID">Repository ID (0 = global)</span><input id="custom-repository" type="number" value="0" min="0"></label>
+        <label class="check"><input id="custom-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
+        <label class="wide"><span data-i18n="configuration">Configuration</span><textarea id="custom-content" class="code-editor" rows="18" required spellcheck="false"></textarea></label>
+      </div>
+      <footer>
+        <button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button>
+        <button type="submit" data-i18n="validateApply">Validate and apply</button>
+      </footer>
+      <div id="custom-error" class="error"></div>
+    </form>
+  </dialog>
+
+  <dialog id="node-dialog">
+    <form id="node-form" method="dialog">
+      <header>
+        <h2 id="node-form-title">Add edge node</h2>
+        <button type="button" class="icon" id="close-node-dialog" aria-label="Close">×</button>
+      </header>
+      <input id="node-id" type="hidden">
+      <div class="form-grid">
+        <label><span data-i18n="name">Name</span><input id="node-name" required maxlength="100" placeholder="tokyo-01"></label>
+        <label><span data-i18n="nodeURL">Public base URL</span><input id="node-url" required placeholder="https://jp.repo.example.com"></label>
+        <label><span data-i18n="region">Region</span><input id="node-region" required placeholder="jp-tokyo"></label>
+        <label><span data-i18n="country">Country</span><input id="node-country" placeholder="JP" maxlength="2"></label>
+        <label><span data-i18n="priority">Priority</span><input id="node-priority" type="number" value="100" min="1"></label>
+        <label><span data-i18n="weight">Weight</span><input id="node-weight" type="number" value="100" min="1" max="1000"></label>
+        <label class="check"><input id="node-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
+      </div>
+      <footer>
+        <button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button>
+        <button type="submit" data-i18n="save">Save</button>
+      </footer>
+      <div id="node-error" class="error"></div>
+    </form>
+  </dialog>
+
   <script src="locales/en.js"></script>
   <script src="locales/zh.js"></script>
   <script src="app.js"></script>

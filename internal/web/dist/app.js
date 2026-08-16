@@ -149,7 +149,7 @@ async function boot() {
   }
 }
 
-$('#login-form').addEventListener('submit', async event => {
+$('#login-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   $('#login-error').textContent = '';
   try {
@@ -158,7 +158,7 @@ $('#login-form').addEventListener('submit', async event => {
     await boot();
   } catch (error) { $('#login-error').textContent = error.message; }
 });
-$('#logout').addEventListener('click', async () => {
+$('#logout')?.addEventListener('click', async () => {
   try { await api('/auth/logout', {method: 'POST'}); } catch (_) {}
   csrf = ''; location.reload();
 });
@@ -303,13 +303,13 @@ function renderMirrorsTable() {
   $('#mirror-list').innerHTML = `<div class="table-wrap"><table><thead><tr><th>${L('Name')}</th><th>${L('Type / profile')}</th><th>${L('Public URL')}</th><th>${L('Active upstream')}</th><th>${L('Health / latency')}</th><th>${L('Desired state')}</th><th>${L('Cache')}</th><th>${L('Actions')}</th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty">${L('No repositories yet.')}</td></tr>`}</tbody></table></div>`;
 }
 
-$('#add-mirror').addEventListener('click', () => openMirrorForm());
-$('#close-dialog').addEventListener('click', () => $('#mirror-dialog').close());
-$('#cancel-dialog').addEventListener('click', () => $('#mirror-dialog').close());
-$('#close-detail').addEventListener('click', () => $('#detail-dialog').close());
-$('#close-preview').addEventListener('click', () => $('#preview-dialog').close());
+$('#add-mirror')?.addEventListener('click', () => openMirrorForm());
+$('#close-dialog')?.addEventListener('click', () => $('#mirror-dialog').close());
+$('#cancel-dialog')?.addEventListener('click', () => $('#mirror-dialog').close());
+$('#close-detail')?.addEventListener('click', () => $('#detail-dialog').close());
+$('#close-preview')?.addEventListener('click', () => $('#preview-dialog').close());
 
-$('#template').addEventListener('change', () => {
+$('#template')?.addEventListener('change', () => {
 	const selected = $('#template').value;
 	const profile = selected === '' ? null : profiles[Number(selected)];
   if (!profile) return;
@@ -401,7 +401,7 @@ function parseUpstreams(value) {
   });
 }
 
-$('#mirror-form').addEventListener('submit', async event => {
+$('#mirror-form')?.addEventListener('submit', async event => {
   event.preventDefault();
 	const id = $('#mirror-id').value;
 	const templateValue = $('#template').value;
@@ -521,7 +521,7 @@ window.previewProfileUpgrade = async (id, name, version) => {
     const value = await api(`/mirrors/${id}/profile/preview`, {method: 'POST', body: JSON.stringify({name, version})});
     const rows = Object.entries(value.diff || {}).map(([field, change]) => `<tr><td>${esc(field)}</td><td><code>${esc(JSON.stringify(change.before))}</code></td><td><code>${esc(JSON.stringify(change.after))}</code></td></tr>`).join('');
     showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
-    $('#apply-profile-upgrade').addEventListener('click', async () => {
+    $('#apply-profile-upgrade')?.addEventListener('click', async () => {
       try { await api(`/mirrors/${id}/profile/apply`, {method: 'POST', body: JSON.stringify({name, version})}); $('#preview-dialog').close(); $('#detail-dialog').close(); notice(L('Profile upgrade activated.')); await loadMirrors(); } catch (error) { notice(error.message, true); }
     });
   } catch (error) { notice(error.message, true); }
@@ -542,7 +542,7 @@ async function loadUpstreamNginx() {
     $('#page-upstream-nginx').innerHTML = `<div class="cards">${card(L('State'), stateLabel(status.state), status.state === 'running')}${card('PID', status.pid || '—')}${card(L('Uptime'), duration(status.uptime_seconds || 0))}${card(L('Config version'), `v${status.current_config_version || '—'}`)}${card(L('Managed Upstream Nginx version'), (status.version || '—').replace(/^nginx version:\s*/, ''))}${card(L('Build ID'), status.build_id || '—')}${card(L('Architecture'), status.architecture || '—')}</div>
       ${status.last_error ? `<div class="notice error">${esc(status.last_error)}</div>` : ''}<div class="toolbar"><div>${status.integration_snippet ? `<span class="muted">${L('Integration snippet')}: ${esc(status.integration_snippet)} · ${esc(status.integration_result || '')}</span>` : ''}</div><button id="reload-upstream-nginx">${L('Regenerate, validate and reload')}</button></div>
       <div class="grid2"><div class="panel"><h2>${L('Configuration history')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Version')}</th><th>${L('Time')}</th><th>${L('Operator')}</th><th>${L('Description')}</th><th>${L('State')}</th><th></th></tr></thead><tbody>${history.map(item => `<tr><td>v${item.version}</td><td>${date(item.created_at)}</td><td>${esc(item.operator)}</td><td>${esc(item.description)}</td><td><span class="badge ${item.active ? 'ok' : ''}">${item.active ? L('Active') : L('History')}</span></td><td>${item.active ? '' : `<button data-action="rollback-config" data-version="${item.version}">${L('Rollback')}</button>`}</td></tr>`).join('')}</tr></thead></table></div></div><div class="panel"><h2>${L('Runtime and build')}</h2>${kv(L('Last reload'), status.last_reload ? date(status.last_reload) : '—')}${kv(L('Reload result'), status.last_reload_result || '—')}${kv(L('Last exit'), exitSummary(status))}<pre class="config-preview">${esc(status.build_options || L('Build options unavailable.'))}</pre></div><div class="panel"><h2>${L('Effective configuration')}</h2><pre class="config-preview">${esc(config.configuration)}</pre></div></div>`;
-    $('#reload-upstream-nginx').addEventListener('click', async () => { try { await api('/upstream-nginx/reload', {method: 'POST'}); notice(L('Validation passed and Managed Upstream Nginx reloaded.')); await loadUpstreamNginx(); } catch (error) { notice(error.message, true); } });
+    $('#reload-upstream-nginx')?.addEventListener('click', async () => { try { await api('/upstream-nginx/reload', {method: 'POST'}); notice(L('Validation passed and Managed Upstream Nginx reloaded.')); await loadUpstreamNginx(); } catch (error) { notice(error.message, true); } });
   } catch (error) { $('#page-upstream-nginx').innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
 }
 window.rollbackConfig = async version => {
@@ -558,10 +558,10 @@ function openCustom(value = null) {
   $('#custom-form').reset(); $('#custom-id').value = value?.id || ''; $('#custom-title').textContent = value ? L('Edit custom Managed Upstream Nginx configuration') : L('Add custom Managed Upstream Nginx configuration');
   $('#custom-name').value = value?.name || ''; $('#custom-context').value = value?.context || 'http'; $('#custom-repository').value = value?.repository_id || 0; $('#custom-enabled').checked = value?.enabled ?? true; $('#custom-content').value = value?.content || ''; $('#custom-error').textContent = ''; $('#custom-dialog').showModal();
 }
-$('#add-custom').addEventListener('click', () => openCustom()); $('#close-custom').addEventListener('click', () => $('#custom-dialog').close()); $('#cancel-custom').addEventListener('click', () => $('#custom-dialog').close());
+$('#add-custom')?.addEventListener('click', () => openCustom()); $('#close-custom')?.addEventListener('click', () => $('#custom-dialog').close()); $('#cancel-custom')?.addEventListener('click', () => $('#custom-dialog').close());
 window.editCustom = id => openCustom(customConfigs.find(value => value.id === id));
 window.deleteCustom = async id => { if (!confirm(L('Delete this custom configuration and reload Managed Upstream Nginx?'))) return; try { await api(`/custom-configs/${id}`, {method: 'DELETE'}); notice(L('Custom configuration deleted.')); await loadCustom(); } catch (error) { notice(error.message, true); } };
-$('#custom-form').addEventListener('submit', async event => { event.preventDefault(); const id = $('#custom-id').value; const body = {name: $('#custom-name').value, context: $('#custom-context').value, repository_id: Number($('#custom-repository').value), enabled: $('#custom-enabled').checked, content: $('#custom-content').value}; try { await api(id ? `/custom-configs/${id}` : '/custom-configs', {method: id ? 'PUT' : 'POST', body: JSON.stringify(body)}); $('#custom-dialog').close(); notice(L('Custom configuration validated and activated.')); await loadCustom(); } catch (error) { $('#custom-error').textContent = error.message; } });
+$('#custom-form')?.addEventListener('submit', async event => { event.preventDefault(); const id = $('#custom-id').value; const body = {name: $('#custom-name').value, context: $('#custom-context').value, repository_id: Number($('#custom-repository').value), enabled: $('#custom-enabled').checked, content: $('#custom-content').value}; try { await api(id ? `/custom-configs/${id}` : '/custom-configs', {method: id ? 'PUT' : 'POST', body: JSON.stringify(body)}); $('#custom-dialog').close(); notice(L('Custom configuration validated and activated.')); await loadCustom(); } catch (error) { $('#custom-error').textContent = error.message; } });
 
 async function loadIngress() {
   const integration = await api('/ingress/snippet');
@@ -575,7 +575,7 @@ async function loadCache() {
     <div class="panel"><h2>${L('Cache storage')}</h2>${kv(L('Path'), cache.path)}${kv(L('Maximum files'), number(cache.maximum_files))}${kv(L('Minimum free space'), bytes(cache.minimum_free_bytes))}${kv(L('Inactive window'), duration(cache.inactive_seconds))}<button class="danger" id="clear-cache">${L('Global logical purge')}</button><p class="muted">${L('Logical invalidation is immediate. Physical files remain until the asynchronous Nginx cache manager completes its inactive/max_size cleanup window.')}</p></div>
     <div class="panel"><h2>${L('Repository cache traffic today')}</h2><p class="muted">${L('Nginx cache files are content-keyed; this table reports observed cache-served traffic, not guessed physical ownership.')}</p><div class="table-wrap"><table><thead><tr><th>${L('Repository')}</th><th>${L('HIT')}</th><th>${L('MISS')}</th><th>${L('Cache-served bytes')}</th></tr></thead><tbody>${repositories.map(repository => { const value = byRepository[repository.id] || {}; return `<tr><td>${esc(repository.name)}</td><td>${number(value.cache_hits)}</td><td>${number(value.cache_misses)}</td><td>${bytes(value.cache_bytes)}</td></tr>`; }).join('')}</tbody></table></div></div>
     <div class="panel"><h2>${L('Purge / reclaim jobs')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('Scope')}</th><th>${L('Generation')}</th><th>${L('Logical purge')}</th><th>${L('Physical reclaim')}</th><th>${L('Reclaimed')}</th><th>${L('Operator')}</th></tr></thead><tbody>${jobs.map(job => `<tr><td>${date(job.created_at)}</td><td>${esc(job.scope)} ${job.repository_id || ''}</td><td>${job.old_generation} → ${job.new_generation}</td><td><span class="badge ok">${L('Completed')}</span></td><td><span class="badge ${job.reclaim_state === 'completed' ? 'ok' : job.reclaim_state === 'failed' ? 'bad' : ''}" title="${esc(job.error || '')}">${esc(stateLabel(job.reclaim_state))}</span></td><td>${bytes(job.reclaimed_bytes)}</td><td>${esc(job.operator)}</td></tr>`).join('')}</tbody></table></div></div>`;
-  $('#clear-cache').addEventListener('click', async () => { if (!confirm(L('Invalidate every existing cache namespace?'))) return; try { const result = await api('/cache', {method: 'DELETE'}); notice(L('Logical purge completed; physical reclaim is %s.', result.physical_reclaim)); await loadCache(); } catch (error) { notice(error.message, true); } });
+  $('#clear-cache')?.addEventListener('click', async () => { if (!confirm(L('Invalidate every existing cache namespace?'))) return; try { const result = await api('/cache', {method: 'DELETE'}); notice(L('Logical purge completed; physical reclaim is %s.', result.physical_reclaim)); await loadCache(); } catch (error) { notice(error.message, true); } });
 }
 
 async function loadHealth() {
@@ -584,7 +584,7 @@ async function loadHealth() {
   const frontendLabel = `${health.frontend_network || 'unix'} · ${health.frontend_address || ''}`;
   $('#page-health').innerHTML = `<div class="cards">${card('MirrorRelay', health.mirrorrelay, health.mirrorrelay === 'healthy')}${card(`${L('Frontend endpoint')} (${frontendLabel})`, health.frontend_endpoint || health.frontend_socket, health.frontend_endpoint === 'healthy')}${card(L('External Shared Nginx'), health.external_shared_nginx)}${card('Go Router', health.go_router)}${card(L('Managed Upstream Nginx'), stateLabel(health.managed_upstream_nginx), health.managed_upstream_nginx === 'running')}${card(`${L('Upstream endpoint')} (${endpointLabel})`, health.upstream_endpoint || health.upstream_socket, health.upstream_endpoint === 'healthy')}</div><div class="panel"><h2>${L('Repositories')}</h2>${(health.repositories || []).map(repository => `<div class="kv"><span>${esc(repository.name)}</span><span class="badge ${repository.health_state === 'healthy' ? 'ok' : repository.health_state === 'unhealthy' ? 'bad' : ''}">${esc(stateLabel(repository.health_state))}</span></div>`).join('')}</div>`;
 }
-async function loadAccess() { const lines = await api('/access'); $('#page-access').innerHTML = `<div class="panel"><div class="toolbar"><h2>access.log</h2><button id="refresh-access">${L('Refresh')}</button></div><pre class="config-preview">${esc((lines || []).join('\n') || L('No access records.'))}</pre></div>`; $('#refresh-access').addEventListener('click', loadAccess); }
+async function loadAccess() { const lines = await api('/access'); $('#page-access').innerHTML = `<div class="panel"><div class="toolbar"><h2>access.log</h2><button id="refresh-access">${L('Refresh')}</button></div><pre class="config-preview">${esc((lines || []).join('\n') || L('No access records.'))}</pre></div>`; $('#refresh-access')?.addEventListener('click', loadAccess); }
 async function loadAudit() { const entries = (await api('/audit')) || []; $('#page-audit').innerHTML = `<div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('User')}</th><th>${L('Client')}</th><th>${L('Action')}</th><th>${L('Object / detail')}</th><th>${L('Result')}</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${date(entry.time)}</td><td>${esc(entry.username)}</td><td>${esc(entry.client_ip)}</td><td>${esc(entry.action)}</td><td>${esc(entry.object)} ${esc(entry.detail)}</td><td><span class="badge ${entry.succeeded ? 'ok' : 'bad'}">${entry.succeeded ? L('Success') : L('Failed')}</span></td></tr>`).join('')}</tbody></table></div>`; }
 
 async function triggerRestart() {
@@ -681,7 +681,7 @@ async function loadSettings() {
   if (restartNoticeBtn) restartNoticeBtn.addEventListener('click', triggerRestart);
   const restartFooterBtn = $('#restart-settings-btn');
   if (restartFooterBtn) restartFooterBtn.addEventListener('click', triggerRestart);
-  $('#settings-form').addEventListener('submit', async event => {
+  $('#settings-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const next = JSON.parse(JSON.stringify(settings));
     event.target.querySelectorAll('[data-setting-path]').forEach(input => {
@@ -698,7 +698,7 @@ async function loadSettings() {
       await loadSettings();
     } catch (error) { $('#settings-error').textContent = error.message; }
   });
-  $('#reset-settings').addEventListener('click', async () => {
+  $('#reset-settings')?.addEventListener('click', async () => {
     if (!confirm(L('Discard the Web UI override and restore YAML values after restart?'))) return;
     try { await api('/settings', {method: 'DELETE'}); notice(L('Web UI override removed; restart MirrorRelay.')); await loadSettings(); } catch (error) { $('#settings-error').textContent = error.message; }
   });
@@ -757,7 +757,7 @@ async function loadAppearance() {
     <div id="appearance-error" class="error"></div>
   </form>`;
 
-  $('#appearance-form').addEventListener('submit', async event => {
+  $('#appearance-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     const payload = {
       enabled: $('#app-ui-enabled').checked,
@@ -789,7 +789,7 @@ async function loadAppearance() {
     }
   });
 
-  $('#reset-appearance-btn').addEventListener('click', async () => {
+  $('#reset-appearance-btn')?.addEventListener('click', async () => {
     if (!confirm(L('Reset appearance settings to default values?'))) return;
     try {
       await api('/appearance/reset', {method: 'POST'});
@@ -968,10 +968,10 @@ window.deleteNode = async id => {
 async function loadUsers() {
   const users = (await api('/users')) || [];
   $('#page-users').innerHTML = `<form class="panel narrow" id="user-form"><h2>${L('Add administrator')}</h2><div class="form-grid"><label>${L('Username')}<input id="new-user" minlength="3" maxlength="64" required></label><label>${L('Initial password')}<input id="new-user-pass" type="password" minlength="10" required></label></div><button>${L('Create user')}</button><div id="user-error" class="error"></div></form><div class="panel"><h2>${L('User list')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Username')}</th><th>${L('Created')}</th><th>${L('Updated')}</th><th></th></tr></thead><tbody>${users.map(user => `<tr><td>${esc(user.username)}</td><td>${date(user.created_at)}</td><td>${date(user.updated_at)}</td><td><button class="danger" data-action="delete-user" data-id="${user.id}">${L('Delete')}</button></td></tr>`).join('')}</tbody></table></div></div>`;
-  $('#user-form').addEventListener('submit', async event => { event.preventDefault(); try { await api('/users', {method: 'POST', body: JSON.stringify({username: $('#new-user').value, password: $('#new-user-pass').value})}); notice(L('User created.')); await loadUsers(); } catch (error) { $('#user-error').textContent = error.message; } });
+  $('#user-form')?.addEventListener('submit', async event => { event.preventDefault(); try { await api('/users', {method: 'POST', body: JSON.stringify({username: $('#new-user').value, password: $('#new-user-pass').value})}); notice(L('User created.')); await loadUsers(); } catch (error) { $('#user-error').textContent = error.message; } });
 }
 window.deleteUser = async id => { if (!confirm(L('Delete this administrator account?'))) return; try { await api(`/users/${id}`, {method: 'DELETE'}); notice(L('User deleted.')); await loadUsers(); } catch (error) { notice(error.message, true); } };
-async function loadAccount() { $('#page-account').innerHTML = `<form class="panel narrow" id="password-form"><h2>${L('Change password')}</h2><label>${L('Current password')}<input id="old-pass" type="password" required></label><label>${L('New password (at least 10 characters)')}<input id="new-pass" type="password" minlength="10" required></label><button>${L('Update password')}</button><div class="error" id="pass-error"></div></form>`; $('#password-form').addEventListener('submit', async event => { event.preventDefault(); try { await api('/auth/password', {method: 'PUT', body: JSON.stringify({current_password: $('#old-pass').value, new_password: $('#new-pass').value})}); notice(L('Password updated.')); event.target.reset(); } catch (error) { $('#pass-error').textContent = error.message; } }); }
+async function loadAccount() { $('#page-account').innerHTML = `<form class="panel narrow" id="password-form"><h2>${L('Change password')}</h2><label>${L('Current password')}<input id="old-pass" type="password" required></label><label>${L('New password (at least 10 characters)')}<input id="new-pass" type="password" minlength="10" required></label><button>${L('Update password')}</button><div class="error" id="pass-error"></div></form>`; $('#password-form')?.addEventListener('submit', async event => { event.preventDefault(); try { await api('/auth/password', {method: 'PUT', body: JSON.stringify({current_password: $('#old-pass').value, new_password: $('#new-pass').value})}); notice(L('Password updated.')); event.target.reset(); } catch (error) { $('#pass-error').textContent = error.message; } }); }
 
 async function runAction(button) {
   const id = Number(button.dataset.id);
