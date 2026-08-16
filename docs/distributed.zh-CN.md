@@ -77,35 +77,45 @@ Coordinator 按照以下优先级依次计算路由调度策略：
 ```yaml
 distributed:
   enabled: true
-  role: coordinator
+  role: coordinator           # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
   node:
-    id: "coord-01"
-    name: "主控制中心"
-    public_url: "https://repo-hub.example.com"
+    name: "coord-01"
+    public_base_url: "https://repo-hub.example.com"
+    region: "cn-east"
+    country: "CN"
   routing:
-    strategy: "hybrid"            # cidr, geo, priority, weight, hybrid
-    fallback_to_local: true
+    mode: hybrid              # hybrid, cidr, geo, priority, weight
+    client_networks:
+      - cidr: "10.10.0.0/16"
+        region: "cn-east"
+      - cidr: "10.20.0.0/16"
+        region: "cn-south"
+    regions:
+      - code: "cn-east"
+        countries: ["CN"]
+      - code: "cn-south"
+        countries: ["HK", "MO"]
   health_check:
-    interval: "15s"
-    timeout: "3s"
+    interval: 10s
+    timeout: 3s
+    healthy_threshold: 2
+    unhealthy_threshold: 3
   nodes:
-    - id: "edge-shanghai"
-      name: "华东边缘节点"
+    - name: "Edge Shanghai"
       url: "https://edge-sh.example.com"
       region: "cn-east"
+      country: "CN"
       priority: 100
       weight: 10
-      cidrs:
-        - "10.10.0.0/16"
-    - id: "edge-guangzhou"
-      name: "华南边缘节点"
+      enabled: true
+    - name: "Edge Guangzhou"
       url: "https://edge-gz.example.com"
       region: "cn-south"
+      country: "CN"
       priority: 100
       weight: 10
-      cidrs:
-        - "10.20.0.0/16"
+      enabled: true
 ```
 
 ### Edge 边缘节点 (`/etc/mirrorrelay/config.yaml`)
@@ -113,12 +123,13 @@ distributed:
 ```yaml
 distributed:
   enabled: true
-  role: edge
+  role: edge                  # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
   node:
-    id: "edge-shanghai"
-    name: "华东边缘节点"
-    public_url: "https://edge-sh.example.com"
+    name: "Edge Shanghai"
+    public_base_url: "https://edge-sh.example.com"
+    region: "cn-east"
+    country: "CN"
 ```
 
 ---

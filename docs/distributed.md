@@ -78,35 +78,45 @@ The Coordinator evaluates routing rules in the following sequence:
 ```yaml
 distributed:
   enabled: true
-  role: coordinator
+  role: coordinator           # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
   node:
-    id: "coord-01"
-    name: "Primary Coordinator"
-    public_url: "https://repo-hub.example.com"
+    name: "coord-01"
+    public_base_url: "https://repo-hub.example.com"
+    region: "us-east"
+    country: "US"
   routing:
-    strategy: "hybrid"            # cidr, geo, priority, weight, hybrid
-    fallback_to_local: true
+    mode: hybrid              # hybrid, cidr, geo, priority, weight
+    client_networks:
+      - cidr: "10.10.0.0/16"
+        region: "us-east"
+      - cidr: "10.20.0.0/16"
+        region: "eu-west"
+    regions:
+      - code: "us-east"
+        countries: ["US", "CA"]
+      - code: "eu-west"
+        countries: ["GB", "DE", "FR"]
   health_check:
-    interval: "15s"
-    timeout: "3s"
+    interval: 10s
+    timeout: 3s
+    healthy_threshold: 2
+    unhealthy_threshold: 3
   nodes:
-    - id: "edge-us"
-      name: "Edge US East"
+    - name: "Edge US East"
       url: "https://edge-us.example.com"
       region: "us-east"
+      country: "US"
       priority: 100
       weight: 10
-      cidrs:
-        - "10.10.0.0/16"
-    - id: "edge-eu"
-      name: "Edge EU West"
+      enabled: true
+    - name: "Edge EU West"
       url: "https://edge-eu.example.com"
       region: "eu-west"
+      country: "DE"
       priority: 100
       weight: 10
-      cidrs:
-        - "10.20.0.0/16"
+      enabled: true
 ```
 
 ### Edge Node (`/etc/mirrorrelay/config.yaml`)
@@ -114,12 +124,13 @@ distributed:
 ```yaml
 distributed:
   enabled: true
-  role: edge
+  role: edge                  # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
   node:
-    id: "edge-us"
     name: "Edge US East"
-    public_url: "https://edge-us.example.com"
+    public_base_url: "https://edge-us.example.com"
+    region: "us-east"
+    country: "US"
 ```
 
 ---
