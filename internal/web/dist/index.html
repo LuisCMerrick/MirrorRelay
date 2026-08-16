@@ -4,57 +4,123 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>MirrorRelay</title>
+  <title>MirrorRelay Control Plane</title>
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="managed.css">
 </head>
 <body>
   <div class="language-float language-switch" aria-label="Language">
-    <button type="button" data-lang="en">EN</button><button type="button" data-lang="zh">中文</button>
+    <button type="button" data-lang="en">EN</button>
+    <button type="button" data-lang="zh">中文</button>
   </div>
+
   <main id="login" class="login-wrap hidden">
     <form id="login-form" class="panel login-card">
-      <div class="brand-mark">M</div><h1>MirrorRelay</h1><p data-i18n="tagline">Linux repository reverse-proxy gateway</p>
-      <label><span data-i18n="username">Username</span><input id="login-user" autocomplete="username" required></label>
-      <label><span data-i18n="password">Password</span><input id="login-password" type="password" autocomplete="current-password" required></label>
-      <button type="submit" data-i18n="signIn">Sign in</button><div id="login-error" class="error"></div>
+      <div class="brand-mark">M</div>
+      <h1>MirrorRelay</h1>
+      <p data-i18n="tagline">Linux repository reverse-proxy gateway</p>
+      <label>
+        <span data-i18n="username">Username</span>
+        <input id="login-user" autocomplete="username" required placeholder="admin">
+      </label>
+      <label>
+        <span data-i18n="password">Password</span>
+        <input id="login-password" type="password" autocomplete="current-password" required placeholder="••••••••">
+      </label>
+      <button type="submit" data-i18n="signIn">Sign in</button>
+      <div id="login-error" class="error"></div>
     </form>
   </main>
 
   <div id="app" class="shell hidden">
     <aside>
-      <div class="brand"><span class="brand-mark">M</span><div><strong>MirrorRelay</strong><small>Repository Gateway</small></div></div>
+      <div class="brand">
+        <span class="brand-mark">M</span>
+        <div>
+          <strong>MirrorRelay</strong>
+          <small>Repository Gateway</small>
+        </div>
+      </div>
       <nav>
+        <div class="nav-section-title">Core</div>
         <button data-page="dashboard" class="active" data-i18n="navDashboard">Dashboard</button>
         <button data-page="mirrors" data-i18n="navRepositories">Repositories</button>
         <button data-page="profiles" data-i18n="navProfiles">Profiles</button>
+
+        <div class="nav-section-title">Gateway</div>
         <button data-page="upstream-nginx" data-i18n="navUpstreamNginx">Managed Upstream Nginx</button>
         <button data-page="custom" data-i18n="navCustom">Custom configuration</button>
         <button data-page="ingress" data-i18n="navIngress">Ingress integration</button>
+
+        <div class="nav-section-title">Cluster &amp; Ops</div>
         <button data-page="cluster" data-i18n="navCluster">Cluster</button>
         <button data-page="cache" data-i18n="navCache">Cache</button>
         <button data-page="health" data-i18n="navHealth">Health</button>
+
+        <div class="nav-section-title">Logs &amp; System</div>
         <button data-page="access" data-i18n="navAccess">Access log</button>
         <button data-page="audit" data-i18n="navAudit">Audit log</button>
         <button data-page="system" data-i18n="navSystem">System</button>
+
+        <div class="nav-section-title">Admin</div>
         <button data-page="settings" data-i18n="navSettings">Settings</button>
         <button data-page="appearance" data-i18n="navAppearance">Appearance</button>
         <button data-page="users" data-i18n="navUsers">Users</button>
         <button data-page="account" data-i18n="navAccount">My account</button>
       </nav>
-      <div class="sidebar-foot"><span id="user-name"></span><div class="sidebar-actions"><button id="restart-sidebar" class="link danger" type="button" data-i18n="restart">Restart</button><button id="logout" class="link" type="button" data-i18n="signOut">Sign out</button></div></div>
+      <div class="sidebar-foot">
+        <span id="user-name"></span>
+        <div class="sidebar-actions">
+          <button id="restart-sidebar" class="link danger" type="button" data-i18n="restart">Restart</button>
+          <button id="logout" class="link" type="button" data-i18n="signOut">Sign out</button>
+        </div>
+      </div>
     </aside>
 
     <section class="content">
-      <header><div><h1 id="page-title">Dashboard</h1><p id="page-subtitle">Live service status</p></div><div class="header-actions"><span id="status" class="status online">Online</span><button id="restart-header" type="button" class="secondary" data-i18n="restartService">Restart service</button></div></header>
+      <header>
+        <div>
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-subtitle">Live service status</p>
+        </div>
+        <div class="header-actions">
+          <span id="status" class="status online">Online</span>
+          <button id="restart-header" type="button" class="secondary" data-i18n="restartService">Restart service</button>
+        </div>
+      </header>
       <div id="notice"></div>
+
       <section id="page-dashboard" class="page"></section>
-      <section id="page-mirrors" class="page hidden"><div class="toolbar"><div></div><button id="add-mirror" data-i18n="addRepository">Add repository</button></div><div id="mirror-list"></div></section>
+      <section id="page-mirrors" class="page hidden">
+        <div class="toolbar">
+          <div class="search-bar">
+            <input type="text" id="mirror-search-input" placeholder="Search repository name, slug, type..." />
+          </div>
+          <button id="add-mirror" data-i18n="addRepository">Add repository</button>
+        </div>
+        <div id="mirror-list"></div>
+      </section>
       <section id="page-profiles" class="page hidden"></section>
       <section id="page-upstream-nginx" class="page hidden"></section>
-      <section id="page-custom" class="page hidden"><div class="toolbar"><div></div><button id="add-custom" data-i18n="addCustom">Add custom configuration</button></div><div id="custom-list"></div></section>
+      <section id="page-custom" class="page hidden">
+        <div class="toolbar">
+          <div></div>
+          <button id="add-custom" data-i18n="addCustom">Add custom configuration</button>
+        </div>
+        <div id="custom-list"></div>
+      </section>
       <section id="page-ingress" class="page hidden"></section>
-      <section id="page-cluster" class="page hidden"><div class="toolbar"><div></div><div class="actions"><button id="reset-cluster-fp" class="secondary" data-i18n="resetFingerprint">Reset fingerprint</button><button id="add-node" data-i18n="addNode">Add node</button></div></div><div id="cluster-overview"></div><div id="cluster-node-list"></div></section>
+      <section id="page-cluster" class="page hidden">
+        <div class="toolbar">
+          <div></div>
+          <div class="actions">
+            <button id="reset-cluster-fp" class="secondary" data-i18n="resetFingerprint">Reset fingerprint</button>
+            <button id="add-node" data-i18n="addNode">Add node</button>
+          </div>
+        </div>
+        <div id="cluster-overview"></div>
+        <div id="cluster-node-list"></div>
+      </section>
       <section id="page-cache" class="page hidden"></section>
       <section id="page-health" class="page hidden"></section>
       <section id="page-access" class="page hidden"></section>
@@ -67,112 +133,137 @@
     </section>
   </div>
 
-  <dialog id="mirror-dialog" class="wide-dialog"><form id="mirror-form" method="dialog">
-    <header><h2 id="form-title">Add repository</h2><button type="button" class="icon" id="close-dialog" aria-label="Close">×</button></header>
-    <input id="mirror-id" type="hidden">
-    <fieldset><legend data-i18n="identityRouting">Identity and routing</legend><div class="form-grid">
-      <label><span data-i18n="profileVersion">Profile / version</span><select id="template"><option value="" data-i18n="customOption">Custom</option></select></label>
-      <label><span data-i18n="name">Name</span><input id="mirror-name" required maxlength="100"></label>
-      <label><span data-i18n="slug">Slug</span><input id="mirror-slug" required pattern="[a-z0-9][a-z0-9-]*"></label>
-      <label><span data-i18n="repositoryType">Repository type</span><select id="repository-type"><option>generic</option><option>apt</option><option>rpm</option><option>apk</option><option>opkg</option><option>pypi</option><option>npm</option><option>maven</option><option>nuget</option><option>cargo</option><option>goproxy</option><option>conda</option><option>docker-registry</option><option>oci-registry</option></select></label>
-      <label><span data-i18n="publicMode">Public mode</span><select id="public-mode"><option value="path" data-i18n="pathMode">Path mode</option><option value="host" data-i18n="hostMode">Host mode</option></select></label>
-      <label><span data-i18n="publicHost">Public host</span><input id="public-host" placeholder="docker.example.com"></label>
-      <label><span data-i18n="publicPath">Public path</span><input id="public-path" placeholder="/debian/"></label>
-      <label><span data-i18n="accessPolicy">Access policy</span><select id="access-policy"><option value="public" data-i18n="publicAccess">Public</option><option value="admin" data-i18n="adminAccess">Admin CIDR only</option></select></label>
-      <label class="wide"><span data-i18n="description">Description</span><textarea id="mirror-description" rows="2"></textarea></label>
-    </div></fieldset>
+  <dialog id="mirror-dialog" class="wide-dialog">
+    <form id="mirror-form" method="dialog">
+      <header>
+        <h2 id="form-title">Add repository</h2>
+        <button type="button" class="icon" id="close-dialog" aria-label="Close">×</button>
+      </header>
+      <input id="mirror-id" type="hidden">
+      <fieldset>
+        <legend data-i18n="identityRouting">Identity and routing</legend>
+        <div class="form-grid">
+          <label><span data-i18n="profileVersion">Profile / version</span><select id="template"><option value="" data-i18n="customOption">Custom</option></select></label>
+          <label><span data-i18n="name">Name</span><input id="mirror-name" required maxlength="100"></label>
+          <label><span data-i18n="slug">Slug</span><input id="mirror-slug" required pattern="[a-z0-9][a-z0-9-]*"></label>
+          <label><span data-i18n="repositoryType">Repository type</span><select id="repository-type"><option>generic</option><option>apt</option><option>rpm</option><option>apk</option><option>opkg</option><option>pypi</option><option>npm</option><option>maven</option><option>nuget</option><option>cargo</option><option>goproxy</option><option>conda</option><option>docker-registry</option><option>oci-registry</option></select></label>
+          <label><span data-i18n="publicMode">Public mode</span><select id="public-mode"><option value="path" data-i18n="pathMode">Path mode</option><option value="host" data-i18n="hostMode">Host mode</option></select></label>
+          <label><span data-i18n="publicHost">Public host</span><input id="public-host" placeholder="docker.example.com"></label>
+          <label><span data-i18n="publicPath">Public path</span><input id="public-path" placeholder="/debian/"></label>
+          <label><span data-i18n="accessPolicy">Access policy</span><select id="access-policy"><option value="public" data-i18n="publicAccess">Public</option><option value="admin" data-i18n="adminAccess">Admin CIDR only</option></select></label>
+          <label class="wide"><span data-i18n="description">Description</span><textarea id="mirror-description" rows="2"></textarea></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="upstreamsPaths">Upstreams and path mapping</legend><div class="form-grid">
-      <label class="wide"><span data-i18n="upstreamList">Upstreams (one “priority URL” per line)</span><textarea id="upstream-list" rows="4" required placeholder="10 https://mirror1.example/repo/&#10;20 https://mirror2.example/repo/"></textarea></label>
-      <label><span data-i18n="stripPrefix">Strip prefix</span><input id="strip-prefix" placeholder="/incoming"></label>
-      <label><span data-i18n="addPrefix">Add prefix</span><input id="add-prefix" placeholder="repository/base"></label>
-      <label><span data-i18n="hostRewrite">Host rewrite</span><input id="host-rewrite" placeholder="origin.example.com"></label>
-      <label><span data-i18n="proxyMode">Proxy mode</span><select id="proxy-mode"><option value="transparent" data-i18n="transparentMode">Transparent</option><option value="rewrite" data-i18n="rewriteMode">Rewrite adapter</option><option value="registry" data-i18n="registry">Registry</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
-      <label><span data-i18n="redirectPolicy">Redirect policy</span><select id="redirect-mode"><option value="pass" data-i18n="passClient">Pass to client</option><option value="follow" data-i18n="followBroker">Follow through broker</option><option value="rewrite" data-i18n="rewriteLocal">Rewrite to local URL</option><option value="full_proxy" data-i18n="fullProxy">Full proxy</option></select></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="upstreamsPaths">Upstreams and path mapping</legend>
+        <div class="form-grid">
+          <label class="wide"><span data-i18n="upstreamList">Upstreams (one “priority URL” per line)</span><textarea id="upstream-list" rows="4" required placeholder="10 https://mirror1.example/repo/&#10;20 https://mirror2.example/repo/"></textarea></label>
+          <label><span data-i18n="stripPrefix">Strip prefix</span><input id="strip-prefix" placeholder="/incoming"></label>
+          <label><span data-i18n="addPrefix">Add prefix</span><input id="add-prefix" placeholder="repository/base"></label>
+          <label><span data-i18n="hostRewrite">Host rewrite</span><input id="host-rewrite" placeholder="origin.example.com"></label>
+          <label><span data-i18n="proxyMode">Proxy mode</span><select id="proxy-mode"><option value="transparent" data-i18n="transparentMode">Transparent</option><option value="rewrite" data-i18n="rewriteMode">Rewrite adapter</option><option value="registry" data-i18n="registry">Registry</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
+          <label><span data-i18n="redirectPolicy">Redirect policy</span><select id="redirect-mode"><option value="pass" data-i18n="passClient">Pass to client</option><option value="follow" data-i18n="followBroker">Follow through broker</option><option value="rewrite" data-i18n="rewriteLocal">Rewrite to local URL</option><option value="full_proxy" data-i18n="fullProxy">Full proxy</option></select></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="headersTimeouts">Headers and timeouts</legend><div class="form-grid">
-      <label class="wide"><span data-i18n="headerAdd">Add request headers (one “Name: Value” per line)</span><textarea id="header-add" rows="3"></textarea></label>
-      <label class="wide"><span data-i18n="headerRemove">Remove request headers (comma or newline separated)</span><textarea id="header-remove" rows="2"></textarea></label>
-      <label><span data-i18n="connectTimeout">Connect timeout (seconds)</span><input id="connect-timeout" type="number" value="10" min="1" max="75"></label>
-      <label><span data-i18n="readTimeout">Read timeout (seconds)</span><input id="read-timeout" type="number" value="3600" min="1"></label>
-      <label><span data-i18n="sendTimeout">Send timeout (seconds)</span><input id="send-timeout" type="number" value="3600" min="1"></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="headersTimeouts">Headers and timeouts</legend>
+        <div class="form-grid">
+          <label class="wide"><span data-i18n="headerAdd">Add request headers (one “Name: Value” per line)</span><textarea id="header-add" rows="3"></textarea></label>
+          <label class="wide"><span data-i18n="headerRemove">Remove request headers (comma or newline separated)</span><textarea id="header-remove" rows="2"></textarea></label>
+          <label><span data-i18n="connectTimeout">Connect timeout (seconds)</span><input id="connect-timeout" type="number" value="10" min="1" max="75"></label>
+          <label><span data-i18n="readTimeout">Read timeout (seconds)</span><input id="read-timeout" type="number" value="3600" min="1"></label>
+          <label><span data-i18n="sendTimeout">Send timeout (seconds)</span><input id="send-timeout" type="number" value="3600" min="1"></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="cacheRewrite">Cache and rewrite</legend><div class="form-grid">
-      <label><span data-i18n="cacheProfile">Cache profile</span><select id="cache-profile"><option value="standard" data-i18n="standard">Standard</option><option value="packages" data-i18n="packages">Packages</option><option value="registry" data-i18n="registryBlob">Registry Blob</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
-      <label><span data-i18n="rewriteProfile">Rewrite profile</span><input id="rewrite-profile" placeholder="pypi"></label>
-      <label class="wide"><span data-i18n="rewriteHosts">Allowed rewrite/redirect hosts (comma or newline separated)</span><textarea id="rewrite-hosts" rows="2" placeholder="files.pythonhosted.org"></textarea></label>
-      <label><span data-i18n="metadataLimit">Metadata rewrite limit (bytes, 0 = global)</span><input id="metadata-limit" type="number" value="0" min="0"></label>
-      <label><span data-i18n="metadataTTL">Metadata TTL (seconds, 0 = global)</span><input id="metadata-ttl" type="number" value="0" min="0"></label>
-      <label><span data-i18n="packageTTL">Package TTL (seconds, 0 = global)</span><input id="package-ttl" type="number" value="0" min="0"></label>
-      <label><span data-i18n="immutableTTL">Immutable TTL (seconds, 0 = default)</span><input id="immutable-ttl" type="number" value="0" min="0"></label>
-      <label><span data-i18n="blobTTL">Blob TTL (seconds, 0 = default)</span><input id="blob-ttl" type="number" value="0" min="0"></label>
-      <label class="check"><input id="cache-enabled" type="checkbox"><span data-i18n="cacheEnabled">Enable disk cache</span></label>
-      <label class="check"><input id="rewrite-enabled" type="checkbox"><span data-i18n="rewriteEnabled">Enable metadata rewrite</span></label>
-      <label class="check wide"><input id="html-rewrite-enabled" type="checkbox"><span data-i18n="htmlRewriteEnabled">Rewrite same-origin URLs in browsable HTML</span></label>
-      <label class="check"><input id="cache-authenticated" type="checkbox"><span data-i18n="cacheAuthenticated">Cache authenticated responses (public content only)</span></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="cacheRewrite">Cache and rewrite</legend>
+        <div class="form-grid">
+          <label><span data-i18n="cacheProfile">Cache profile</span><select id="cache-profile"><option value="standard" data-i18n="standard">Standard</option><option value="packages" data-i18n="packages">Packages</option><option value="registry" data-i18n="registryBlob">Registry Blob</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
+          <label><span data-i18n="rewriteProfile">Rewrite profile</span><input id="rewrite-profile" placeholder="pypi"></label>
+          <label class="wide"><span data-i18n="rewriteHosts">Allowed rewrite/redirect hosts (comma or newline separated)</span><textarea id="rewrite-hosts" rows="2" placeholder="files.pythonhosted.org"></textarea></label>
+          <label><span data-i18n="metadataLimit">Metadata rewrite limit (bytes, 0 = global)</span><input id="metadata-limit" type="number" value="0" min="0"></label>
+          <label><span data-i18n="metadataTTL">Metadata TTL (seconds, 0 = global)</span><input id="metadata-ttl" type="number" value="0" min="0"></label>
+          <label><span data-i18n="packageTTL">Package TTL (seconds, 0 = global)</span><input id="package-ttl" type="number" value="0" min="0"></label>
+          <label><span data-i18n="immutableTTL">Immutable TTL (seconds, 0 = default)</span><input id="immutable-ttl" type="number" value="0" min="0"></label>
+          <label><span data-i18n="blobTTL">Blob TTL (seconds, 0 = default)</span><input id="blob-ttl" type="number" value="0" min="0"></label>
+          <label class="check"><input id="cache-enabled" type="checkbox"><span data-i18n="cacheEnabled">Enable disk cache</span></label>
+          <label class="check"><input id="rewrite-enabled" type="checkbox"><span data-i18n="rewriteEnabled">Enable metadata rewrite</span></label>
+          <label class="check wide"><input id="html-rewrite-enabled" type="checkbox"><span data-i18n="htmlRewriteEnabled">Rewrite same-origin URLs in browsable HTML</span></label>
+          <label class="check"><input id="cache-authenticated" type="checkbox"><span data-i18n="cacheAuthenticated">Cache authenticated responses (public content only)</span></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="healthLimits">Health and limits</legend><div class="form-grid">
-      <label><span data-i18n="healthPath">Health-check path</span><input id="health-path"></label>
-      <label><span data-i18n="expectedStatus">Expected status</span><input id="health-expected" type="number" value="200" min="100" max="599"></label>
-      <label><span data-i18n="healthInterval">Check interval (seconds)</span><input id="health-interval" type="number" value="60" min="5"></label>
-      <label><span data-i18n="healthTimeout">Check timeout (seconds)</span><input id="health-timeout" type="number" value="5" min="1"></label>
-      <label><span data-i18n="healthMethod">Check method</span><select id="health-method"><option>HEAD</option><option>GET</option></select></label>
-      <label><span data-i18n="rateProfile">Rate-limit profile</span><select id="rate-profile"><option value="" data-i18n="unlimitedDefault">Unlimited/default</option><option value="conservative" data-i18n="conservative">Conservative (16)</option><option value="balanced" data-i18n="balanced">Balanced (64)</option><option value="bulk" data-i18n="bulk">Bulk (256)</option></select></label>
-      <label><span data-i18n="maxConcurrency">Repository max concurrency (0 = profile)</span><input id="max-concurrency" type="number" value="0" min="0"></label>
-      <label><span data-i18n="bandwidthLimit">Per-connection limit B/s (0 = unlimited)</span><input id="bandwidth-limit" type="number" value="0" min="0"></label>
-      <label class="check"><input id="health-enabled" type="checkbox" checked><span data-i18n="healthEnabled">Enable health checks</span></label>
-      <label class="check"><input id="mirror-enabled" type="checkbox" checked><span data-i18n="repositoryEnabled">Enable repository</span></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="healthLimits">Health and limits</legend>
+        <div class="form-grid">
+          <label><span data-i18n="healthPath">Health-check path</span><input id="health-path"></label>
+          <label><span data-i18n="expectedStatus">Expected status</span><input id="health-expected" type="number" value="200" min="100" max="599"></label>
+          <label><span data-i18n="healthInterval">Check interval (seconds)</span><input id="health-interval" type="number" value="60" min="5"></label>
+          <label><span data-i18n="healthTimeout">Check timeout (seconds)</span><input id="health-timeout" type="number" value="5" min="1"></label>
+          <label><span data-i18n="healthMethod">Check method</span><select id="health-method"><option>HEAD</option><option>GET</option></select></label>
+          <label><span data-i18n="rateProfile">Rate-limit profile</span><select id="rate-profile"><option value="" data-i18n="unlimitedDefault">Unlimited/default</option><option value="conservative" data-i18n="conservative">Conservative (16)</option><option value="balanced" data-i18n="balanced">Balanced (64)</option><option value="bulk" data-i18n="bulk">Bulk (256)</option></select></label>
+          <label><span data-i18n="maxConcurrency">Repository max concurrency (0 = profile)</span><input id="max-concurrency" type="number" value="0" min="0"></label>
+          <label><span data-i18n="bandwidthLimit">Per-connection limit B/s (0 = unlimited)</span><input id="bandwidth-limit" type="number" value="0" min="0"></label>
+          <label class="check"><input id="health-enabled" type="checkbox" checked><span data-i18n="healthEnabled">Enable health checks</span></label>
+          <label class="check"><input id="mirror-enabled" type="checkbox" checked><span data-i18n="repositoryEnabled">Enable repository</span></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="registrySecurity">Registry and upstream security</legend><div class="form-grid">
-      <label><span data-i18n="registryAuth">Registry auth</span><select id="auth-mode"><option value="direct" data-i18n="directAuth">Direct auth</option><option value="full_proxy" data-i18n="fullProxyAuth">Full-proxy auth</option></select></label>
-      <label><span data-i18n="blobRedirect">Blob redirect</span><select id="blob-redirect"><option value="full_proxy" data-i18n="fullProxy">Full proxy</option><option value="pass" data-i18n="passRedirect">Pass redirect</option></select></label>
-      <label class="wide"><span data-i18n="tokenUpstream">Token upstream (optional)</span><input id="token-upstream" placeholder="https://auth.example.com/token"></label>
-      <label class="check"><input id="pull-only" type="checkbox" checked><span data-i18n="pullOnly">Pull only</span></label>
-      <label class="check"><input id="allow-http" type="checkbox"><span data-i18n="allowHTTP">Allow HTTP upstream (requires system policy)</span></label>
-      <label class="check"><input id="allow-private" type="checkbox"><span data-i18n="allowPrivate">Allow private upstream (requires system policy)</span></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="registrySecurity">Registry and upstream security</legend>
+        <div class="form-grid">
+          <label><span data-i18n="registryAuth">Registry auth</span><select id="auth-mode"><option value="direct" data-i18n="directAuth">Direct auth</option><option value="full_proxy" data-i18n="fullProxyAuth">Full-proxy auth</option></select></label>
+          <label><span data-i18n="blobRedirect">Blob redirect</span><select id="blob-redirect"><option value="full_proxy" data-i18n="fullProxy">Full proxy</option><option value="pass" data-i18n="passRedirect">Pass redirect</option></select></label>
+          <label class="wide"><span data-i18n="tokenUpstream">Token upstream (optional)</span><input id="token-upstream" placeholder="https://auth.example.com/token"></label>
+          <label class="check"><input id="pull-only" type="checkbox" checked><span data-i18n="pullOnly">Pull only</span></label>
+          <label class="check"><input id="allow-http" type="checkbox"><span data-i18n="allowHTTP">Allow HTTP upstream (requires system policy)</span></label>
+          <label class="check"><input id="allow-private" type="checkbox"><span data-i18n="allowPrivate">Allow private upstream (requires system policy)</span></label>
+        </div>
+      </fieldset>
 
-    <fieldset><legend data-i18n="helpDocumentation">Help and documentation</legend><div class="form-grid">
-      <label class="check wide"><input id="help-enabled" type="checkbox"><span data-i18n="enableHelp">Enable client configuration help</span></label>
-      <label><span data-i18n="helpTemplate">Help template</span><select id="help-template"><option value="">None / 无</option></select></label>
-      <label><span data-i18n="helpTitle">Help title</span><input id="help-title" placeholder="Debian"></label>
-      <label class="wide"><span data-i18n="helpSummary">Help summary</span><input id="help-summary" placeholder="Debian 软件源使用说明"></label>
-    </div></fieldset>
+      <fieldset>
+        <legend data-i18n="helpDocumentation">Help and documentation</legend>
+        <div class="form-grid">
+          <label class="check wide"><input id="help-enabled" type="checkbox"><span data-i18n="enableHelp">Enable client configuration help</span></label>
+          <label><span data-i18n="helpTemplate">Help template</span><select id="help-template"><option value="">None / 无</option></select></label>
+          <label><span data-i18n="helpTitle">Help title</span><input id="help-title" placeholder="Debian"></label>
+          <label class="wide"><span data-i18n="helpSummary">Help summary</span><input id="help-summary" placeholder="Debian 软件源使用说明"></label>
+        </div>
+      </fieldset>
 
-    <footer><button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="saveActivate">Validate, save and activate</button></footer><div id="form-error" class="error"></div>
-  </form></dialog>
+      <footer>
+        <button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button>
+        <button type="submit" data-i18n="saveActivate">Validate, save and activate</button>
+      </footer>
+      <div id="form-error" class="error"></div>
+    </form>
+  </dialog>
 
-  <dialog id="detail-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="detail-title">Repository details</h2><button type="button" class="icon" id="close-detail" aria-label="Close">×</button></header><div id="detail-content"></div></div></dialog>
-  <dialog id="preview-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="preview-title">Preview</h2><button type="button" class="icon" id="close-preview" aria-label="Close">×</button></header><div id="preview-content"></div></div></dialog>
+  <dialog id="detail-dialog" class="wide-dialog">
+    <div class="dialog-body">
+      <header>
+        <h2 id="detail-title">Repository details</h2>
+        <button type="button" class="icon" id="close-detail" aria-label="Close">×</button>
+      </header>
+      <div id="detail-content"></div>
+    </div>
+  </dialog>
 
-  <dialog id="custom-dialog"><form id="custom-form" method="dialog"><header><h2 id="custom-title">Custom Managed Upstream Nginx configuration</h2><button type="button" class="icon" id="close-custom" aria-label="Close">×</button></header>
-    <input id="custom-id" type="hidden"><div class="form-grid">
-      <label><span data-i18n="name">Name</span><input id="custom-name" required maxlength="100"></label>
-      <label><span data-i18n="context">Context</span><select id="custom-context"><option value="http">HTTP</option><option value="server">Server</option><option value="location">Location</option><option value="upstream">Upstream</option><option value="repository">Repository</option></select></label>
-      <label><span data-i18n="repositoryID">Repository ID (0 = global)</span><input id="custom-repository" type="number" value="0" min="0"></label>
-      <label class="check"><input id="custom-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
-      <label class="wide"><span data-i18n="configuration">Configuration</span><textarea id="custom-content" class="code-editor" rows="18" required spellcheck="false"></textarea></label>
-    </div><footer><button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="validateApply">Validate and apply</button></footer><div id="custom-error" class="error"></div>
-  </form></dialog>
+  <dialog id="preview-dialog" class="wide-dialog">
+    <div class="dialog-body">
+      <header>
+        <h2 id="preview-title">Preview</h2>
+        <button type="button" class="icon" id="close-preview" aria-label="Close">×</button>
+      </header>
+      <div id="preview-content"></div>
+    </div>
+  </dialog>
 
-  <dialog id="node-dialog"><form id="node-form" method="dialog"><header><h2 id="node-form-title">Add edge node</h2><button type="button" class="icon" id="close-node-dialog" aria-label="Close">×</button></header>
-    <input id="node-id" type="hidden"><div class="form-grid">
-      <label><span data-i18n="name">Name</span><input id="node-name" required maxlength="100" placeholder="tokyo-01"></label>
-      <label><span data-i18n="nodeURL">Public base URL</span><input id="node-url" required placeholder="https://jp.repo.example.com"></label>
-      <label><span data-i18n="region">Region</span><input id="node-region" required placeholder="jp-tokyo"></label>
-      <label><span data-i18n="country">Country</span><input id="node-country" placeholder="JP" maxlength="2"></label>
-      <label><span data-i18n="priority">Priority</span><input id="node-priority" type="number" value="100" min="1"></label>
-      <label><span data-i18n="weight">Weight</span><input id="node-weight" type="number" value="100" min="1" max="1000"></label>
-      <label class="check"><input id="node-enabled" type="checkbox" checked><span data-i18n="enabled">Enabled</span></label>
-    </div><footer><button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="save">Save</button></footer><div id="node-error" class="error"></div>
-  </form></dialog>
-
-  <script src="locales/en.js" defer></script>
-  <script src="locales/zh.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="locales/en.js"></script>
+  <script src="locales/zh.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

@@ -214,7 +214,18 @@ async function loadDashboard() {
     const health = healthFor(repository);
     return `<tr><td><button class="text-button" data-action="show-repository" data-id="${repository.id}"><strong>${esc(repository.name)}</strong></button></td><td><span class="badge ${health === 'healthy' ? 'ok' : health === 'unhealthy' ? 'bad' : ''}">${esc(stateLabel(health))}</span></td><td>${number(counters.requests || 0)}</td><td>${bytes(counters.bytes || 0)}</td><td>${upstream.latency_ms ? `${number(upstream.latency_ms)} ms` : '—'}</td><td>${number(counters.cache_hits || 0)} / ${number(counters.cache_misses || 0)}</td><td>${number(counters.status_2xx || 0)} / ${number(counters.status_3xx || 0)} / ${number(counters.status_4xx || 0)} / ${number(counters.status_5xx || 0)}</td><td>${number(counters.upstream_errors || 0)}</td></tr>`;
   }).join('');
-  $('#page-dashboard').innerHTML = `<div class="cards">
+  const topoHTML = `<div class="topology-pipeline">
+    <div class="topo-node active"><span class="node-title">Clients</span><span class="node-sub">HTTP(S) Traffic</span></div>
+    <div class="topo-arrow">➔</div>
+    <div class="topo-node active"><span class="node-title">External Ingress</span><span class="node-sub">Shared Nginx</span></div>
+    <div class="topo-arrow">➔</div>
+    <div class="topo-node active"><span class="node-title">MirrorRelay</span><span class="node-sub">v${esc(dashboard.version || '0.0.1')}</span></div>
+    <div class="topo-arrow">➔</div>
+    <div class="topo-node ${upstreamNginx.state === 'running' ? 'active' : ''}"><span class="node-title">Managed Upstream Nginx</span><span class="node-sub">PID ${esc(upstreamNginx.pid || '—')}</span></div>
+    <div class="topo-arrow">➔</div>
+    <div class="topo-node active"><span class="node-title">Upstream Origins</span><span class="node-sub">${dashboard.enabled_mirrors || 0} ${L('Repositories')}</span></div>
+  </div>`;
+  $('#page-dashboard').innerHTML = topoHTML + `<div class="cards">
     ${card(L('Repositories / enabled'), `${dashboard.mirrors} / ${dashboard.enabled_mirrors}`)}
     ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, dashboard.unhealthy_mirrors === 0)}
     ${card(L('Managed Upstream Nginx'), stateLabel(upstreamNginx.state), upstreamNginx.state === 'running')}
@@ -259,7 +270,25 @@ async function loadProfiles() {
 
 async function loadMirrors() {
   mirrors = (await api('/mirrors')) || [];
-  const rows = mirrors.map(repository => {
+  renderMirrorsTable();
+  const searchInput = $('#mirror-search-input');
+  if (searchInput && !searchInput.dataset.bound) {
+    searchInput.dataset.bound = 'true';
+    searchInput.addEventListener('input', () => renderMirrorsTable());
+  }
+}
+
+function renderMirrorsTable() {
+  const query = ($('#mirror-search-input')?.value || '').toLowerCase().trim();
+  const filtered = mirrors.filter(repository => {
+    if (!query) return true;
+    return (repository.name || '').toLowerCase().includes(query) ||
+           (repository.slug || '').toLowerCase().includes(query) ||
+           (repository.type || '').toLowerCase().includes(query) ||
+           (repository.public_host || '').toLowerCase().includes(query) ||
+           (repository.public_path || '').toLowerCase().includes(query);
+  });
+  const rows = filtered.map(repository => {
     const active = activeUpstreamFor(repository);
     const health = healthFor(repository);
     const helpBtn = repository.help?.enabled && repository.help?.template ? `<a class="button-link" href="/help/${esc(repository.slug)}/" target="_blank" style="padding:6px 10px;text-decoration:none;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:13px;display:inline-block;">${L('Help')}</a>` : '';
