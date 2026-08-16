@@ -1,3 +1,4 @@
+// Package health provides background health checking for upstream mirrors.
 package health
 
 import (

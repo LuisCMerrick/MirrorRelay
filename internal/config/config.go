@@ -1,3 +1,4 @@
+// Package config provides strict YAML configuration loading and validation.
 package config
 
 import (

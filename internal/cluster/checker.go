@@ -1,3 +1,4 @@
+// Package cluster provides distributed health checking and routing.
 package cluster
 
 import (
@@ -7,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 type Store interface {
@@ -46,7 +49,11 @@ func NewChecker(cfg config.Config, store Store, router *Router, metrics *Metrics
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
+
+	dialer := security.NewSafeDialer(timeout, timeout, cfg.Security.AllowPrivateUpstream)
+
 	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
 		ResponseHeaderTimeout: timeout,
 		DisableKeepAlives:     false,
@@ -95,6 +102,10 @@ func (c *Checker) SetClusterFingerprint(ctx context.Context, fp string) error {
 }
 
 func (c *Checker) CheckNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
+	if err := security.ValidateResolvedURL(ctx, node.URL, c.cfg.Security.AllowHTTPUpstream, c.cfg.Security.AllowPrivateUpstream, net.DefaultResolver); err != nil {
+		return c.recordFailure(ctx, node, fmt.Sprintf("validate cluster node url: %v", err))
+	}
+
 	baseURL := strings.TrimRight(node.URL, "/")
 	manifestURL := baseURL + "/api/v1/cluster/manifest"
 	healthURL := baseURL + "/api/v1/cluster/health"

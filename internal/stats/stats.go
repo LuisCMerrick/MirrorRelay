@@ -1,3 +1,4 @@
+// Package stats collects and aggregates proxy performance metrics.
 package stats
 
 import (

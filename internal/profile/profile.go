@@ -1,3 +1,4 @@
+// Package profile contains pre-defined repository configurations.
 package profile
 
 import (

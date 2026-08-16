@@ -1,3 +1,4 @@
+// Package model defines the data structures used across the application.
 package model
 
 import "time"

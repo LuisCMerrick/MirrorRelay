@@ -1,3 +1,4 @@
+// Package api provides the management API and web handlers.
 package api
 
 import (
@@ -218,6 +219,10 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 		}
 
 		if r.URL.Path == "/api/v1/cluster/manifest" || r.URL.Path == "/api/v1/cluster/health" {
+			if !s.cfg.Distributed.Enabled || s.cfg.Distributed.Token == "" {
+				http.NotFound(w, r)
+				return
+			}
 			if !s.verifyClusterToken(r) {
 				writeError(w, http.StatusUnauthorized, "invalid cluster token")
 				return
@@ -251,7 +256,7 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 
 func (s *Server) verifyClusterToken(r *http.Request) bool {
 	if s.cfg.Distributed.Token == "" {
-		return true
+		return false
 	}
 	hdr := r.Header.Get("X-MirrorRelay-Cluster-Token")
 	if hdr == "" {
@@ -359,6 +364,9 @@ func (s *Server) hostRepository(requestHost string) bool {
 }
 
 func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1715,7 +1723,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }

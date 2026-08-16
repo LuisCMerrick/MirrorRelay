@@ -1,3 +1,4 @@
+// Package devcert generates self-signed certificates for development.
 package devcert
 
 import (

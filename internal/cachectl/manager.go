@@ -1,3 +1,4 @@
+// Package cachectl manages cache purging and generation tracking.
 package cachectl
 
 import (

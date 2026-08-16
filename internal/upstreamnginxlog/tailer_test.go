@@ -1,3 +1,4 @@
+// Package upstreamnginxlog processes traffic logs from Managed Upstream Nginx.
 package upstreamnginxlog
 
 import (

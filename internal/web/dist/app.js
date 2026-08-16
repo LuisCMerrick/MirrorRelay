@@ -19,19 +19,31 @@ function getLocale(lang = language) {
   return locales[lang] || locales.en || {};
 }
 
-function L(english, fallback) {
+function L(english, ...args) {
   const loc = getLocale();
+  let str;
   if (loc.strings && english in loc.strings) {
-    return loc.strings[english];
+    str = loc.strings[english];
+  } else {
+    const enLoc = getLocale('en');
+    if (enLoc && enLoc.strings && english in enLoc.strings) {
+      str = enLoc.strings[english];
+    } else {
+      str = english;
+    }
   }
-  if (language === 'zh' && fallback) {
-    return fallback;
+  for (const arg of args) {
+    str = str.replace('%s', arg);
   }
-  const enLoc = getLocale('en');
-  if (enLoc.strings && english in enLoc.strings) {
-    return enLoc.strings[english];
+  return str;
+}
+
+function Lf(key, ...args) {
+  let str = L(key);
+  for (const arg of args) {
+    str = str.replace('%s', arg);
   }
-  return fallback !== undefined ? fallback : english;
+  return str;
 }
 
 function t(key, fallback) {
@@ -52,8 +64,10 @@ function applyLanguage(next, persist = false) {
   updatePageHeading();
   if (signedIn) {
     void (async () => {
-      await loadProfilesData();
-      await renderCurrentPage();
+      try {
+        await loadProfilesData();
+        await renderCurrentPage();
+      } catch (error) { notice(error.message, true); }
     })();
   }
 }
@@ -144,7 +158,10 @@ $('#login-form').addEventListener('submit', async event => {
     await boot();
   } catch (error) { $('#login-error').textContent = error.message; }
 });
-$('#logout').addEventListener('click', async () => { await api('/auth/logout', {method: 'POST'}); csrf = ''; location.reload(); });
+$('#logout').addEventListener('click', async () => {
+  try { await api('/auth/logout', {method: 'POST'}); } catch (_) {}
+  csrf = ''; location.reload();
+});
 
 function updatePageHeading() {
   const loc = getLocale();
@@ -314,7 +331,7 @@ function parseHeaders(value) {
   const result = {};
   for (const line of value.split(/\n+/).map(item => item.trim()).filter(Boolean)) {
     const index = line.indexOf(':');
-    if (index <= 0) throw new Error(L(`Invalid header line: ${line}`));
+    if (index <= 0) throw new Error(L('Invalid header line: %s', line));
     result[line.slice(0, index).trim()] = line.slice(index + 1).trim();
   }
   return result;
@@ -322,7 +339,7 @@ function parseHeaders(value) {
 function parseUpstreams(value) {
   return value.split(/\n+/).filter(line => line.trim()).map(line => {
     const match = line.trim().match(/^(\d+)\s+(https?:\/\/\S+)$/);
-    if (!match) throw new Error(L(`Invalid upstream line: ${line}`));
+    if (!match) throw new Error(L('Invalid upstream line: %s', line));
     return {url: match[2], priority: Number(match[1]), weight: 1, enabled: true};
   });
 }
@@ -408,12 +425,12 @@ window.showRepository = async id => {
     const [state, examples] = await Promise.all([api(`/mirrors/${id}/state`), api(`/mirrors/${id}/client-config`)]);
     const desired = state.desired, active = state.active_found ? state.active : null, statistics = state.statistics || {};
     const latest = profiles.find(profile => profile.name === desired.profile_name && profile.latest_stable);
-    const upgrade = latest && latest.version !== desired.profile_version ? `<button data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${L(`Preview upgrade to ${latest.version}`)}</button>` : '';
+    const upgrade = latest && latest.version !== desired.profile_version ? `<button data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${L('Preview upgrade to %s', latest.version)}</button>` : '';
     $('#detail-title').textContent = desired.name;
     $('#detail-content').innerHTML = `<div class="cards detail-cards">${card(L('Desired state'), stateLabel(desired.config_state), desired.config_state === 'active')}${card(L('Active state'), active ? L('Published') : L('Not active'), Boolean(active))}${card(L('Effective config'), `v${state.effective_config_version || '—'}`)}${card(L('Requests today'), number(statistics.requests || 0))}${card(L('Traffic today'), bytes(statistics.bytes || 0))}${card(L('Observed cache traffic'), bytes(statistics.cache_bytes || 0))}${card(L('Cache HIT / MISS'), `${number(statistics.cache_hits || 0)} / ${number(statistics.cache_misses || 0)}`)}${card('2xx / 3xx / 4xx / 5xx', `${number(statistics.status_2xx || 0)} / ${number(statistics.status_3xx || 0)} / ${number(statistics.status_4xx || 0)} / ${number(statistics.status_5xx || 0)}`)}${card(L('Upstream errors'), number(statistics.upstream_errors || 0))}</div>
       <div class="toolbar"><div class="actions"><button data-action="copy-repository-url" data-id="${id}">${L('Copy URL')}</button><button data-action="edit-mirror-from-detail" data-id="${id}">${L('Edit')}</button><button data-action="check-mirror" data-id="${id}">${L('Test')}</button><button data-action="preview-repository-config" data-id="${id}">${L('Preview config')}</button><button data-action="view-effective-config">${L('Effective config')}</button><button data-action="purge-repository" data-id="${id}">${L('Purge cache')}</button>${upgrade}</div></div>
       <div class="grid2"><div class="panel"><h2>${L('Desired configuration')}</h2>${repositorySummary(desired)}</div><div class="panel"><h2>${L('Active routing snapshot')}</h2>${active ? repositorySummary(active) : `<p class="muted">${L('No active version. The desired configuration may have failed validation or activation.')}</p>`}</div></div>
-      <div class="panel"><h2>${L('Upstreams')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Priority')}</th><th>URL</th><th>${L('Health')}</th><th>${L('Latency')}</th><th>${L('Last check')}</th></tr></thead><tbody>${(desired.upstreams || []).map(upstream => `<tr><td>${upstream.priority}</td><td><code>${esc(upstream.url)}</code></td><td>${esc(stateLabel(upstream.health_status))}</td><td>${number(upstream.latency_ms)} ms</td><td>${date(upstream.last_check)}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="panel"><h2>${L('Upstreams')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Priority')}</th><th>${L('URL')}</th><th>${L('Health')}</th><th>${L('Latency')}</th><th>${L('Last check')}</th></tr></thead><tbody>${(desired.upstreams || []).map(upstream => `<tr><td>${upstream.priority}</td><td><code>${esc(upstream.url)}</code></td><td>${esc(stateLabel(upstream.health_status))}</td><td>${number(upstream.latency_ms)} ms</td><td>${date(upstream.last_check)}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="panel"><h2>${L('Client configuration examples')}</h2>${examples.map((example, index) => `<div class="example"><div class="toolbar"><strong>${esc(example.name)}</strong><button class="copy-example" data-index="${index}">${L('Copy')}</button></div><pre>${esc(example.command)}</pre></div>`).join('')}</div>`;
     $('#detail-content').querySelectorAll('.copy-example').forEach(button => button.addEventListener('click', async () => { await copyText(examples[Number(button.dataset.index)].command); notice(L('Copied.')); }));
     $('#detail-dialog').showModal();
@@ -451,7 +468,7 @@ window.purgeRepository = async id => {
   if (path === null) return;
   try {
     const result = path ? await api(`/mirrors/${id}/cache/purge`, {method: 'POST', body: JSON.stringify({path, query: ''})}) : await api(`/mirrors/${id}/cache`, {method: 'DELETE'});
-    notice(L(`Logical purge completed; physical reclaim: ${result.physical_reclaim}.`));
+    notice(L('Logical purge completed; physical reclaim: %s.', result.physical_reclaim));
   } catch (error) { notice(error.message, true); }
 };
 function showPreview(title, content) { $('#preview-title').textContent = title; $('#preview-content').innerHTML = content; $('#preview-dialog').showModal(); }
@@ -461,13 +478,13 @@ async function loadUpstreamNginx() {
     const [status, config, history] = await Promise.all([api('/upstream-nginx/status'), api('/upstream-nginx/config'), api('/upstream-nginx/history')]);
     $('#page-upstream-nginx').innerHTML = `<div class="cards">${card(L('State'), stateLabel(status.state), status.state === 'running')}${card('PID', status.pid || '—')}${card(L('Uptime'), duration(status.uptime_seconds || 0))}${card(L('Config version'), `v${status.current_config_version || '—'}`)}${card(L('Managed Upstream Nginx version'), (status.version || '—').replace(/^nginx version:\s*/, ''))}${card(L('Build ID'), status.build_id || '—')}${card(L('Architecture'), status.architecture || '—')}</div>
       ${status.last_error ? `<div class="notice error">${esc(status.last_error)}</div>` : ''}<div class="toolbar"><div>${status.integration_snippet ? `<span class="muted">${L('Integration snippet')}: ${esc(status.integration_snippet)} · ${esc(status.integration_result || '')}</span>` : ''}</div><button id="reload-upstream-nginx">${L('Regenerate, validate and reload')}</button></div>
-      <div class="grid2"><div class="panel"><h2>${L('Configuration history')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Version')}</th><th>${L('Time')}</th><th>${L('Operator')}</th><th>${L('Description')}</th><th>${L('State')}</th><th></th></tr></thead><tbody>${history.map(item => `<tr><td>v${item.version}</td><td>${date(item.created_at)}</td><td>${esc(item.operator)}</td><td>${esc(item.description)}</td><td><span class="badge ${item.active ? 'ok' : ''}">${item.active ? L('Active') : L('History')}</span></td><td>${item.active ? '' : `<button data-action="rollback-config" data-version="${item.version}">${L('Rollback')}</button>`}</td></tr>`).join('')}</tbody></table></div></div><div class="panel"><h2>${L('Runtime and build')}</h2>${kv(L('Last reload'), status.last_reload ? date(status.last_reload) : '—')}${kv(L('Reload result'), status.last_reload_result || '—')}${kv(L('Last exit'), exitSummary(status))}<pre class="config-preview">${esc(status.build_options || L('Build options unavailable.'))}</pre></div><div class="panel"><h2>${L('Effective configuration')}</h2><pre class="config-preview">${esc(config.configuration)}</pre></div></div>`;
+      <div class="grid2"><div class="panel"><h2>${L('Configuration history')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Version')}</th><th>${L('Time')}</th><th>${L('Operator')}</th><th>${L('Description')}</th><th>${L('State')}</th><th></th></tr></thead><tbody>${history.map(item => `<tr><td>v${item.version}</td><td>${date(item.created_at)}</td><td>${esc(item.operator)}</td><td>${esc(item.description)}</td><td><span class="badge ${item.active ? 'ok' : ''}">${item.active ? L('Active') : L('History')}</span></td><td>${item.active ? '' : `<button data-action="rollback-config" data-version="${item.version}">${L('Rollback')}</button>`}</td></tr>`).join('')}</tr></thead></table></div></div><div class="panel"><h2>${L('Runtime and build')}</h2>${kv(L('Last reload'), status.last_reload ? date(status.last_reload) : '—')}${kv(L('Reload result'), status.last_reload_result || '—')}${kv(L('Last exit'), exitSummary(status))}<pre class="config-preview">${esc(status.build_options || L('Build options unavailable.'))}</pre></div><div class="panel"><h2>${L('Effective configuration')}</h2><pre class="config-preview">${esc(config.configuration)}</pre></div></div>`;
     $('#reload-upstream-nginx').addEventListener('click', async () => { try { await api('/upstream-nginx/reload', {method: 'POST'}); notice(L('Validation passed and Managed Upstream Nginx reloaded.')); await loadUpstreamNginx(); } catch (error) { notice(error.message, true); } });
   } catch (error) { $('#page-upstream-nginx').innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
 }
 window.rollbackConfig = async version => {
-  if (!confirm(L(`Rollback repositories and custom configuration to v${version}?`))) return;
-  try { await api(`/upstream-nginx/history/${version}/rollback`, {method: 'POST'}); notice(L(`Rolled back through a validated graceful reload.`)); await Promise.all([loadUpstreamNginx(), loadMirrors()]); } catch (error) { notice(error.message, true); }
+  if (!confirm(L('Rollback repositories and custom configuration to v%s?', version))) return;
+  try { await api(`/upstream-nginx/history/${version}/rollback`, {method: 'POST'}); notice(L('Rolled back through a validated graceful reload.')); await Promise.all([loadUpstreamNginx(), loadMirrors()]); } catch (error) { notice(error.message, true); }
 };
 
 async function loadCustom() {
@@ -493,16 +510,16 @@ async function loadCache() {
   const jobs = cache.purge_jobs || [], maximum = cache.maximum_bytes || cache.max_bytes || 0, byRepository = dashboard.stats.by_mirror || {};
   $('#page-cache').innerHTML = `<div class="cards">${card(L('Cache files'), number(cache.files))}${card(L('Used space'), bytes(cache.bytes))}${card(L('Maximum space'), bytes(maximum))}${card(L('Global generation'), cache.global_generation)}</div>
     <div class="panel"><h2>${L('Cache storage')}</h2>${kv(L('Path'), cache.path)}${kv(L('Maximum files'), number(cache.maximum_files))}${kv(L('Minimum free space'), bytes(cache.minimum_free_bytes))}${kv(L('Inactive window'), duration(cache.inactive_seconds))}<button class="danger" id="clear-cache">${L('Global logical purge')}</button><p class="muted">${L('Logical invalidation is immediate. Physical files remain until the asynchronous Nginx cache manager completes its inactive/max_size cleanup window.')}</p></div>
-    <div class="panel"><h2>${L('Repository cache traffic today')}</h2><p class="muted">${L('Nginx cache files are content-keyed; this table reports observed cache-served traffic, not guessed physical ownership.')}</p><div class="table-wrap"><table><thead><tr><th>${L('Repository')}</th><th>HIT</th><th>MISS</th><th>${L('Cache-served bytes')}</th></tr></thead><tbody>${repositories.map(repository => { const value = byRepository[repository.id] || {}; return `<tr><td>${esc(repository.name)}</td><td>${number(value.cache_hits)}</td><td>${number(value.cache_misses)}</td><td>${bytes(value.cache_bytes)}</td></tr>`; }).join('')}</tbody></table></div></div>
-    <div class="panel"><h2>${L('Purge / reclaim jobs')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('Scope')}</th><th>Generation</th><th>${L('Logical purge')}</th><th>${L('Physical reclaim')}</th><th>${L('Reclaimed')}</th><th>${L('Operator')}</th></tr></thead><tbody>${jobs.map(job => `<tr><td>${date(job.created_at)}</td><td>${esc(job.scope)} ${job.repository_id || ''}</td><td>${job.old_generation} → ${job.new_generation}</td><td><span class="badge ok">${L('Completed')}</span></td><td><span class="badge ${job.reclaim_state === 'completed' ? 'ok' : job.reclaim_state === 'failed' ? 'bad' : ''}" title="${esc(job.error || '')}">${esc(stateLabel(job.reclaim_state))}</span></td><td>${bytes(job.reclaimed_bytes)}</td><td>${esc(job.operator)}</td></tr>`).join('')}</tbody></table></div></div>`;
-  $('#clear-cache').addEventListener('click', async () => { if (!confirm(L('Invalidate every existing cache namespace?'))) return; try { const result = await api('/cache', {method: 'DELETE'}); notice(L(`Logical purge completed; physical reclaim is ${result.physical_reclaim}.`)); await loadCache(); } catch (error) { notice(error.message, true); } });
+    <div class="panel"><h2>${L('Repository cache traffic today')}</h2><p class="muted">${L('Nginx cache files are content-keyed; this table reports observed cache-served traffic, not guessed physical ownership.')}</p><div class="table-wrap"><table><thead><tr><th>${L('Repository')}</th><th>${L('HIT')}</th><th>${L('MISS')}</th><th>${L('Cache-served bytes')}</th></tr></thead><tbody>${repositories.map(repository => { const value = byRepository[repository.id] || {}; return `<tr><td>${esc(repository.name)}</td><td>${number(value.cache_hits)}</td><td>${number(value.cache_misses)}</td><td>${bytes(value.cache_bytes)}</td></tr>`; }).join('')}</tbody></table></div></div>
+    <div class="panel"><h2>${L('Purge / reclaim jobs')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('Scope')}</th><th>${L('Generation')}</th><th>${L('Logical purge')}</th><th>${L('Physical reclaim')}</th><th>${L('Reclaimed')}</th><th>${L('Operator')}</th></tr></thead><tbody>${jobs.map(job => `<tr><td>${date(job.created_at)}</td><td>${esc(job.scope)} ${job.repository_id || ''}</td><td>${job.old_generation} → ${job.new_generation}</td><td><span class="badge ok">${L('Completed')}</span></td><td><span class="badge ${job.reclaim_state === 'completed' ? 'ok' : job.reclaim_state === 'failed' ? 'bad' : ''}" title="${esc(job.error || '')}">${esc(stateLabel(job.reclaim_state))}</span></td><td>${bytes(job.reclaimed_bytes)}</td><td>${esc(job.operator)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#clear-cache').addEventListener('click', async () => { if (!confirm(L('Invalidate every existing cache namespace?'))) return; try { const result = await api('/cache', {method: 'DELETE'}); notice(L('Logical purge completed; physical reclaim is %s.', result.physical_reclaim)); await loadCache(); } catch (error) { notice(error.message, true); } });
 }
 
 async function loadHealth() {
   const health = await api('/health');
   const endpointLabel = `${health.upstream_network || 'unix'} · ${health.upstream_address || ''}`;
   const frontendLabel = `${health.frontend_network || 'unix'} · ${health.frontend_address || ''}`;
-  $('#page-health').innerHTML = `<div class="cards">${card('MirrorRelay', health.mirrorrelay, health.mirrorrelay === 'healthy')}${card(`${L('Frontend endpoint')} (${frontendLabel})`, health.frontend_endpoint || health.frontend_socket, health.frontend_endpoint === 'healthy')}${card(L('External Shared Nginx'), health.external_shared_nginx)}${card('Go Router', health.go_router)}${card('Managed Upstream Nginx', stateLabel(health.managed_upstream_nginx), health.managed_upstream_nginx === 'running')}${card(`${L('Upstream endpoint')} (${endpointLabel})`, health.upstream_endpoint || health.upstream_socket, health.upstream_endpoint === 'healthy')}</div><div class="panel"><h2>${L('Repositories')}</h2>${(health.repositories || []).map(repository => `<div class="kv"><span>${esc(repository.name)}</span><span class="badge ${repository.health_state === 'healthy' ? 'ok' : repository.health_state === 'unhealthy' ? 'bad' : ''}">${esc(stateLabel(repository.health_state))}</span></div>`).join('')}</div>`;
+  $('#page-health').innerHTML = `<div class="cards">${card('MirrorRelay', health.mirrorrelay, health.mirrorrelay === 'healthy')}${card(`${L('Frontend endpoint')} (${frontendLabel})`, health.frontend_endpoint || health.frontend_socket, health.frontend_endpoint === 'healthy')}${card(L('External Shared Nginx'), health.external_shared_nginx)}${card('Go Router', health.go_router)}${card(L('Managed Upstream Nginx'), stateLabel(health.managed_upstream_nginx), health.managed_upstream_nginx === 'running')}${card(`${L('Upstream endpoint')} (${endpointLabel})`, health.upstream_endpoint || health.upstream_socket, health.upstream_endpoint === 'healthy')}</div><div class="panel"><h2>${L('Repositories')}</h2>${(health.repositories || []).map(repository => `<div class="kv"><span>${esc(repository.name)}</span><span class="badge ${repository.health_state === 'healthy' ? 'ok' : repository.health_state === 'unhealthy' ? 'bad' : ''}">${esc(stateLabel(repository.health_state))}</span></div>`).join('')}</div>`;
 }
 async function loadAccess() { const lines = await api('/access'); $('#page-access').innerHTML = `<div class="panel"><div class="toolbar"><h2>access.log</h2><button id="refresh-access">${L('Refresh')}</button></div><pre class="config-preview">${esc((lines || []).join('\n') || L('No access records.'))}</pre></div>`; $('#refresh-access').addEventListener('click', loadAccess); }
 async function loadAudit() { const entries = (await api('/audit')) || []; $('#page-audit').innerHTML = `<div class="table-wrap"><table><thead><tr><th>${L('Time')}</th><th>${L('User')}</th><th>${L('Client')}</th><th>${L('Action')}</th><th>${L('Object / detail')}</th><th>${L('Result')}</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${date(entry.time)}</td><td>${esc(entry.username)}</td><td>${esc(entry.client_ip)}</td><td>${esc(entry.action)}</td><td>${esc(entry.object)} ${esc(entry.detail)}</td><td><span class="badge ${entry.succeeded ? 'ok' : 'bad'}">${entry.succeeded ? L('Success') : L('Failed')}</span></td></tr>`).join('')}</tbody></table></div>`; }
@@ -513,7 +530,7 @@ async function triggerRestart() {
     notice(L('Requesting service restart...'));
     await api('/system/restart', {method: 'POST'});
   } catch (error) {
-    console.log('Restart response:', error);
+    $('#settings-error').textContent = error.message;
   }
   notice(L('MirrorRelay is restarting, reconnecting...'));
   document.querySelectorAll('#restart-header, #restart-sidebar, #restart-service-btn, #restart-settings-btn, #restart-system-btn').forEach(btn => {
@@ -556,7 +573,7 @@ async function triggerRestart() {
 
 async function loadSystem() {
   const [system, dashboard] = await Promise.all([api('/system'), api('/stats')]); const runtime = dashboard.stats.runtime || {}, upstreamNginx = system.upstream_nginx || {};
-  $('#page-system').innerHTML = `<div class="grid2"><div class="panel"><div class="toolbar"><h2>MirrorRelay</h2><button type="button" class="secondary" id="restart-system-btn">${L('Restart service')}</button></div>${kv(L('Program version'), system.version)}${kv(L('Build ID'), system.build_id)}${kv(L('Architecture'), `${system.target_os}/${system.architecture}`)}${kv(L('Go version'), system.go_version)}${kv(L('Uptime'), duration(system.uptime_seconds))}${kv(L('Public base URL'), system.public_base_url || L('Not configured'))}</div><div class="panel"><h2>${L('Runtime resources')}</h2>${kv(L('Go heap allocated'), bytes(runtime.heap_alloc_bytes))}${kv(L('Go heap in use'), bytes(runtime.heap_inuse_bytes))}${kv(L('Go heap objects'), number(runtime.heap_objects))}${kv(L('Total allocations'), bytes(runtime.total_alloc_bytes))}${kv('Mallocs / Frees', `${number(runtime.mallocs)} / ${number(runtime.frees)}`)}${kv('RSS', bytes(runtime.rss_bytes))}${kv(L('Goroutines'), number(runtime.goroutines))}${kv(L('Open file descriptors'), number(runtime.open_fds))}${kv(L('GC cycles'), number(runtime.gc_count))}${kv(L('GC pause total'), `${((runtime.gc_pause_total_ns || 0) / 1e9).toFixed(3)} s`)}${kv(L('GC CPU fraction'), `${((runtime.gc_cpu_fraction || 0) * 100).toFixed(3)}%`)}</div></div><div class="grid2"><div class="panel"><h2>TLS / Ingress</h2>${kv(L('Ingress mode'), system.ingress_mode)}${kv(L('HTTPS listen'), system.https_listen)}${kv(L('Minimum TLS'), system.tls_min_version)}${system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) + kv(L('Private key'), system.tls_private_key) : ''}${kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`)}${kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`)}</div><div class="panel"><h2>Managed Upstream Nginx</h2>${kv(L('Mode'), upstreamNginx.mode)}${kv(L('State'), stateLabel(upstreamNginx.state))}${kv(L('Version'), upstreamNginx.version || '—')}${kv(L('Build ID'), upstreamNginx.build_id || '—')}${kv(L('Architecture'), upstreamNginx.architecture || '—')}${kv('SHA-256', upstreamNginx.sha256 || '—')}${kv(L('Uptime'), duration(upstreamNginx.uptime_seconds || 0))}${kv(L('Last exit'), exitSummary(upstreamNginx))}<p class="muted">${L('Repository changes become active only after candidate generation, nginx -t, atomic publication and graceful reload.')}</p></div></div>`;
+  $('#page-system').innerHTML = `<div class="grid2"><div class="panel"><div class="toolbar"><h2>MirrorRelay</h2><button type="button" class="secondary" id="restart-system-btn">${L('Restart service')}</button></div>${kv(L('Program version'), system.version)}${kv(L('Build ID'), system.build_id)}${kv(L('Architecture'), `${system.target_os}/${system.architecture}`)}${kv(L('Go version'), system.go_version)}${kv(L('Uptime'), duration(system.uptime_seconds))}${kv(L('Public base URL'), system.public_base_url || L('Not configured'))}</div><div class="panel"><h2>${L('Runtime resources')}</h2>${kv(L('Go heap allocated'), bytes(runtime.heap_alloc_bytes))}${kv(L('Go heap in use'), bytes(runtime.heap_inuse_bytes))}${kv(L('Go heap objects'), number(runtime.heap_objects))}${kv(L('Total allocations'), bytes(runtime.total_alloc_bytes))}${kv('Mallocs / Frees', `${number(runtime.mallocs)} / ${number(runtime.frees)}`)}${kv('RSS', bytes(runtime.rss_bytes))}${kv(L('Goroutines'), number(runtime.goroutines))}${kv(L('Open file descriptors'), number(runtime.open_fds))}${kv(L('GC cycles'), number(runtime.gc_count))}${kv(L('GC pause total'), `${((runtime.gc_pause_total_ns || 0) / 1e9).toFixed(3)} s`)}${kv(L('GC CPU fraction'), `${((runtime.gc_cpu_fraction || 0) * 100).toFixed(3)}%`)}</div></div><div class="grid2"><div class="panel"><h2>${L('TLS / Ingress')}</h2>${kv(L('Ingress mode'), system.ingress_mode)}${kv(L('HTTPS listen'), system.https_listen)}${kv(L('Minimum TLS'), system.tls_min_version)}${system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) + kv(L('Private key'), system.tls_private_key) : ''}${kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`)}${kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`)}</div><div class="panel"><h2>${L('Managed Upstream Nginx')}</h2>${kv(L('Mode'), upstreamNginx.mode)}${kv(L('State'), stateLabel(upstreamNginx.state))}${kv(L('Version'), upstreamNginx.version || '—')}${kv(L('Build ID'), upstreamNginx.build_id || '—')}${kv(L('Architecture'), upstreamNginx.architecture || '—')}${kv('SHA-256', upstreamNginx.sha256 || '—')}${kv(L('Uptime'), duration(upstreamNginx.uptime_seconds || 0))}${kv(L('Last exit'), exitSummary(upstreamNginx))}<p class="muted">${L('Repository changes become active only after candidate generation, nginx -t, atomic publication and graceful reload.')}</p></div></div>`;
   const restartSysBtn = $('#restart-system-btn');
   if (restartSysBtn) restartSysBtn.addEventListener('click', triggerRestart);
 }
@@ -592,7 +609,7 @@ async function loadSettings() {
   const loc = getLocale();
   const settingsGroups = loc.settingsGroups || [];
   const restart = response.restart_required
-    ? `<div class="notice error"><span>${L('Saved values differ from the running process. Restart MirrorRelay to apply them.')}</span> <div class="actions" style="display:inline-flex;gap:8px;margin-left:12px;align-items:center;"><button type="button" class="secondary" id="restart-service-btn" style="padding:4px 10px;font-size:13px;">${L('Restart now')}</button> <code>sudo systemctl restart mirrorrelay</code></div></div>`
+    ? `<div class="notice error"><span>${L('Saved values differ from the running process. Restart MirrorRelay to apply them.')}</span> <div class="actions" class="notice-actions"><button type="button" class="secondary" id="restart-service-btn" style="padding:4px 10px;font-size:13px;">${L('Restart now')}</button> <code>sudo systemctl restart mirrorrelay</code></div></div>`
     : `<div class="notice">${L('The running process matches the saved settings.')}</div>`;
   const groups = settingsGroups.map(group => `<fieldset><legend>${esc(group.title)}</legend><div class="form-grid">${group.fields.map(field => settingsInput(field, settings)).join('')}</div></fieldset>`).join('');
   $('#page-settings').innerHTML = `${restart}<div class="panel"><p>${L('These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.')}</p>${kv(L('Source'), response.source === 'web_ui' ? L('Web UI override') : L('Configuration file'))}<p class="muted">${L('File-only bootstrap settings:')} <code>${esc((response.file_only || []).join(', '))}</code></p></div>

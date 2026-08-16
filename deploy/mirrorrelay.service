@@ -23,6 +23,13 @@ ReadWritePaths=/run/mirrorrelay /var/lib/mirrorrelay /var/cache/mirrorrelay /var
 EnvironmentFile=-/etc/mirrorrelay/environment
 LimitNOFILE=1048576
 TimeoutStopSec=30min
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target

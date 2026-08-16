@@ -1,3 +1,4 @@
+// Package upstreamnginx manages the generation and lifecycle of Managed Upstream Nginx.
 package upstreamnginx
 
 import (

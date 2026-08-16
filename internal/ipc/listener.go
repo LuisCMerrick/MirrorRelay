@@ -1,3 +1,4 @@
+// Package ipc provides inter-process communication utilities.
 package ipc
 
 import (

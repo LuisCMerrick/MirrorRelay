@@ -1,3 +1,4 @@
+// Package applog configures and initializes structured application logging.
 package applog
 
 import (

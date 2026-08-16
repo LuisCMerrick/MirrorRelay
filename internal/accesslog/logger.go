@@ -1,3 +1,4 @@
+// Package accesslog provides asynchronous request logging.
 package accesslog
 
 import (

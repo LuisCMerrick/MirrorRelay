@@ -1,3 +1,4 @@
+// Package buildinfo provides compile-time version and build metadata.
 package buildinfo
 
 import (

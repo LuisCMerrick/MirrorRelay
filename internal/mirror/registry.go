@@ -1,3 +1,4 @@
+// Package mirror tracks desired and active mirror state and routing.
 package mirror
 
 import (

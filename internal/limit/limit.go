@@ -1,3 +1,4 @@
+// Package limit provides concurrency limiters for requests.
 package limit
 
 import "sync"

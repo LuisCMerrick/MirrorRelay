@@ -247,6 +247,8 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	cfg.Distributed.HealthCheck.Timeout = time.Second
 	cfg.Distributed.HealthCheck.HealthyThreshold = 1
 	cfg.Distributed.HealthCheck.UnhealthyThreshold = 1
+	cfg.Security.AllowHTTPUpstream = true
+	cfg.Security.AllowPrivateUpstream = true
 
 	store := &mockStore{
 		nodes: map[int64]model.ClusterNode{

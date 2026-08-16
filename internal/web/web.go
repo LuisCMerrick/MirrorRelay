@@ -1,3 +1,4 @@
+// Package web embeds the dependency-free bilingual web UI.
 package web
 
 import (

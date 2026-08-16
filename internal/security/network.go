@@ -1,3 +1,4 @@
+// Package security provides URL, address, redirect and policy validation.
 package security
 
 import (

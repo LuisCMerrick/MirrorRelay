@@ -45,10 +45,10 @@ nav button:hover, nav button.active { background: #17263b; color: white; }
 .panel { padding: 20px; margin-bottom: 18px; }
 .panel h2 { font-size: 16px; margin: 0 0 18px; }
 .bar-row { display: grid; grid-template-columns: 120px 1fr 60px; gap: 12px; align-items: center; margin: 12px 0; }
-.bar { height: 8px; background: #26364d; border-radius: 5px; overflow: hidden; }
+.bar { height: 8px; background: var(--line); border-radius: 5px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--primary); }
 button { border: 0; border-radius: 8px; padding: 9px 14px; background: var(--primary); color: white; cursor: pointer; font-weight: 600; }
-button.secondary { background: #26364d; }
+button.secondary { background: var(--line); }
 .danger { background: #4a2029 !important; color: #ff9aa5; }
 .toolbar { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; align-items: center; }
 .toolbar.end { justify-content: flex-end; margin-top: 18px; }
@@ -66,6 +66,8 @@ tr:last-child td { border-bottom: 0; }
 .error { color: var(--red); margin-top: 10px; }
 .notice { background: #1a304a; border: 1px solid #2d5682; border-radius: 9px; padding: 10px 14px; margin-bottom: 16px; }
 .notice.error { background: #3c2028; border-color: #74303f; }
+.notice-actions { display: inline-flex; gap: 8px; margin-left: 12px; align-items: center; }
+.btn-sm { padding: 4px 10px; font-size: 13px; }
 .login-wrap { min-height: 100vh; display: grid; place-items: center; }
 .login-card { width: min(390px, calc(100% - 30px)); padding: 34px; }
 .login-card .brand-mark { margin-bottom: 12px; }
@@ -110,7 +112,7 @@ legend { color: var(--text); font-weight: 700; padding: 0 8px; }
   .brand { padding-bottom: 15px; }
   nav { display: flex; overflow: auto; }
   nav button { white-space: nowrap; }
-  .sidebar-foot { display: none; }
+  .sidebar-foot { border-top: 0; padding: 15px 0 0; display: flex; flex-wrap: wrap; justify-content: space-between; }
   .content { padding: 20px; }
   .cards, .detail-cards { grid-template-columns: 1fr 1fr; }
   .grid2 { grid-template-columns: 1fr; }

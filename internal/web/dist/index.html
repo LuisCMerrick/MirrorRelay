@@ -66,7 +66,7 @@
   </div>
 
   <dialog id="mirror-dialog" class="wide-dialog"><form id="mirror-form" method="dialog">
-    <header><h2 id="form-title">Add repository</h2><button type="button" class="icon" id="close-dialog">×</button></header>
+    <header><h2 id="form-title">Add repository</h2><button type="button" class="icon" id="close-dialog" aria-label="Close">×</button></header>
     <input id="mirror-id" type="hidden">
     <fieldset><legend data-i18n="identityRouting">Identity and routing</legend><div class="form-grid">
       <label><span data-i18n="profileVersion">Profile / version</span><select id="template"><option value="" data-i18n="customOption">Custom</option></select></label>
@@ -85,7 +85,7 @@
       <label><span data-i18n="stripPrefix">Strip prefix</span><input id="strip-prefix" placeholder="/incoming"></label>
       <label><span data-i18n="addPrefix">Add prefix</span><input id="add-prefix" placeholder="repository/base"></label>
       <label><span data-i18n="hostRewrite">Host rewrite</span><input id="host-rewrite" placeholder="origin.example.com"></label>
-      <label><span data-i18n="proxyMode">Proxy mode</span><select id="proxy-mode"><option value="transparent" data-i18n="transparentMode">Transparent</option><option value="rewrite" data-i18n="rewriteMode">Rewrite adapter</option><option value="registry">Registry</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
+      <label><span data-i18n="proxyMode">Proxy mode</span><select id="proxy-mode"><option value="transparent" data-i18n="transparentMode">Transparent</option><option value="rewrite" data-i18n="rewriteMode">Rewrite adapter</option><option value="registry" data-i18n="registry">Registry</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
       <label><span data-i18n="redirectPolicy">Redirect policy</span><select id="redirect-mode"><option value="pass" data-i18n="passClient">Pass to client</option><option value="follow" data-i18n="followBroker">Follow through broker</option><option value="rewrite" data-i18n="rewriteLocal">Rewrite to local URL</option><option value="full_proxy" data-i18n="fullProxy">Full proxy</option></select></label>
     </div></fieldset>
 
@@ -98,7 +98,7 @@
     </div></fieldset>
 
     <fieldset><legend data-i18n="cacheRewrite">Cache and rewrite</legend><div class="form-grid">
-      <label><span data-i18n="cacheProfile">Cache profile</span><select id="cache-profile"><option value="standard" data-i18n="standard">Standard</option><option value="packages" data-i18n="packages">Packages</option><option value="registry">Registry Blob</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
+      <label><span data-i18n="cacheProfile">Cache profile</span><select id="cache-profile"><option value="standard" data-i18n="standard">Standard</option><option value="packages" data-i18n="packages">Packages</option><option value="registry" data-i18n="registryBlob">Registry Blob</option><option value="custom" data-i18n="customOption">Custom</option></select></label>
       <label><span data-i18n="rewriteProfile">Rewrite profile</span><input id="rewrite-profile" placeholder="pypi"></label>
       <label class="wide"><span data-i18n="rewriteHosts">Allowed rewrite/redirect hosts (comma or newline separated)</span><textarea id="rewrite-hosts" rows="2" placeholder="files.pythonhosted.org"></textarea></label>
       <label><span data-i18n="metadataLimit">Metadata rewrite limit (bytes, 0 = global)</span><input id="metadata-limit" type="number" value="0" min="0"></label>
@@ -137,10 +137,10 @@
     <footer><button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="saveActivate">Validate, save and activate</button></footer><div id="form-error" class="error"></div>
   </form></dialog>
 
-  <dialog id="detail-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="detail-title">Repository details</h2><button type="button" class="icon" id="close-detail">×</button></header><div id="detail-content"></div></div></dialog>
-  <dialog id="preview-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="preview-title">Preview</h2><button type="button" class="icon" id="close-preview">×</button></header><div id="preview-content"></div></div></dialog>
+  <dialog id="detail-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="detail-title">Repository details</h2><button type="button" class="icon" id="close-detail" aria-label="Close">×</button></header><div id="detail-content"></div></div></dialog>
+  <dialog id="preview-dialog" class="wide-dialog"><div class="dialog-body"><header><h2 id="preview-title">Preview</h2><button type="button" class="icon" id="close-preview" aria-label="Close">×</button></header><div id="preview-content"></div></div></dialog>
 
-  <dialog id="custom-dialog"><form id="custom-form" method="dialog"><header><h2 id="custom-title">Custom Managed Upstream Nginx configuration</h2><button type="button" class="icon" id="close-custom">×</button></header>
+  <dialog id="custom-dialog"><form id="custom-form" method="dialog"><header><h2 id="custom-title">Custom Managed Upstream Nginx configuration</h2><button type="button" class="icon" id="close-custom" aria-label="Close">×</button></header>
     <input id="custom-id" type="hidden"><div class="form-grid">
       <label><span data-i18n="name">Name</span><input id="custom-name" required maxlength="100"></label>
       <label><span data-i18n="context">Context</span><select id="custom-context"><option value="http">HTTP</option><option value="server">Server</option><option value="location">Location</option><option value="upstream">Upstream</option><option value="repository">Repository</option></select></label>
@@ -150,7 +150,7 @@
     </div><footer><button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button><button type="submit" data-i18n="validateApply">Validate and apply</button></footer><div id="custom-error" class="error"></div>
   </form></dialog>
 
-  <dialog id="node-dialog"><form id="node-form" method="dialog"><header><h2 id="node-form-title">Add edge node</h2><button type="button" class="icon" id="close-node-dialog">×</button></header>
+  <dialog id="node-dialog"><form id="node-form" method="dialog"><header><h2 id="node-form-title">Add edge node</h2><button type="button" class="icon" id="close-node-dialog" aria-label="Close">×</button></header>
     <input id="node-id" type="hidden"><div class="form-grid">
       <label><span data-i18n="name">Name</span><input id="node-name" required maxlength="100" placeholder="tokyo-01"></label>
       <label><span data-i18n="nodeURL">Public base URL</span><input id="node-url" required placeholder="https://jp.repo.example.com"></label>

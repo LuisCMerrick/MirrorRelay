@@ -1,3 +1,4 @@
+// Package proxy handles frontend HTTP routing and bounded metadata handling.
 package proxy
 
 import (

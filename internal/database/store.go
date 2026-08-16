@@ -1,3 +1,4 @@
+// Package database handles persistent state and migrations.
 package database
 
 import (
