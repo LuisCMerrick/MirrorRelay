@@ -4,67 +4,229 @@
 
 [![CI](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/ci.yml/badge.svg)](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/ci.yml)
 [![Release Build](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/build.yml/badge.svg)](https://github.com/LuisCMerrick/MirrorRelay/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/LuisCMerrick/MirrorRelay)](https://github.com/LuisCMerrick/MirrorRelay/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
-MirrorRelay is a pull-through gateway for Linux software repositories and Docker/OCI registries. It provides repository routing, caching, health checks, configuration history and a bilingual administration UI.
+A self-hosted pull-through caching gateway for Linux package repositories and OCI container registries with a web management UI and managed Nginx data plane.
 
 ```text
-Client -> External Shared Nginx -> MirrorRelay -> Managed Upstream Nginx -> Original Upstream
+APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy · Conda · Docker / OCI
+
+No full mirror synchronization required.
 ```
 
-Managed Upstream Nginx is the only component that connects to Original Upstreams. MirrorRelay validates every data-plane change before atomically publishing and gracefully reloading it.
+```text
+Client (apt / dnf / pip / npm / docker)
+   │
+   ▼
+External Shared Nginx (Ingress: 80 / 443)
+   │ (Unix socket 0660 / Loopback TCP)
+   ▼
+MirrorRelay (Go Control Plane & Router)
+   ├── Web UI & Management API (/admin/)
+   ├── Token Broker & Redirect Broker (Docker / OCI)
+   ├── Bounded Metadata & HTML Rewriter
+   ├── SQLite Persistent Desired State
+   └── Candidate Generator & Atomic Publication
+   │ (Unix socket 0660 / Loopback TCP)
+   ▼
+Managed Upstream Nginx (Dedicated Musl Data Plane)
+   ├── Proxy Cache & Content Store
+   ├── SSL Verification & DNS Pinning
+   └── Multi-Upstream Failover
+   │
+   ▼
+Original Upstreams (Debian, Ubuntu, Rocky, PyPI, Docker Hub, etc.)
+```
 
-## Highlights
+---
 
-- APT, RPM, APK, OPKG, PyPI, npm, Maven, NuGet, Cargo, Go Proxy, Conda and generic repositories.
-- Pull-only Docker/OCI Registry proxying with secured token and redirect handling.
-- Shared-domain path routing and dedicated-host routing.
-- A repository index at `/`, with each configured path behaving like a local mirror tree.
-- Disk cache, health-aware upstream failover, cache purge and traffic statistics.
-- Embedded English/Chinese Web UI with repository actions and validated operational settings.
-- Unix sockets with mode `0660` by default; explicit loopback TCP fallback is available.
+## Why MirrorRelay?
 
-## Packages
+Traditional repository setups require either **full mirror synchronization** or **manual Nginx `proxy_pass` rules**. MirrorRelay solves the fundamental drawbacks of both approaches:
 
-Release builds produce DEB, RPM and tar.gz packages for both architectures:
-
-| Architecture | DEB | RPM | Archive |
+| Challenge | Full Mirror Sync (e.g. `apt-mirror`, `bandersnatch`) | Manual Nginx `proxy_pass` | MirrorRelay |
 |---|---|---|---|
-| amd64 | `mirrorrelay_<version>_amd64.deb` | `mirrorrelay-<version>.x86_64.rpm` | `mirrorrelay-<version>-linux-amd64.tar.gz` |
-| arm64 | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
+| **Storage Consumption** | Requires hundreds of gigabytes or terabytes upfront | Low (caches on demand) | **Low**: Pull-through on-demand disk cache |
+| **Initial Sync Delay** | Hours to days before first use | Zero delay | **Zero delay**: Immediate availability |
+| **Repository Management** | Complex sync scripts and cron jobs | Manual config editing and reloads | **Web UI & API**: Real-time CRUD with audit log |
+| **Docker / OCI Registry** | Difficult to mirror private/public registries | Breaks on Bearer token & CDN 302 redirects | **Built-in Token & Redirect Broker** |
+| **Data Plane Safety** | N/A | Syntax errors break entire web server | **Desired/Active separation** (`nginx -t` before atomic reload) |
+| **Upstream Security** | N/A | Vulnerable to SSRF and DNS rebinding | **Strict CIDR filtering, IP pinning & TLS SNI verification** |
+| **Multi-Node Routing** | Manual DNS / CDN configuration | Complex geo-DNS setup | **Coordinator / Edge distributed 307 routing** |
 
-Installed locations:
+---
 
-```text
-/usr/bin/mirrorrelay
-/usr/lib/mirrorrelay/nginx/nginx
-/etc/mirrorrelay/config.yaml
-/usr/lib/systemd/system/mirrorrelay.service
+## Capabilities
+
+| Feature | Status | Details |
+|---|---|---|
+| **Package Repository Proxy & Cache** | ✅ Supported | APT, RPM/DNF, APK, OPKG, PyPI, npm, Maven, Cargo, Go Proxy, Conda |
+| **Docker / OCI Registry Pull Proxy** | ✅ Supported | Full `/v2/` challenge handling, Token Brokerage, multi-upstream fallback, CDN redirect handling |
+| **Multi-Upstream Failover** | ✅ Supported | Automatic health checking, weight, priority, and backup upstream fallback |
+| **Desired / Active Separation** | ✅ Supported | Atomic configuration generation, `nginx -t` validation, and hitless graceful reload |
+| **Distributed Package Routing** | ✅ Supported | Coordinator / Edge topology with client CIDR, Geo, Priority, and Weight 307 routing |
+| **Edge Configuration Consistency** | ✅ Supported | Real-time fingerprint and version check between Coordinator and Edge nodes |
+| **Docker / OCI Distributed Routing** | 🚧 Planned | Docker registry distributed routing is planned for future control-plane updates (single-node OCI pull proxy is fully supported) |
+| **Bilingual Web Management UI** | ✅ Supported | Zero-dependency responsive UI in English and Chinese with persistent switch and live restart |
+
+---
+
+## Compatibility Matrix
+
+| Ecosystem | Proxy Mode | Dynamic Cache | Metadata / URL Rewrite | Tested Client / OS |
+|---|:---:|:---:|:---:|---|
+| **APT** | ✅ | ✅ | Optional HTML URL rewrite | Debian 11/12, Ubuntu 22.04/24.04 |
+| **RPM / DNF** | ✅ | ✅ | Optional HTML URL rewrite | Rocky Linux 8/9, AlmaLinux 9, Fedora 40/41 |
+| **Alpine APK** | ✅ | ✅ | N/A | Alpine 3.19/3.20/3.21 |
+| **OpenWrt OPKG** | ✅ | ✅ | Optional HTML URL rewrite | OpenWrt 22.03/23.05 |
+| **PyPI** | ✅ | ✅ | ✅ Simple HTML Index Rewrite | `pip` 23.x/24.x |
+| **npm** | ✅ | ✅ | ✅ JSON Registry Metadata Rewrite | `npm` 9.x/10.x, `pnpm`, `yarn` |
+| **Go Modules** | ✅ | ✅ | N/A | Go 1.22/1.23/1.24 |
+| **Rust Cargo** | ✅ | ✅ | N/A | Cargo / `crates.io` index |
+| **Maven / Gradle** | ✅ | ✅ | Optional HTML directory rewrite | Maven 3.8/3.9, Gradle 8.x |
+| **Docker / OCI** | ✅ Pull | ✅ Layers & Blobs | ✅ Token & S3/CDN Redirect Broker | Docker Engine 24.x/26.x/27.x, Podman 4.x/5.x |
+
+---
+
+## Quick Start (5 Minutes)
+
+### Option 1: Install Release Package (Recommended)
+
+Download the `.deb` or `.rpm` package from the [Releases](https://github.com/LuisCMerrick/MirrorRelay/releases) page:
+
+```bash
+# On Debian / Ubuntu:
+sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+
+# On RHEL / Rocky Linux / Fedora:
+sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
 ```
 
-The embedded Nginx is built statically against pinned musl, OpenSSL, PCRE2 and zlib sources. Packages never modify or reload an existing External Shared Nginx.
+The service will automatically start and bind to `/run/mirrorrelay/frontend.sock`.
 
-## Quick development start
+### Option 2: Standalone Binary / Development Mode
 
-```sh
+```bash
+git clone https://github.com/LuisCMerrick/MirrorRelay.git
+cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-Open `https://127.0.0.1:8443/admin/` and sign in with `admin` / `adminadmin`. Development mode stores its data and generated certificate under `dev-data/`; never use its password in production.
+Open `https://127.0.0.1:8443/admin/` in your browser and log in with default credentials `admin` / `adminadmin`.
 
-Useful checks:
+### Quick Configuration Example
 
-```sh
-make check
-make upstream-nginx-musl ARCH=amd64
-make upstream-nginx-musl ARCH=arm64
+1. **Log in to the Web UI** at `/admin/`.
+2. **Add a Debian Repository**:
+   - Name: `debian`
+   - Public Path: `/debian`
+   - Upstream URL: `https://deb.debian.org/debian`
+   - Cache: Enabled (Default Profile)
+3. **Configure Client** (`/etc/apt/sources.list.d/mirror.sources` or `sources.list`):
+   ```text
+   deb http://mirror.example.com/debian bookworm main contrib non-free
+   ```
+4. **Update and verify**:
+   ```bash
+   sudo apt-get update
+   ```
+
+For comprehensive step-by-step instructions, see the [Quick Start Guide](docs/quick-start.md).
+
+---
+
+## Architecture Overview
+
+MirrorRelay uses a clean two-plane architecture separating administrative control from high-throughput upstream data transfer:
+
+```text
+External Shared Nginx (Administrator-Owned)
+         ↓  (Unix Socket 0660)
+MirrorRelay Frontend (Go Service)
+  - Policy enforcement & Authentication
+  - Dynamic routing & URL rewriting
+  - Token brokerage for OCI registries
+  - Configuration lifecycle (Desired state in SQLite)
+         ↓  (Unix Socket 0660)
+Managed Upstream Nginx (Isolated Musl Process)
+  - Proxy caching on local disk (/var/cache/mirrorrelay)
+  - Connection pooling & SSL verification
+  - DNS resolution & pinning
+         ↓
+Original Upstream (HTTPS / HTTP)
 ```
+
+- **Safety Invariant**: The Go service never makes direct HTTP calls to upstream package servers. All upstream communication is performed exclusively through the isolated, statically linked `Managed Upstream Nginx` data plane.
+- **Hitless Reloads**: Configuration updates are compiled into a candidate Nginx configuration, validated with `nginx -t`, atomically written, and reloaded gracefully (`HUP`) without dropping active connections.
+
+Read more in the [Architecture Guide](docs/architecture.md).
+
+---
+
+## Distributed Deployment
+
+MirrorRelay includes native clustering capabilities to scale traffic across geographical regions or edge locations:
+
+- **Coordinator Node**: Central management authority owning repository definitions, client routing rules, and node health monitoring.
+- **Edge Nodes**: Autonomous caching nodes that receive traffic directly from clients via HTTP 307 redirects from the Coordinator.
+- **Routing Policies**: Client IP CIDR matching, Geo-location, Priority, and Weight balancing.
+- **Failover**: If an Edge node fails health checks, the Coordinator automatically routes traffic to the next healthy node or serves it locally.
+
+Read more in the [Distributed Deployment Guide](docs/distributed.md).
+
+---
+
+## Release Packages
+
+Pre-compiled, statically linked packages are produced for `linux/amd64` and `linux/arm64`:
+
+| Architecture | DEB | RPM | Tarball Archive |
+|---|---|---|---|
+| **amd64** | `mirrorrelay_<version>_amd64.deb` | `mirrorrelay-<version>.x86_64.rpm` | `mirrorrelay-<version>-linux-amd64.tar.gz` |
+| **arm64** | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
+
+Standard file layout:
+```text
+/usr/bin/mirrorrelay                         # Main Go service binary
+/usr/lib/mirrorrelay/nginx/nginx             # Version-bound musl Managed Upstream Nginx
+/etc/mirrorrelay/config.yaml                 # Configuration file (mode 0640)
+/usr/lib/systemd/system/mirrorrelay.service  # Sandboxed systemd service unit
+/var/lib/mirrorrelay/mirrorrelay.db          # Persistent SQLite database
+/var/cache/mirrorrelay/                      # Upstream package and blob disk cache
+/var/log/mirrorrelay/upstream-nginx/         # Access and error logs
+/run/mirrorrelay/                            # Runtime PID and Unix domain sockets
+```
+
+---
 
 ## Documentation
 
-- [Installation](docs/installation.md) ([中文](docs/installation.zh-CN.md))
-- [Web UI guide](docs/web-ui.md) ([中文](docs/web-ui.zh-CN.md))
-- [Configuration reference](docs/configuration.md) ([中文](docs/configuration.zh-CN.md))
-- [Verification](docs/verification.md) ([中文](docs/verification.zh-CN.md))
-- [Example configuration](configs/config.example.yaml)
+- **Getting Started**:
+  - [Quick Start Guide](docs/quick-start.md) ([中文](docs/quick-start.zh-CN.md)) — 5-minute onboarding walkthrough.
+  - [Installation Guide](docs/installation.md) ([中文](docs/installation.zh-CN.md)) — Production DEB, RPM, and tarball deployment.
+  - [Web UI Guide](docs/web-ui.md) ([中文](docs/web-ui.zh-CN.md)) — Bilingual dashboard, settings, and repository actions.
+- **Architecture & Deep Dives**:
+  - [Architecture Guide](docs/architecture.md) ([中文](docs/architecture.zh-CN.md)) — Two-plane design, lifecycle, and data flow.
+  - [Docker & OCI Registry](docs/docker-oci.md) ([中文](docs/docker-oci.zh-CN.md)) — Token brokerage, redirect handling, and setup.
+  - [Distributed Deployment](docs/distributed.md) ([中文](docs/distributed.zh-CN.md)) — Coordinator, Edge, and 307 routing.
+  - [Security Model](docs/security.md) ([中文](docs/security.zh-CN.md)) — SSRF mitigation, token hashing, and isolation.
+- **Reference & Operations**:
+  - [Configuration Reference](docs/configuration.md) ([中文](docs/configuration.zh-CN.md)) — Complete YAML configuration guide.
+  - [Production Verification](docs/verification.md) ([中文](docs/verification.zh-CN.md)) — Large object, throughput, and failover validation.
+  - [Example Configuration](configs/config.example.yaml) — Production-ready YAML template.
+  - [Roadmap](ROADMAP.md) — Future development milestones.
+  - [Contributing Guide](CONTRIBUTING.md) — Development workflow and coding guidelines.
 
-MirrorRelay starts at version `0.0.1` and is licensed under [GNU GPL v3.0 only](LICENSE). Bundled third-party notices are in [nginx/NOTICE.md](nginx/NOTICE.md).
+---
+
+## Security
+
+Security vulnerabilities should be reported responsibly according to our [Security Policy](.github/SECURITY.md).
+
+---
+
+## License
+
+MirrorRelay is licensed under the [GNU General Public License v3.0](LICENSE).  
+Third-party component licenses for bundled Nginx dependencies (musl, OpenSSL, PCRE2, zlib) are documented in [nginx/NOTICE.md](nginx/NOTICE.md).

@@ -64,8 +64,18 @@ for required_file in \
   "$project_root/LICENSE" \
   "$project_root/README.md" \
   "$project_root/README.zh-CN.md" \
+  "$project_root/docs/quick-start.md" \
+  "$project_root/docs/quick-start.zh-CN.md" \
   "$project_root/docs/installation.md" \
   "$project_root/docs/installation.zh-CN.md" \
+  "$project_root/docs/architecture.md" \
+  "$project_root/docs/architecture.zh-CN.md" \
+  "$project_root/docs/docker-oci.md" \
+  "$project_root/docs/docker-oci.zh-CN.md" \
+  "$project_root/docs/distributed.md" \
+  "$project_root/docs/distributed.zh-CN.md" \
+  "$project_root/docs/security.md" \
+  "$project_root/docs/security.zh-CN.md" \
   "$project_root/docs/configuration.md" \
   "$project_root/docs/configuration.zh-CN.md" \
   "$project_root/docs/verification.md" \
