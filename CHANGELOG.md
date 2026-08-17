@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.5
+- **Modular Web UI Architecture (ES Modules)**:
+  - Transitioned the entire frontend codebase to a clean ES Module architecture (`internal/web/dist/js/`) loaded via `<script type="module" src="js/main.js"></script>`.
+  - Decoupled router, state management, API client, DOM utilities, formatters, and page controllers into dedicated modules (`js/router.js`, `js/state.js`, `js/api.js`, `js/dom.js`, `js/pages/*.js`).
+  - Streamlined i18n dynamic resource loading via ES module default exports.
+- **Modern Control Plane Design System**:
+  - Upgraded Web UI styling (`app.css`) with polished surface hierarchy, CSS design tokens, glowing indicator badges, and responsive layout improvements.
+  - Organized sidebar navigation into clear functional sections: `Core`, `Gateway`, `Cluster & Ops`, `Logs & System`, `Admin`.
+- **UI Resilience & Safety Hardening**:
+  - Added full dialog coverage in HTML markup (`preview-dialog`, `custom-dialog`, `node-dialog`).
+  - Added optional chaining across all event bindings and DOM queries to eliminate null pointer exceptions.
+  - Added automated syntax checking (`find internal/web/dist -name "*.js" -exec node --check {} +`) into the CI and Makefile pipelines.
+
 ## v0.0.4
 - **UI Enhancement, Themes & Appearance Customization**:
   - Added full theme customization support: Light, Dark, and System modes with configurable accent colors.
