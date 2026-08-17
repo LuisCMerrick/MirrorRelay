@@ -4,6 +4,7 @@ import { registerAction } from '../actions.js';
 import { card } from '../components.js';
 import { $, esc, notice } from '../dom.js';
 import { date } from '../format.js';
+import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 
 export async function loadCluster() {
@@ -13,15 +14,15 @@ export async function loadCluster() {
   ]);
 
   const overviewHtml = `<div class="cards">
-    ${card(L('Cluster role'), overview.role || 'standalone')}
-    ${card(L('Cluster status'), overview.enabled ? L('Enabled') : L('Disabled'), overview.enabled)}
-    ${card(L('Total nodes'), overview.total_nodes || 0)}
-    ${card(L('Healthy nodes'), overview.healthy_nodes || 0, (overview.healthy_nodes || 0) > 0)}
-    ${card(L('Routable nodes'), overview.routable_nodes || 0, (overview.routable_nodes || 0) > 0)}
-    ${card(L('Routing mode'), overview.routing_mode || 'hybrid')}
+    ${card(L('Cluster role'), overview.role || 'standalone', false, 'cluster')}
+    ${card(L('Cluster status'), overview.enabled ? L('Enabled') : L('Disabled'), overview.enabled, 'check-circle')}
+    ${card(L('Total nodes'), overview.total_nodes || 0, false, 'layers')}
+    ${card(L('Healthy nodes'), overview.healthy_nodes || 0, (overview.healthy_nodes || 0) > 0, 'activity')}
+    ${card(L('Routable nodes'), overview.routable_nodes || 0, (overview.routable_nodes || 0) > 0, 'network')}
+    ${card(L('Routing mode'), overview.routing_mode || 'hybrid', false, 'settings')}
   </div>
   <div class="panel">
-    <h2>${L('Cluster Fingerprint')}</h2>
+    <h2>${icon('shield', 18)} ${L('Cluster Fingerprint')}</h2>
     <p><code>${esc(overview.cluster_fingerprint || L('Not initialized'))}</code></p>
   </div>`;
 
@@ -31,23 +32,25 @@ export async function loadCluster() {
     return `<tr>
       <td><strong>${esc(node.name)}</strong></td>
       <td><code>${esc(node.url)}</code></td>
-      <td>${esc(node.region)}${node.country ? ` (${esc(node.country)})` : ''}</td>
-      <td>${node.priority} / ${node.weight}</td>
-      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}">${esc(node.health_status || 'unknown')}</span></td>
+      <td>${esc(node.region)}${node.country ? ` <span class="badge">${esc(node.country)}</span>` : ''}</td>
+      <td><code>${node.priority} / ${node.weight}</code></td>
+      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}"><span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>${esc(node.health_status || 'unknown')}</span></td>
       <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(node.config_status || 'unknown')}</span></td>
       <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
       <td>
-        <button class="small secondary" data-action="check-node" data-id="${node.id}">${L('Check')}</button>
-        <button class="small secondary" data-action="edit-node" data-id="${node.id}">${L('Edit')}</button>
-        <button class="small secondary" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
-        <button class="small danger" data-action="delete-node" data-id="${node.id}">${L('Delete')}</button>
+        <div class="actions">
+          <button class="small secondary" data-action="check-node" data-id="${node.id}">${icon('play', 12)} ${L('Check')}</button>
+          <button class="small secondary" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
+          <button class="small secondary" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
+          <button class="small danger" data-action="delete-node" data-id="${node.id}">${icon('trash', 12)}</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
 
   const tableHtml = `<div class="panel">
-    <h2>${L('Edge nodes')}</h2>
+    <h2>${icon('share', 18)} ${L('Edge nodes')}</h2>
     <div class="table-wrap"><table><thead><tr>
       <th>${L('Name')}</th>
       <th>${L('URL')}</th>

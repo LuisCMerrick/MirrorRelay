@@ -5,6 +5,7 @@ import { registerAction } from '../actions.js';
 import { card, kv, showPreview } from '../components.js';
 import { $, copyText, esc, notice } from '../dom.js';
 import { bytes, date, number, stateLabel } from '../format.js';
+import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 import { publicURL } from '../repositories.js';
 import { state } from '../state.js';
@@ -19,20 +20,96 @@ async function showRepository(id) {
     const [repositoryState, examples] = await Promise.all([api(`/mirrors/${id}/state`), api(`/mirrors/${id}/client-config`)]);
     const desired = repositoryState.desired, active = repositoryState.active_found ? repositoryState.active : null, statistics = repositoryState.statistics || {};
     const latest = state.profiles.find(profile => profile.name === desired.profile_name && profile.latest_stable);
-    const upgrade = latest && latest.version !== desired.profile_version ? `<button data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${L('Preview upgrade to %s', latest.version)}</button>` : '';
+    const upgrade = latest && latest.version !== desired.profile_version ? `<button class="btn-primary" data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${icon('zap', 13)} ${L('Preview upgrade to %s', latest.version)}</button>` : '';
+
     $('#detail-title').textContent = desired.name;
-    $('#detail-content').innerHTML = `<div class="cards detail-cards">${card(L('Desired state'), stateLabel(desired.config_state), desired.config_state === 'active')}${card(L('Active state'), active ? L('Published') : L('Not active'), Boolean(active))}${card(L('Effective config'), `v${repositoryState.effective_config_version || '—'}`)}${card(L('Requests today'), number(statistics.requests || 0))}${card(L('Traffic today'), bytes(statistics.bytes || 0))}${card(L('Observed cache traffic'), bytes(statistics.cache_bytes || 0))}${card(L('Cache HIT / MISS'), `${number(statistics.cache_hits || 0)} / ${number(statistics.cache_misses || 0)}`)}${card('2xx / 3xx / 4xx / 5xx', `${number(statistics.status_2xx || 0)} / ${number(statistics.status_3xx || 0)} / ${number(statistics.status_4xx || 0)} / ${number(statistics.status_5xx || 0)}`)}${card(L('Upstream errors'), number(statistics.upstream_errors || 0))}</div>
-      <div class="toolbar"><div class="actions"><button data-action="copy-repository-url" data-id="${id}">${L('Copy URL')}</button><button data-action="edit-mirror-from-detail" data-id="${id}">${L('Edit')}</button><button data-action="check-mirror" data-id="${id}">${L('Test')}</button><button data-action="preview-repository-config" data-id="${id}">${L('Preview config')}</button><button data-action="view-effective-config">${L('Effective config')}</button><button data-action="purge-repository" data-id="${id}">${L('Purge cache')}</button>${upgrade}</div></div>
-      <div class="grid2"><div class="panel"><h2>${L('Desired configuration')}</h2>${repositorySummary(desired)}</div><div class="panel"><h2>${L('Active routing snapshot')}</h2>${active ? repositorySummary(active) : `<p class="muted">${L('No active version. The desired configuration may have failed validation or activation.')}</p>`}</div></div>
-      <div class="panel"><h2>${L('Upstreams')}</h2><div class="table-wrap"><table><thead><tr><th>${L('Priority')}</th><th>${L('URL')}</th><th>${L('Health')}</th><th>${L('Latency')}</th><th>${L('Last check')}</th></tr></thead><tbody>${(desired.upstreams || []).map(upstream => `<tr><td>${upstream.priority}</td><td><code>${esc(upstream.url)}</code></td><td>${esc(stateLabel(upstream.health_status))}</td><td>${number(upstream.latency_ms)} ms</td><td>${date(upstream.last_check)}</td></tr>`).join('')}</tbody></table></div></div>
-      <div class="panel"><h2>${L('Client configuration examples')}</h2>${examples.map((example, index) => `<div class="example"><div class="toolbar"><strong>${esc(example.name)}</strong><button class="copy-example" data-index="${index}">${L('Copy')}</button></div><pre>${esc(example.command)}</pre></div>`).join('')}</div>`;
-    $('#detail-content').querySelectorAll('.copy-example').forEach(button => button.addEventListener('click', async () => { await copyText(examples[Number(button.dataset.index)].command); notice(L('Copied.')); }));
+    $('#detail-content').innerHTML = `
+      <div class="cards detail-cards">
+        ${card(L('Desired state'), stateLabel(desired.config_state), desired.config_state === 'active', 'check-circle')}
+        ${card(L('Active state'), active ? L('Published') : L('Not active'), Boolean(active), 'server')}
+        ${card(L('Effective config'), `v${repositoryState.effective_config_version || '—'}`, false, 'code')}
+        ${card(L('Requests today'), number(statistics.requests || 0), false, 'trend-up')}
+        ${card(L('Traffic today'), bytes(statistics.bytes || 0), false, 'ingress')}
+        ${card(L('Observed cache traffic'), bytes(statistics.cache_bytes || 0), false, 'cache')}
+        ${card(L('Cache HIT / MISS'), `${number(statistics.cache_hits || 0)} / ${number(statistics.cache_misses || 0)}`, false, 'database')}
+        ${card('2xx / 3xx / 4xx / 5xx', `${number(statistics.status_2xx || 0)} / ${number(statistics.status_3xx || 0)} / ${number(statistics.status_4xx || 0)} / ${number(statistics.status_5xx || 0)}`, false, 'activity')}
+        ${card(L('Upstream errors'), number(statistics.upstream_errors || 0), false, 'alert')}
+      </div>
+      <div class="toolbar">
+        <div class="actions">
+          <button data-action="copy-repository-url" data-id="${id}">${icon('copy', 13)} ${L('Copy URL')}</button>
+          <button data-action="edit-mirror-from-detail" data-id="${id}">${icon('edit', 13)} ${L('Edit')}</button>
+          <button data-action="check-mirror" data-id="${id}">${icon('play', 13)} ${L('Test')}</button>
+          <button data-action="preview-repository-config" data-id="${id}">${icon('code', 13)} ${L('Preview config')}</button>
+          <button data-action="view-effective-config">${icon('server', 13)} ${L('Effective config')}</button>
+          <button data-action="purge-repository" data-id="${id}">${icon('database', 13)} ${L('Purge cache')}</button>
+          ${upgrade}
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <h2>${icon('settings', 16)} ${L('Desired configuration')}</h2>
+          ${repositorySummary(desired)}
+        </div>
+        <div class="panel">
+          <h2>${icon('server', 16)} ${L('Active routing snapshot')}</h2>
+          ${active ? repositorySummary(active) : `<p class="muted">${L('No active version. The desired configuration may have failed validation or activation.')}</p>`}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>${icon('globe', 16)} ${L('Upstreams')}</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>${L('Priority')}</th>
+                <th>${L('URL')}</th>
+                <th>${L('Health')}</th>
+                <th>${L('Latency')}</th>
+                <th>${L('Last check')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(desired.upstreams || []).map(upstream => `<tr>
+                <td><span class="badge blue">${upstream.priority}</span></td>
+                <td><code>${esc(upstream.url)}</code></td>
+                <td>
+                  <span class="badge ${upstream.health_status === 'healthy' ? 'ok' : 'bad'}">
+                    ${esc(stateLabel(upstream.health_status))}
+                  </span>
+                </td>
+                <td><code>${number(upstream.latency_ms)} ms</code></td>
+                <td>${date(upstream.last_check)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>${icon('code', 16)} ${L('Client configuration examples')}</h2>
+        ${examples.map((example, index) => `
+          <div class="example">
+            <div class="toolbar">
+              <strong>${esc(example.name)}</strong>
+              <button class="copy-example secondary small" data-index="${index}">${icon('copy', 12)} ${L('Copy')}</button>
+            </div>
+            <pre>${esc(example.command)}</pre>
+          </div>
+        `).join('')}
+      </div>`;
+
+    $('#detail-content').querySelectorAll('.copy-example').forEach(button => button.addEventListener('click', async () => {
+      await copyText(examples[Number(button.dataset.index)].command);
+      notice(L('Copied.'));
+    }));
     $('#detail-dialog').showModal();
-  } catch (error) { notice(error.message, true); }
+  } catch (error) {
+    notice(error.message, true);
+  }
 }
 
 export function initMirrorDetail() {
-  $('#close-detail').addEventListener('click', () => $('#detail-dialog').close());
+  $('#close-detail')?.addEventListener('click', () => $('#detail-dialog')?.close());
 }
 
 registerAction('show-repository', button => showRepository(Number(button.dataset.id)));
@@ -41,7 +118,9 @@ registerAction('preview-repository-config', async button => {
   try {
     const value = await api(`/mirrors/${Number(button.dataset.id)}/config`);
     showPreview(L('Generated repository configuration'), `<pre class="config-preview">${esc(value.configuration)}</pre>`);
-  } catch (error) { notice(error.message, true); }
+  } catch (error) {
+    notice(error.message, true);
+  }
 });
 
 registerAction('preview-profile-upgrade', async button => {
@@ -50,11 +129,21 @@ registerAction('preview-profile-upgrade', async button => {
   try {
     const value = await api(`/mirrors/${id}/profile/preview`, {method: 'POST', body: JSON.stringify({name, version})});
     const rows = Object.entries(value.diff || {}).map(([field, change]) => `<tr><td>${esc(field)}</td><td><code>${esc(JSON.stringify(change.before))}</code></td><td><code>${esc(JSON.stringify(change.after))}</code></td></tr>`).join('');
-    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
+    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade" class="btn-primary">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
     $('#apply-profile-upgrade').addEventListener('click', async () => {
-      try { await api(`/mirrors/${id}/profile/apply`, {method: 'POST', body: JSON.stringify({name, version})}); $('#preview-dialog').close(); $('#detail-dialog').close(); notice(L('Profile upgrade activated.')); await loadMirrors(); } catch (error) { notice(error.message, true); }
+      try {
+        await api(`/mirrors/${id}/profile/apply`, {method: 'POST', body: JSON.stringify({name, version})});
+        $('#preview-dialog').close();
+        $('#detail-dialog').close();
+        notice(L('Profile upgrade activated.'));
+        await loadMirrors();
+      } catch (error) {
+        notice(error.message, true);
+      }
     });
-  } catch (error) { notice(error.message, true); }
+  } catch (error) {
+    notice(error.message, true);
+  }
 });
 
 registerAction('purge-repository', async button => {
@@ -64,5 +153,7 @@ registerAction('purge-repository', async button => {
   try {
     const result = path ? await api(`/mirrors/${id}/cache/purge`, {method: 'POST', body: JSON.stringify({path, query: ''})}) : await api(`/mirrors/${id}/cache`, {method: 'DELETE'});
     notice(L('Logical purge completed; physical reclaim: %s.', result.physical_reclaim));
-  } catch (error) { notice(error.message, true); }
+  } catch (error) {
+    notice(error.message, true);
+  }
 });
