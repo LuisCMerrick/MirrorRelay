@@ -9,13 +9,12 @@
   <link rel="stylesheet" href="managed.css">
 </head>
 <body>
-  <!-- Floating language switch on login view -->
-  <div id="login-lang" class="language-float language-switch" aria-label="Language">
-    <button type="button" data-lang="en">EN</button>
-    <button type="button" data-lang="zh">中文</button>
-  </div>
-
   <main id="login" class="login-wrap hidden">
+    <!-- Floating language switch on login view -->
+    <div id="login-lang" class="language-float language-switch" aria-label="Language">
+      <button type="button" data-lang="en">EN</button>
+      <button type="button" data-lang="zh">中文</button>
+    </div>
     <div class="login-backdrop"></div>
     <form id="login-form" class="panel login-card">
       <div class="login-brand">
@@ -352,10 +351,10 @@
       </div>
 
       <footer>
+        <div id="form-error" class="error"></div>
         <button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="saveActivate">Validate, save and activate</button>
       </footer>
-      <div id="form-error" class="error"></div>
     </form>
   </dialog>
 
@@ -396,10 +395,10 @@
         </div>
       </div>
       <footer>
+        <div id="custom-error" class="error"></div>
         <button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="validateApply">Validate and apply</button>
       </footer>
-      <div id="custom-error" class="error"></div>
     </form>
   </dialog>
 
@@ -422,10 +421,10 @@
         </div>
       </div>
       <footer>
+        <div id="node-error" class="error"></div>
         <button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="save">Save</button>
       </footer>
-      <div id="node-error" class="error"></div>
     </form>
   </dialog>
 

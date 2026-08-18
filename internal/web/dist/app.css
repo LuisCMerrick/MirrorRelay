@@ -1124,6 +1124,44 @@ button.icon-btn:hover {
   border-color: rgba(168, 85, 247, 0.3);
 }
 
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.status-pill.status-healthy {
+  background: var(--success-surface);
+  color: var(--success);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.status-pill.status-degraded {
+  background: var(--warning-surface);
+  color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.status-pill.status-unhealthy {
+  background: var(--danger-surface);
+  color: var(--danger);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.status-pill.status-unknown {
+  background: var(--bg-surface-elevated);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
 .upstream-pill {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1233,7 +1271,7 @@ td.actions {
 }
 
 td.actions {
-  min-width: 320px;
+  min-width: 380px;
 }
 
 td.actions button,
@@ -1324,8 +1362,9 @@ a.button-link:hover {
   gap: 6px;
 }
 
-.form-grid label.wide {
-  grid-column: span 2;
+.form-grid label.wide,
+.form-grid label.full-span {
+  grid-column: 1 / -1;
 }
 
 .form-grid label.check {
@@ -1383,6 +1422,16 @@ textarea {
   color: var(--danger);
   font-size: 12px;
   margin-top: 6px;
+  word-break: break-word;
+}
+
+dialog footer .error,
+.settings-form footer .error,
+form.panel footer .error {
+  width: 100%;
+  margin-top: 0;
+  margin-bottom: 8px;
+  text-align: left;
 }
 
 /* Settings and Appearance Forms */
@@ -1853,7 +1902,7 @@ code {
 
 /* Floating language switch on login */
 #login-lang {
-  position: fixed;
+  position: absolute;
   top: 20px;
   right: 24px;
   z-index: 1000;
@@ -1895,24 +1944,88 @@ code {
     width: 100%;
     height: auto;
     position: relative;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+  aside nav {
+    max-height: 220px;
+    overflow-y: auto;
   }
   header {
-    padding: 14px 20px;
+    padding: 12px 18px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .page {
-    padding: 20px 16px;
+    padding: 18px 14px 36px 14px;
+  }
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .search-bar {
+    max-width: 100%;
+    width: 100%;
+  }
+  .toolbar button,
+  .toolbar .actions {
+    width: 100%;
+    justify-content: flex-start;
   }
   .form-grid {
     grid-template-columns: 1fr;
   }
-  .form-grid label.wide {
+  .form-grid label.wide,
+  .form-grid label.full-span {
     grid-column: span 1;
   }
   .grid2 {
     grid-template-columns: 1fr;
   }
+  .cards {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .donut-wrap {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
   dialog {
     max-width: 95vw;
     width: 95vw;
+    border-radius: var(--radius-lg);
+  }
+  dialog footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  dialog footer button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+  }
+  .header-title-block h1 {
+    font-size: 16px;
+  }
+  .brand {
+    padding: 14px 16px;
+  }
+  .kv {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .kv > span:last-child {
+    text-align: left;
   }
 }
