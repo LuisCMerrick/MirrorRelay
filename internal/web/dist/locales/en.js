@@ -338,6 +338,11 @@ export default {
                 "max": 10000
             },
             {
+                "path": "performance.zero_copy_bypass",
+                "label": "Zero-Copy X-Accel Acceleration (Pure binary bypass)",
+                "type": "boolean"
+            },
+            {
                 "path": "metadata.rewrite_buffer_limit_bytes",
                 "label": "Metadata rewrite limit bytes",
                 "type": "number",

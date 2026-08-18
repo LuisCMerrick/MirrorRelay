@@ -54,6 +54,7 @@ type PerformanceConfig struct {
 	StreamBufferSize int   `yaml:"stream_buffer_size_bytes"`
 	GoMemoryLimit    int64 `yaml:"go_memory_limit_bytes"`
 	GOGC             int   `yaml:"gogc"`
+	ZeroCopyBypass   bool  `yaml:"zero_copy_bypass"`
 }
 
 type MetadataConfig struct {

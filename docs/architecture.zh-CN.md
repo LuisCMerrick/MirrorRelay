@@ -76,6 +76,12 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 - **容器镜像 Token Broker**：拦截上游 OCI Registry 的 `/v2/` `401 Unauthorized` 鉴权挑战，使用后台配置的上游凭据向鉴权服务器申请 Bearer Token 并注入请求，避免将敏感凭证泄露给下游客户端。
 - **重定向安全代理**：解析上游返回的 HTTP `301/302/307` 重定向地址（如 S3/CloudFront 签名链接），严格执行 SSRF 与 IP 固定检查后进行安全代理。
 
+### D. 零拷贝 X-Accel 旁路加速（大二进制包内核直传）
+针对不可变的大体积软件包（如 `.deb`、`.rpm`、`.whl`、`.tar.gz`、`.iso`、容器分层 Blob 等）：
+- 开启配置（`performance.zero_copy_bypass: true`）且在 Ingress Nginx 下运行时（`X-Accel-Supported: 1`），Go 负责完成所有 RBAC、SSRF 与包名黑白名单安全审计；
+- 校验通过后，Go 直接返回 HTTP 200 及 `X-Accel-Redirect: /_repo/<repo_id>/<upstream_id>/package/<path>` 内部重定向头与路由元数据；
+- Ingress Nginx 拦截此响应后直接与 Managed Upstream Nginx 的 Unix Socket 对接并利用 Linux 内核缓冲传输，彻底绕过 Go 用户态内存中转，实现万兆线速零拷贝直传。
+
 ---
 
 ## 4. 安全与网络不变式

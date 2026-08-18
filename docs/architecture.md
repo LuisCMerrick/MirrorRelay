@@ -76,6 +76,12 @@ For repository types that embed upstream URLs inside response payloads (such as 
 - **Registry Token Broker**: Intercepts `/v2/` `401 Unauthorized` Bearer challenges from upstream OCI registries, obtains authorized Bearer tokens using configured upstream credentials, and injects them without disclosing credentials to downstream clients.
 - **Redirect Broker**: Inspects HTTP `301/302/307` redirect locations (e.g. S3/CloudFront presigned URLs), applies strict SSRF and IP pinning checks, and either rewrites the redirect or proxies the payload safely.
 
+### D. Zero-Copy X-Accel Acceleration (Pure Binary Bypass)
+For large immutable package artifacts (`.deb`, `.rpm`, `.whl`, `.tar.gz`, `.iso`, OCI layer blobs):
+- When enabled (`performance.zero_copy_bypass: true`) and running with Ingress Nginx (`X-Accel-Supported: 1`), Go performs all RBAC, SSRF, and Package Guard checks.
+- Once validated, Go returns an immediate HTTP 200 with `X-Accel-Redirect: /_repo/<repo_id>/<upstream_id>/package/<path>` and internal routing metadata.
+- Ingress Nginx intercepts the header and proxies directly to the Managed Upstream Nginx Unix socket via Linux kernel buffers, completely bypassing Go user-space memory and achieving line-rate zero-copy throughput.
+
 ---
 
 ## 4. Security & Network Invariants

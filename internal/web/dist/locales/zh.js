@@ -338,6 +338,11 @@ export default {
                 "max": 10000
             },
             {
+                "path": "performance.zero_copy_bypass",
+                "label": "零拷贝 X-Accel 旁路加速 (大包内核直传)",
+                "type": "boolean"
+            },
+            {
                 "path": "metadata.rewrite_buffer_limit_bytes",
                 "label": "Metadata 改写限制字节",
                 "type": "number",

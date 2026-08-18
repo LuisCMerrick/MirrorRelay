@@ -46,6 +46,7 @@ type WebPerformanceSettings struct {
 	StreamBufferSize int   `json:"stream_buffer_size_bytes"`
 	GoMemoryLimit    int64 `json:"go_memory_limit_bytes"`
 	GOGC             int   `json:"gogc"`
+	ZeroCopyBypass   bool  `json:"zero_copy_bypass"`
 }
 
 type WebMetadataSettings struct {
@@ -146,7 +147,7 @@ func WebSettingsFrom(c Config) WebSettings {
 	return WebSettings{
 		Server:      WebServerSettings{UnixSocketEnabled: c.Server.UnixSocketEnabled, LocalPort: c.Server.LocalPort},
 		Ingress:     WebIngressSettings{Mode: c.Ingress.Mode, GenerateSnippet: c.Ingress.GenerateSnippet},
-		Performance: WebPerformanceSettings{StreamBufferSize: c.Performance.StreamBufferSize, GoMemoryLimit: c.Performance.GoMemoryLimit, GOGC: c.Performance.GOGC},
+		Performance: WebPerformanceSettings{StreamBufferSize: c.Performance.StreamBufferSize, GoMemoryLimit: c.Performance.GoMemoryLimit, GOGC: c.Performance.GOGC, ZeroCopyBypass: c.Performance.ZeroCopyBypass},
 		Metadata: WebMetadataSettings{RewriteBufferLimit: c.Metadata.RewriteBufferLimit, OutputCompression: c.Metadata.OutputCompression,
 			GzipMinLength: c.Metadata.GzipMinLength, ValidatorEntries: c.Metadata.ValidatorEntries},
 		Redirect: WebRedirectSettings{MaxHops: c.Redirect.MaxHops, RejectMixedResult: c.Redirect.RejectMixedResult},
@@ -181,7 +182,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate := base
 	candidate.Server.UnixSocketEnabled, candidate.Server.LocalPort = w.Server.UnixSocketEnabled, w.Server.LocalPort
 	candidate.Ingress.Mode, candidate.Ingress.GenerateSnippet = w.Ingress.Mode, w.Ingress.GenerateSnippet
-	candidate.Performance.StreamBufferSize, candidate.Performance.GoMemoryLimit, candidate.Performance.GOGC = w.Performance.StreamBufferSize, w.Performance.GoMemoryLimit, w.Performance.GOGC
+	candidate.Performance.StreamBufferSize, candidate.Performance.GoMemoryLimit, candidate.Performance.GOGC, candidate.Performance.ZeroCopyBypass = w.Performance.StreamBufferSize, w.Performance.GoMemoryLimit, w.Performance.GOGC, w.Performance.ZeroCopyBypass
 	candidate.Metadata.RewriteBufferLimit, candidate.Metadata.OutputCompression = w.Metadata.RewriteBufferLimit, w.Metadata.OutputCompression
 	candidate.Metadata.GzipMinLength, candidate.Metadata.ValidatorEntries = w.Metadata.GzipMinLength, w.Metadata.ValidatorEntries
 	candidate.Redirect.MaxHops, candidate.Redirect.RejectMixedResult = w.Redirect.MaxHops, w.Redirect.RejectMixedResult

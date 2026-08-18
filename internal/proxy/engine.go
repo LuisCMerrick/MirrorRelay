@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -215,6 +216,26 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+
+	if e.cfg.Performance.ZeroCopyBypass && request.Header.Get("X-Accel-Supported") == "1" &&
+		!rewriteMetadata && !rewriteHTML && dynamic == nil &&
+		(class == "package" || class == "immutable" || (class == "blob" && repository.BlobRedirectMode != "pass")) {
+		targetPath := "/_repo/" + strconv.FormatInt(repository.ID, 10) + "/" + strconv.FormatInt(active.ID, 10) + "/" + class + ensureLeadingSlash(relative)
+		if request.URL.RawQuery != "" {
+			targetPath += "?" + request.URL.RawQuery
+		}
+		w.Header().Set("X-Accel-Redirect", targetPath)
+		w.Header().Set("X-Mirror-Internal-Repository-ID", strconv.FormatInt(repository.ID, 10))
+		w.Header().Set("X-Mirror-Internal-Cache-Key", cacheKey)
+		w.Header().Set("X-Mirror-Internal-Request-ID", requestID)
+		if e.cfg.Security.ExposeClientIP {
+			w.Header().Set("X-Mirror-Internal-Client-IP", clientIP)
+		}
+		w.WriteHeader(http.StatusOK)
+		e.finishRequest(started, clientIP, repository, request, capture, selectedMeta{upstream: active, cacheStatus: "ACCEL"})
+		return
+	}
+
 	ctx := context.WithValue(request.Context(), requestMetaKey{}, meta)
 	ctx = context.WithValue(ctx, writerContextKey{}, capture)
 	e.proxy.ServeHTTP(capture, request.WithContext(ctx))

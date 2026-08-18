@@ -32,6 +32,7 @@ func Default() Config {
 		Performance: PerformanceConfig{
 			StreamBufferSize: 64 << 10,
 			GOGC:             100,
+			ZeroCopyBypass:   true,
 		},
 		Metadata: MetadataConfig{
 			RewriteBufferLimit: 8 << 20,
