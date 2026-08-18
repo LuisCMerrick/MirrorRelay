@@ -1432,6 +1432,7 @@ form.panel footer .error {
   margin-top: 0;
   margin-bottom: 8px;
   text-align: left;
+  order: -1;
 }
 
 /* Settings and Appearance Forms */
@@ -1568,6 +1569,7 @@ dialog footer {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 /* Client Examples */

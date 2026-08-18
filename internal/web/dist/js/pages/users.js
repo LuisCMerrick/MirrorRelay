@@ -30,9 +30,9 @@ export async function loadUsers() {
         </label>
       </div>
       <footer>
+        <div id="user-error" class="error"></div>
         <button type="submit" class="btn-primary">${icon('plus', 13)} ${L('Create user')}</button>
       </footer>
-      <div id="user-error" class="error"></div>
     </form>
     <div class="panel">
       <h2>${icon('users', 18)} ${L('User list')}</h2>
@@ -119,9 +119,9 @@ export async function loadAccount() {
         </label>
       </div>
       <footer>
+        <div class="error" id="pass-error"></div>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Update password')}</button>
       </footer>
-      <div class="error" id="pass-error"></div>
     </form>`;
 
   $('#password-form').addEventListener('submit', async event => {

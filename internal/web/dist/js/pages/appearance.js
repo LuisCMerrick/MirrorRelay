@@ -68,10 +68,10 @@ export async function loadAppearance() {
       </fieldset>
 
       <footer>
+        <div id="appearance-error" class="error"></div>
         <button type="button" class="secondary" id="reset-appearance-btn">${icon('refresh', 13)} ${L('Reset appearance to defaults')}</button>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Save appearance settings')}</button>
       </footer>
-      <div id="appearance-error" class="error"></div>
     </form>`;
 
   $('#appearance-form').addEventListener('submit', async event => {

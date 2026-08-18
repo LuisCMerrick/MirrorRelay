@@ -63,11 +63,11 @@ export async function loadSettings() {
     <form id="settings-form" class="settings-form">
       ${groups}
       <footer>
+        <div id="settings-error" class="error"></div>
         <button type="button" class="secondary" id="reset-settings">${icon('refresh', 13)} ${L('Reset to YAML after restart')}</button>
         <button type="button" class="secondary" id="restart-settings-btn">${icon('restart', 13)} ${L('Restart MirrorRelay')}</button>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Validate and save')}</button>
       </footer>
-      <div id="settings-error" class="error"></div>
     </form>
     <div class="panel" id="webhook-test-panel">
       <h2>${icon('send', 18)} ${L('Webhook Alerting & Test Notification')}</h2>
