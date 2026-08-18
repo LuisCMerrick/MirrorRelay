@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -222,6 +223,22 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "sync" && r.Method == http.MethodPost {
+		if s.clusterSync == nil {
+			writeError(w, http.StatusBadRequest, "cluster sync is not initialized")
+			return
+		}
+		var gen int64 = 1
+		if s.cache != nil {
+			gen = s.cache.GlobalGeneration()
+		}
+		manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
+		res := s.clusterSync.SyncNode(r.Context(), node, manifest)
+		_ = s.audit(r, session.Username, "sync_cluster_node", "cluster_node", node.Name, res.Success)
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
+
 	if len(parts) == 2 && (parts[1] == "enable" || parts[1] == "disable") && r.Method == http.MethodPost {
 		enabled := parts[1] == "enable"
 		if err := s.store.SetClusterNodeEnabled(r.Context(), id, enabled); err != nil {
@@ -237,6 +254,21 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 	}
 
 	writeError(w, http.StatusNotFound, "not found")
+}
+
+func (s *Server) syncAllClusterNodes(w http.ResponseWriter, r *http.Request, session auth.Session) {
+	if s.clusterSync == nil {
+		writeError(w, http.StatusBadRequest, "cluster sync is not initialized")
+		return
+	}
+	var gen int64 = 1
+	if s.cache != nil {
+		gen = s.cache.GlobalGeneration()
+	}
+	manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
+	results := s.clusterSync.BroadcastSync(r.Context(), manifest)
+	_ = s.audit(r, session.Username, "broadcast_cluster_sync", "cluster", fmt.Sprintf("synced %d nodes", len(results)), true)
+	writeJSON(w, http.StatusOK, results)
 }
 
 func (s *Server) resetClusterFingerprint(w http.ResponseWriter, r *http.Request, session auth.Session) {

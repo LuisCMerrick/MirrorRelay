@@ -89,8 +89,9 @@ func (c Config) Validate() error {
 		c.Transport.MaxIdleConnsPerHost <= 0 || c.Health.WorkerInterval <= 0 || c.Shutdown.GracePeriod <= 0 {
 		return errors.New("timeouts must be positive")
 	}
-	if c.Limits.MaxTotalConcurrency < 0 || c.Limits.MaxIPConcurrency < 0 || c.Limits.BandwidthLimitBPS < 0 {
-		return errors.New("global limits cannot be negative")
+	if c.Limits.MaxTotalConcurrency < 0 || c.Limits.MaxIPConcurrency < 0 || c.Limits.BandwidthLimitBPS < 0 ||
+		c.Warmup.MaxConcurrency < 0 || c.Warmup.BandwidthLimit < 0 || c.Warmup.RetryCount < 0 {
+		return errors.New("global and warmup limits cannot be negative")
 	}
 	if strings.TrimSpace(c.Admin.InitialUsername) == "" {
 		return errors.New("admin.initial_username is required")

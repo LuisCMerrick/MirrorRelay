@@ -126,6 +126,17 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | `redirect.reject_mixed_dns_result` | 同一 Host 同时解析到允许与禁止地址时整体拒绝 |
 | `transport.*` | Go 到 Managed Upstream Nginx 的连接池和响应头超时；不设置固定 Body 总超时 |
 
+## 智能主动预热与热点预取
+
+| 配置 | 说明 |
+|---|---|
+| `warmup.enabled` | 启用智能主动预热与热点预取引擎（默认 `false` 关闭） |
+| `warmup.max_concurrency` | 最大预热并发下载协程数（默认 `4`） |
+| `warmup.bandwidth_limit_bps` | 预热下载带宽限制速率（字节/秒，默认 `0` 不限速） |
+| `warmup.timeout` | 单个预热任务执行超时时间（默认 `30m`） |
+| `warmup.retry_count` | 预热对象失败重试次数（默认 `2`） |
+| `warmup.metadata_depth` | 元数据软件包递归解析深度（默认 `1` 自动提取 APT/RPM/PyPI 元数据中的软件包并预热） |
+
 ## 安全与限制
 
 | 配置 | 说明 |

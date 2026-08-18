@@ -145,3 +145,18 @@ distributed:
 - **集群通信双向鉴权**：Coordinator 与 Edge 节点间的探针交互（`/api/v1/cluster/manifest`、`/api/v1/cluster/health`）必须携带加密集群 Token 并经由常量时间比较校验。
 - **探针 SSRF 安全**：节点探针在发起 HTTP 请求前严格校验解析 IP，默认禁止非授权私网地址。
 - **缓存数据物理隔离**：各边缘节点缓存独立落盘，互不污染。
+
+---
+
+## 6. 集群边缘配置同步与分布式缓存淘汰广播
+
+MirrorRelay 提供了一键式及自动化的多节点边缘配置分发与缓存广播机制：
+
+1. **清单推送与多节点同步 (Manifest Push Sync)**：
+   - Coordinator 自动计算全量活跃仓库的标准配置指纹（Canonical Configuration Fingerprint）。
+   - 通过 Web UI 上的「同步全部节点」按钮或 REST API（`POST /admin/api/v1/cluster/sync`），Coordinator 向所有启用的边缘节点并发广播最新配置清单，边缘节点原子热重载生效。
+2. **分布式缓存淘汰广播 (Distributed Cache Purge)**：
+   - 当在主节点执行全局缓存淘汰（`DELETE /cache`）或定向路径淘汰时，系统自动向所有健康边缘节点并发广播淘汰事件（`POST /cluster/sync/purge`），实现集群级缓存一致性。
+3. **配置漂移告警与可视化巡检**：
+   - 探针实时比对各边缘节点返回的指纹。一旦发生网络分区或配置漂移，自动触发 `config_change` Webhook 告警并在前端高亮展示。
+

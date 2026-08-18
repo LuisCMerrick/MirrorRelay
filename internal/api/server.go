@@ -21,6 +21,7 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 	"github.com/LuisCMerrick/MirrorRelay/internal/upstreamnginx"
+	"github.com/LuisCMerrick/MirrorRelay/internal/warmup"
 	"github.com/LuisCMerrick/MirrorRelay/internal/webhook"
 )
 
@@ -61,6 +62,12 @@ type Store interface {
 	SetClusterNodeEnabled(context.Context, int64, bool) error
 	ClusterSetting(context.Context, string) (string, bool, error)
 	PutClusterSetting(context.Context, string, string) error
+	ListWarmupJobs(context.Context) ([]model.WarmupJob, error)
+	GetWarmupJob(context.Context, int64) (model.WarmupJob, error)
+	CreateWarmupJob(context.Context, model.WarmupJob) (model.WarmupJob, error)
+	UpdateWarmupJob(context.Context, model.WarmupJob) (model.WarmupJob, error)
+	DeleteWarmupJob(context.Context, int64) error
+	UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error
 }
 
 type Server struct {
@@ -75,6 +82,8 @@ type Server struct {
 	clusterRouter  *cluster.Router
 	clusterChecker *cluster.Checker
 	clusterMetrics *cluster.Metrics
+	clusterSync    *cluster.SyncManager
+	warmupEngine   *warmup.Engine
 	sessions       *auth.Sessions
 	loginLimiter   *auth.LoginLimiter
 	adminCIDRs     security.CIDRList
@@ -124,10 +133,14 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		build:         build,
 		started:       time.Now(),
 	}
+	if store != nil {
+		srv.warmupEngine = warmup.NewEngine(cfg, store, &auditRecorderAdapter{server: srv})
+	}
 	if cfg.Distributed.Enabled || cfg.Distributed.Role != "standalone" {
 		srv.clusterRouter = cluster.NewRouter(cfg)
 		srv.clusterMetrics = cluster.NewMetrics()
 		srv.clusterChecker = cluster.NewChecker(cfg, store, srv.clusterRouter, srv.clusterMetrics, &auditRecorderAdapter{server: srv})
+		srv.clusterSync = cluster.NewSyncManager(cfg, store, srv.clusterRouter, srv.clusterChecker, &auditRecorderAdapter{server: srv})
 		if store != nil {
 			if nodes, err := store.ListClusterNodes(context.Background()); err == nil {
 				srv.clusterRouter.SetNodes(nodes)
@@ -135,6 +148,18 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		}
 	}
 	return srv, nil
+}
+
+func (s *Server) StartWarmup(ctx context.Context) {
+	if s.warmupEngine != nil {
+		s.warmupEngine.Start(ctx)
+	}
+}
+
+func (s *Server) StopWarmup() {
+	if s.warmupEngine != nil {
+		s.warmupEngine.Stop()
+	}
 }
 
 func (s *Server) SetCluster(router *cluster.Router, checker *cluster.Checker, metrics *cluster.Metrics) {

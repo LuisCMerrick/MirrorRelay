@@ -184,6 +184,7 @@ type ClusterNode struct {
 	Version           string    `json:"version,omitempty"`
 	ProtocolVersion   int       `json:"protocol_version"`
 	Capabilities      []string  `json:"capabilities,omitempty"`
+	LatencyMS         int64     `json:"latency_ms,omitempty"`
 	LastCheck         time.Time `json:"last_check,omitempty"`
 	LastError         string    `json:"last_error,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -268,4 +269,34 @@ type CustomCSSConfig struct {
 
 type RepositoryBrowserConfig struct {
 	Enabled bool `json:"enabled" yaml:"enabled"`
+}
+
+type WarmupConfig struct {
+	Enabled        bool          `json:"enabled" yaml:"enabled"`
+	MaxConcurrency int           `json:"max_concurrency" yaml:"max_concurrency"`
+	BandwidthLimit int64         `json:"bandwidth_limit_bps" yaml:"bandwidth_limit_bps"`
+	Timeout        time.Duration `json:"timeout" yaml:"timeout"`
+	RetryCount     int           `json:"retry_count" yaml:"retry_count"`
+	MetadataDepth  int           `json:"metadata_depth" yaml:"metadata_depth"`
+}
+
+type WarmupJob struct {
+	ID              int64     `json:"id"`
+	MirrorID        int64     `json:"mirror_id"`
+	MirrorName      string    `json:"mirror_name,omitempty"`
+	MirrorSlug      string    `json:"mirror_slug,omitempty"`
+	Name            string    `json:"name"`
+	CronExpression  string    `json:"cron_expression"`
+	URLPatterns     []string  `json:"url_patterns"`
+	Status          string    `json:"status"`
+	TotalItems      int       `json:"total_items"`
+	CompletedItems  int       `json:"completed_items"`
+	FailedItems     int       `json:"failed_items"`
+	BytesDownloaded int64     `json:"bytes_downloaded"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+	LastRunAt       string    `json:"last_run_at,omitempty"`
+	NextRunAt       string    `json:"next_run_at,omitempty"`
+	Enabled         bool      `json:"enabled"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }

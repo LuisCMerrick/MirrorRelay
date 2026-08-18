@@ -30,6 +30,7 @@ type WebSettings struct {
 	Shutdown      WebShutdownSettings       `json:"shutdown"`
 	UpstreamNginx WebUpstreamNginxSettings  `json:"upstream_nginx"`
 	UIEnhancement model.UIEnhancementConfig `json:"ui_enhancement"`
+	Warmup        model.WarmupConfig        `json:"warmup"`
 }
 
 type WebServerSettings struct {
@@ -175,6 +176,7 @@ func WebSettingsFrom(c Config) WebSettings {
 			WorkerProcesses: c.UpstreamNginx.WorkerProcesses, WorkerUser: c.UpstreamNginx.WorkerUser,
 			WorkerConnections: c.UpstreamNginx.WorkerConnections, StopOnMirrorRelayExit: c.UpstreamNginx.StopOnMirrorRelayExit},
 		UIEnhancement: c.UIEnhancement,
+		Warmup:        c.Warmup,
 	}
 }
 
@@ -204,6 +206,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.UpstreamNginx.WorkerProcesses, candidate.UpstreamNginx.WorkerUser = w.UpstreamNginx.WorkerProcesses, w.UpstreamNginx.WorkerUser
 	candidate.UpstreamNginx.WorkerConnections, candidate.UpstreamNginx.StopOnMirrorRelayExit = w.UpstreamNginx.WorkerConnections, w.UpstreamNginx.StopOnMirrorRelayExit
 	candidate.UIEnhancement = w.UIEnhancement
+	candidate.Warmup = w.Warmup
 
 	durations := []struct {
 		name      string

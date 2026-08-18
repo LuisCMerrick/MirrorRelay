@@ -187,6 +187,14 @@ func Default() Config {
 			Events:  []string{"upstream_status", "cache_threshold", "config_change", "security_alert"},
 			Timeout: 5 * time.Second,
 		},
+		Warmup: model.WarmupConfig{
+			Enabled:        false,
+			MaxConcurrency: 4,
+			BandwidthLimit: 0,
+			Timeout:        30 * time.Minute,
+			RetryCount:     2,
+			MetadataDepth:  1,
+		},
 	}
 }
 

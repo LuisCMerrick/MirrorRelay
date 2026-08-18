@@ -198,7 +198,26 @@ CREATE TABLE IF NOT EXISTS cluster_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);`
+);
+CREATE TABLE IF NOT EXISTS warmup_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mirror_id INTEGER NOT NULL REFERENCES mirrors(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  cron_expression TEXT NOT NULL DEFAULT '',
+  url_patterns TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'idle',
+  total_items INTEGER NOT NULL DEFAULT 0,
+  completed_items INTEGER NOT NULL DEFAULT 0,
+  failed_items INTEGER NOT NULL DEFAULT 0,
+  bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT NOT NULL DEFAULT '',
+  last_run_at TEXT NOT NULL DEFAULT '',
+  next_run_at TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("migrate database: %w", err)

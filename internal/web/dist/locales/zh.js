@@ -702,6 +702,37 @@ export default {
                 "type": "text"
             }
         ]
+    },
+    {
+        "title": "智能主动预热与热点预取",
+        "fields": [
+            {
+                "path": "warmup.enabled",
+                "label": "启用智能缓存预热引擎 (默认关闭)",
+                "type": "boolean"
+            },
+            {
+                "path": "warmup.max_concurrency",
+                "label": "最大预热并发数",
+                "type": "number",
+                "min": 1,
+                "max": 64
+            },
+            {
+                "path": "warmup.metadata_depth",
+                "label": "元数据包解析深度 (0 = 仅直接请求, 1 = 递归提取软件包)",
+                "type": "number",
+                "min": 0,
+                "max": 5
+            },
+            {
+                "path": "warmup.retry_count",
+                "label": "失败重试次数",
+                "type": "number",
+                "min": 0,
+                "max": 10
+            }
+        ]
     }
 ],
   duration: function(days, hours, minutes) {
@@ -885,6 +916,41 @@ export default {
     "Completed": "已完成",
     "Invalidate every existing cache namespace?": "让全部现有缓存命名空间立即逻辑失效？",
     "Logical purge completed; physical reclaim is %s.": "逻辑失效已完成；物理回收状态为 %s。",
+    "Targeted Cache Object Invalidation": "精准缓存对象淘汰与检索",
+    "Instant Purge": "即时淘汰",
+    "Perform precision targeted cache purging on a specific repository and object path without affecting other cached files.": "对特定仓库与对象路径执行精准定向缓存淘汰，不影响其他缓存数据。",
+    "Object URL Path / Prefix (leave empty to purge entire repository)": "对象 URL 路径 / 前缀（留空则淘汰该仓库全部缓存）",
+    "Invalidate Target Path": "淘汰目标路径缓存",
+    "Targeted purge completed for \"%s\" (Reclaim: %s)": "已完成对 \"%s\" 的精准缓存淘汰（物理回收: %s）",
+    "Repository cache namespace invalidated (Reclaim: %s)": "仓库缓存命名空间已全部淘汰（物理回收: %s）",
+    "Smart Cache Warm-Up & Predictive Pre-Fetching": "智能主动预热与热点预取",
+    "Engine Active": "预热引擎已启用",
+    "Engine Disabled (Default)": "预热引擎已禁用 (默认)",
+    "Proactively pre-fetch and warm up repository indexes, release manifests, and critical packages into Managed Upstream Nginx proxy cache. Features intelligent metadata parsing (APT / RPM / PyPI) to eliminate first-hit cache misses.": "主动将仓库索引、发布清单和关键软件包预先加载至 Managed Upstream Nginx 缓存中，支持元数据智能解析 (APT / RPM / PyPI)，消除首次请求冷启动穿透延迟。",
+    "Target Repository": "目标软件源仓库",
+    "Warm-Up Task Name": "预热任务名称",
+    "Schedule (Cron expression or interval)": "调度策略 (Cron 表达式或间隔)",
+    "Target URL Paths / Relative Patterns (one per line, e.g. /dists/bookworm/Release)": "目标 URL 路径 / 相对模式 (每行一条，例如 /dists/bookworm/Release)",
+    "Create Warm-Up Task": "创建预热任务",
+    "Task name": "任务名称",
+    "Progress / Bytes": "进度 / 流量",
+    "No warm-up tasks configured yet.": "尚未配置预热任务。",
+    "Warm-up task created.": "预热任务已创建。",
+    "Warm-up job started.": "预热任务已启动。",
+    "Warm-up job cancelled.": "预热任务已取消。",
+    "Delete this warm-up task?": "确定删除此预热任务？",
+    "Warm-up task deleted.": "预热任务已删除。",
+    "Warm-Up Status": "预热引擎状态",
+    "Warm-Up Total Items": "预热累计对象数",
+    "Manual only": "仅手动触发",
+    "Run now": "立即执行",
+    "Cancel": "取消",
+    "Sync": "同步",
+    "Sync all nodes": "同步全部节点",
+    "Synchronizing all cluster nodes...": "正在向所有集群节点广播同步配置...",
+    "Cluster sync completed: %s/%s nodes in sync.": "集群同步完成：%s/%s 个节点已同步一致。",
+    "Node synchronized successfully (%s ms).": "节点配置同步成功（耗时 %s ms）。",
+    "Sync failed: %s": "同步失败：%s",
     "Frontend endpoint": "前端端点",
     "External Shared Nginx": "外部共享 Nginx",
     "Upstream endpoint": "上游端点",

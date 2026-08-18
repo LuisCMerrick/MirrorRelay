@@ -40,6 +40,7 @@ export async function loadCluster() {
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
       <td>
         <div class="actions">
+          <button class="small secondary" data-action="sync-node" data-id="${node.id}">${icon('refresh', 12)} ${L('Sync')}</button>
           <button class="small secondary" data-action="check-node" data-id="${node.id}">${icon('play', 12)} ${L('Check')}</button>
           <button class="small secondary" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
           <button class="small secondary" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
@@ -82,6 +83,18 @@ export function initCluster() {
   $('#close-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
   $('#cancel-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
 
+  $('#sync-all-nodes')?.addEventListener('click', async () => {
+    try {
+      notice(L('Synchronizing all cluster nodes...'));
+      const results = await api('/cluster/sync', {method: 'POST'});
+      const successCount = (results || []).filter(r => r.success).length;
+      notice(L('Cluster sync completed: %s/%s nodes in sync.', successCount, (results || []).length));
+      await loadCluster();
+    } catch (error) {
+      notice(error.message, true);
+    }
+  });
+
   $('#node-form')?.addEventListener('submit', async event => {
     event.preventDefault();
     $('#node-error').textContent = '';
@@ -121,6 +134,20 @@ export function initCluster() {
     }
   });
 }
+
+registerAction('sync-node', async button => {
+  try {
+    const res = await api(`/cluster/nodes/${Number(button.dataset.id)}/sync`, {method: 'POST'});
+    if (res.success) {
+      notice(L('Node synchronized successfully (%s ms).', res.latency_ms));
+    } else {
+      notice(L('Sync failed: %s', res.error), true);
+    }
+    await loadCluster();
+  } catch (error) {
+    notice(error.message, true);
+  }
+});
 
 registerAction('check-node', async button => {
   try {

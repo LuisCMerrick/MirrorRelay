@@ -156,6 +156,7 @@ func run() error {
 	metric.StartPersistence(ctx)
 	cacheManager.StartReclaimer(ctx)
 	control.StartCluster(ctx)
+	control.StartWarmup(ctx)
 	restartChannel := make(chan struct{}, 1)
 	control.SetRestartTrigger(func() {
 		select {

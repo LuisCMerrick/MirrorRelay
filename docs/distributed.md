@@ -146,3 +146,18 @@ distributed:
 - **Mutual Cluster Authentication**: Communications between Coordinator and Edge nodes (`/api/v1/cluster/manifest`, `/api/v1/cluster/health`) require a shared cryptographically secure cluster token verified in constant time.
 - **SSRF Safety**: Node health probes are strictly validated against private IP restrictions when `allow_private_upstream` is disabled.
 - **Cache Independence**: Each Edge node maintains isolated, content-addressed disk storage, eliminating cross-node cache contamination.
+
+---
+
+## 6. Cluster Edge Sync & Distributed Cache Broadcast
+
+MirrorRelay provides automated one-click and scheduled synchronization between the Coordinator and Edge nodes:
+
+1. **Manifest Push & Pull Synchronization**:
+   - The Coordinator calculates canonical configuration fingerprints across all active repositories.
+   - Using the Web UI ("Sync all nodes") or REST API (`POST /admin/api/v1/cluster/sync`), the Coordinator broadcasts the latest repository manifest to all edge nodes simultaneously.
+2. **Distributed Cache Invalidation Broadcast**:
+   - Cache invalidation operations on the Coordinator (`DELETE /cache` or targeted precision purge) automatically broadcast invalidation events across all active edge nodes (`POST /cluster/sync/purge`), ensuring instantaneous cluster-wide cache consistency.
+3. **Drift Detection & Automatic Alerting**:
+   - Health probes continually compare edge fingerprints against the cluster authority. Any drift triggers a `config_change` webhook notification and highlights the affected node in the Web UI.
+

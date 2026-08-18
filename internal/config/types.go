@@ -29,6 +29,7 @@ type Config struct {
 	Distributed   DistributedConfig         `yaml:"distributed"`
 	UIEnhancement model.UIEnhancementConfig `yaml:"ui_enhancement"`
 	Webhook       model.WebhookConfig       `yaml:"webhook"`
+	Warmup        model.WarmupConfig        `yaml:"warmup"`
 }
 
 type ServerConfig struct {

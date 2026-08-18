@@ -126,6 +126,17 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | `redirect.reject_mixed_dns_result` | Reject a hostname if its answer set mixes permitted and forbidden addresses |
 | `transport.*` | Go-to-Managed Upstream Nginx connection pool and response-header timeouts; no fixed total body timeout is applied |
 
+## Smart Cache Warm-Up & Predictive Pre-Fetching
+
+| Key | Description |
+|---|---|
+| `warmup.enabled` | Enable smart warm-up and predictive pre-fetching engine (default `false`) |
+| `warmup.max_concurrency` | Maximum concurrent warm-up download workers (default `4`) |
+| `warmup.bandwidth_limit_bps` | Bandwidth throttling for warm-up requests in bytes/sec (default `0` = unlimited) |
+| `warmup.timeout` | Per-job warm-up timeout (default `30m`) |
+| `warmup.retry_count` | Maximum retry attempts per failed item (default `2`) |
+| `warmup.metadata_depth` | Metadata package extraction depth (default `1` = extract packages from APT/RPM/PyPI metadata) |
+
 ## Security and limits
 
 | Key | Description |

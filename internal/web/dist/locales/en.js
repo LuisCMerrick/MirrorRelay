@@ -702,6 +702,37 @@ export default {
                 "type": "text"
             }
         ]
+    },
+    {
+        "title": "Smart Cache Warm-Up & Predictive Pre-Fetching",
+        "fields": [
+            {
+                "path": "warmup.enabled",
+                "label": "Enable Smart Cache Warm-Up Engine",
+                "type": "boolean"
+            },
+            {
+                "path": "warmup.max_concurrency",
+                "label": "Maximum warm-up concurrency",
+                "type": "number",
+                "min": 1,
+                "max": 64
+            },
+            {
+                "path": "warmup.metadata_depth",
+                "label": "Metadata package extraction depth (0 = direct only, 1 = parse packages)",
+                "type": "number",
+                "min": 0,
+                "max": 5
+            },
+            {
+                "path": "warmup.retry_count",
+                "label": "Retry count on failure",
+                "type": "number",
+                "min": 0,
+                "max": 10
+            }
+        ]
     }
 ],
   duration: function(days, hours, minutes) {

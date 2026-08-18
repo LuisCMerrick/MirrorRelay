@@ -328,6 +328,22 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.resetClusterFingerprint(w, r, session)
+	case path == "/cluster/sync" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
+		s.syncAllClusterNodes(w, r, session)
+	case path == "/warmup/jobs" && r.Method == http.MethodGet:
+		s.listWarmupJobs(w, r)
+	case path == "/warmup/jobs" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
+		s.createWarmupJob(w, r, session)
+	case strings.HasPrefix(path, "/warmup/jobs/"):
+		s.warmupJobAction(w, r, session, strings.TrimPrefix(path, "/warmup/jobs/"))
+	case path == "/warmup/status" && r.Method == http.MethodGet:
+		s.warmupStatus(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
