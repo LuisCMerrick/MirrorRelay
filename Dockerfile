@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM --platform=linux/amd64 golang:1.24-alpine AS build
 
-ARG VERSION=0.0.1
+ARG VERSION=0.0.10
 ARG TARGETARCH
 WORKDIR /src
 RUN test "${TARGETARCH}" = "amd64"

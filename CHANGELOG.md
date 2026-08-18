@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.0.10
+- **Smart Cache Warm-Up & Predictive Pre-Fetching Engine (`warmup`)**:
+  - Implemented intelligent upstream package & index warm-up with recursive metadata extraction (APT `Packages.gz`/`InRelease`, RPM `repodata.xml`, PyPI `simple/`).
+  - Feature is strictly disabled by default (`warmup.enabled: false`) and can be enabled per-deployment.
+  - Added configurable concurrency throttling, bandwidth limiting, retry counts, cron/interval scheduling, and live execution telemetry.
+  - Built dedicated Cache Warm-Up management panel in Web UI and REST API (`/admin/api/v1/warmup/*`).
+- **Distributed Multi-Node Cluster Edge Synchronization & Purge Broadcast**:
+  - Implemented canonical configuration fingerprint calculation and active manifest generation across all repositories.
+  - Added multi-edge node push/pull synchronization (`POST /cluster/sync` and `/cluster/nodes/:id/sync`) with sub-millisecond drift detection.
+  - Added distributed cache invalidation broadcast (`POST /cluster/sync/purge`) ensuring real-time multi-node cache consistency.
+- **Enterprise Security, Compliance Audit & Multi-Channel Alerting**:
+  - Multi-role RBAC authorization (`admin`, `operator`, `viewer`) with per-session token validation.
+  - Package Guard supply chain protection supporting regex and wildcard blacklists and whitelists.
+  - Persistent structured JSON Audit Trail (`audit_logs`) tracking administrative actions with client IP and attribution.
+  - Multi-channel Webhook notifications (DingTalk, Feishu, WeCom, Slack, Generic JSON) with HMAC-SHA256 signatures.
+  - Network boundary isolation via dedicated administration hostname (`admin.host`).
+- **Zero-Copy / X-Accel-Redirect Binary Bypass Acceleration**:
+  - Adaptive dual-mode delivery pipeline: non-rewritten cache HITs dynamically delegate directly to Managed Upstream Nginx via internal `X-Accel-Redirect`, leveraging Linux kernel zero-copy `sendfile(2)` and avoiding userspace memory copying.
+- **Visual Analytics, Interactive Setup Generator & Real-Time Log Streaming**:
+  - High-performance vector SVG chart engines for 24h hourly request rates, throughput, HTTP status, and cache hit distributions.
+  - Live log streaming for access and audit logs with multi-field search and poll-stream modes.
+  - Interactive Client Setup Generator supporting one-liner CLI commands and configuration downloads for 10+ package ecosystems.
+  - Precision targeted cache object invalidation explorer (`/mirrors/:id/cache/purge`).
+- **Frontend Quality & Layout Hardening**:
+  - Comprehensive audit and alignment fixes across all 16 page controllers, 5 modal dialogs, and responsive breakpoints.
+
 ## v0.0.5
 - **Modular Web UI Architecture (ES Modules)**:
   - Transitioned the entire frontend codebase to a clean ES Module architecture (`internal/web/dist/js/`) loaded via `<script type="module" src="js/main.js"></script>`.
