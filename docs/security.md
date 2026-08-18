@@ -77,6 +77,32 @@ File system permissions:
 
 ---
 
-## 6. Vulnerability Reporting
+## 6. Supply Chain Security & Package Name Guard
+
+MirrorRelay includes built-in supply chain poisoning and dependency confusion defenses:
+- **Package Blacklisting (`blocked_packages`)**: Regex and glob wildcard patterns (e.g. `^malicious-.*`, `bad-pkg-*.tar.gz`) preventing pulling poisoned or compromised packages.
+- **Package Whitelisting (`allowed_packages`)**: Restricts packages to an enterprise-approved subset (e.g. `^internal-.*`).
+- When a client requests a blocked package, MirrorRelay immediately terminates the request with HTTP `403 Forbidden` and details the violated security policy rule.
+
+---
+
+## 7. Role-Based Access Control (RBAC)
+
+MirrorRelay supports a three-tier permission model:
+- **`admin` (Administrator)**: Full operational control, user management, system settings override, service restart, and webhook test execution.
+- **`operator` (Operator)**: Repository configuration CRUD, cache purge, health check triggering, and Nginx reload/rollback. Cannot manage user accounts or alter system-level settings.
+- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, logs, mirror details, and health status. All mutating API calls are denied with HTTP `403 Forbidden`.
+
+---
+
+## 8. Webhook Security & Alerting
+
+Enterprise notifications are delivered with HMAC-SHA256 signatures:
+- Supports DingTalk, Feishu, WeCom, Slack, and generic JSON webhooks.
+- Headers include `X-MirrorRelay-Signature: sha256=<hex_digest>` and `X-MirrorRelay-Event: <event_name>` for payload authenticity verification.
+
+---
+
+## 9. Vulnerability Reporting
 
 If you discover a security vulnerability, please refer to [.github/SECURITY.md](../.github/SECURITY.md) for responsible disclosure instructions.

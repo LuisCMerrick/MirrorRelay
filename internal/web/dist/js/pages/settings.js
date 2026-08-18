@@ -68,12 +68,43 @@ export async function loadSettings() {
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Validate and save')}</button>
       </footer>
       <div id="settings-error" class="error"></div>
-    </form>`;
+    </form>
+    <div class="panel" id="webhook-test-panel">
+      <h2>${icon('send', 18)} ${L('Webhook Alerting & Test Notification')}</h2>
+      <p>${L('Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.')}</p>
+      <div class="form-grid">
+        <label class="wide">
+          <span>${L('Target Webhook URL (leave empty to use saved settings)')}</span>
+          <input id="webhook-test-url" type="url" placeholder="https://oapi.dingtalk.com/... or https://open.feishu.cn/...">
+        </label>
+      </div>
+      <footer>
+        <button type="button" class="btn-primary" id="send-test-webhook-btn">${icon('send', 13)} ${L('Send Test Notification')}</button>
+      </footer>
+    </div>`;
 
   const restartNoticeBtn = $('#restart-service-btn');
   if (restartNoticeBtn) restartNoticeBtn.addEventListener('click', triggerRestart);
   const restartFooterBtn = $('#restart-settings-btn');
   if (restartFooterBtn) restartFooterBtn.addEventListener('click', triggerRestart);
+
+  const webhookTestBtn = $('#send-test-webhook-btn');
+  if (webhookTestBtn) {
+    webhookTestBtn.addEventListener('click', async () => {
+      try {
+        webhookTestBtn.disabled = true;
+        const res = await api('/webhooks/test', {
+          method: 'POST',
+          body: JSON.stringify({ url: $('#webhook-test-url').value.trim() })
+        });
+        notice(L('Test webhook notification delivered successfully!'));
+      } catch (err) {
+        notice(err.message, true);
+      } finally {
+        webhookTestBtn.disabled = false;
+      }
+    });
+  }
 
   $('#settings-form').addEventListener('submit', async event => {
     event.preventDefault();

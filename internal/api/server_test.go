@@ -353,14 +353,14 @@ func TestSystemRestartEndpoint(t *testing.T) {
 	}
 
 	// 2. Authenticated request with CSRF token -> 200 and triggers restart
-	if err := store.CreateUser(context.Background(), "admin", "hash"); err != nil {
+	if err := store.CreateUser(context.Background(), "admin", "hash", "admin"); err != nil {
 		t.Fatal(err)
 	}
 	user, err := store.UserByName(context.Background(), "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := server.sessions.Create(user.ID, user.Username)
+	session, err := server.sessions.Create(user.ID, user.Username, user.Role)
 	if err != nil {
 		t.Fatal(err)
 	}

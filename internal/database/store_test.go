@@ -126,25 +126,25 @@ func TestSessionPersistenceAndUserCascade(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	if err := store.CreateUser(ctx, "operator", "hash"); err != nil {
+	if err := store.CreateUser(ctx, "operator", "hash", "operator"); err != nil {
 		t.Fatal(err)
 	}
 	user, err := store.UserByName(ctx, "operator")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || user.Role != "operator" {
+		t.Fatalf("user mismatch: %v, role=%q", err, user.Role)
 	}
 	expires := time.Now().Add(time.Hour).Truncate(time.Second)
-	if err := store.PutSession(ctx, "session-hash", user.ID, user.Username, "csrf", expires); err != nil {
+	if err := store.PutSession(ctx, "session-hash", user.ID, user.Username, user.Role, "csrf", expires); err != nil {
 		t.Fatal(err)
 	}
-	userID, username, csrf, actualExpiry, err := store.GetSession(ctx, "session-hash")
-	if err != nil || userID != user.ID || username != user.Username || csrf != "csrf" || !actualExpiry.Equal(expires) {
-		t.Fatalf("session round trip mismatch: id=%d username=%q csrf=%q expires=%s err=%v", userID, username, csrf, actualExpiry, err)
+	userID, username, role, csrf, actualExpiry, err := store.GetSession(ctx, "session-hash")
+	if err != nil || userID != user.ID || username != user.Username || role != "operator" || csrf != "csrf" || !actualExpiry.Equal(expires) {
+		t.Fatalf("session round trip mismatch: id=%d username=%q role=%q csrf=%q expires=%s err=%v", userID, username, role, csrf, actualExpiry, err)
 	}
 	if err := store.DeleteUser(ctx, user.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := store.GetSession(ctx, "session-hash"); err == nil {
+	if _, _, _, _, _, err := store.GetSession(ctx, "session-hash"); err == nil {
 		t.Fatal("session survived user deletion")
 	}
 }
@@ -158,7 +158,7 @@ func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
 	ctx := context.Background()
 
 	// Test user sessions and revocation
-	if err := store.CreateUser(ctx, "admin2", "hash2"); err != nil {
+	if err := store.CreateUser(ctx, "admin2", "hash2", "admin"); err != nil {
 		t.Fatal(err)
 	}
 	u, err := store.UserByName(ctx, "admin2")
@@ -166,21 +166,21 @@ func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	exp := time.Now().Add(time.Hour)
-	_ = store.PutSession(ctx, "s1", u.ID, u.Username, "c1", exp)
-	_ = store.PutSession(ctx, "s2", u.ID, u.Username, "c2", exp)
-	_ = store.PutSession(ctx, "s3", u.ID, u.Username, "c3", exp)
+	_ = store.PutSession(ctx, "s1", u.ID, u.Username, u.Role, "c1", exp)
+	_ = store.PutSession(ctx, "s2", u.ID, u.Username, u.Role, "c2", exp)
+	_ = store.PutSession(ctx, "s3", u.ID, u.Username, u.Role, "c3", exp)
 
 	// Delete all sessions for u.ID except s2
 	if err := store.DeleteUserSessions(ctx, u.ID, "s2"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, _, err := store.GetSession(ctx, "s1"); err == nil {
+	if _, _, _, _, _, err := store.GetSession(ctx, "s1"); err == nil {
 		t.Fatal("s1 should be deleted")
 	}
-	if _, _, _, _, err := store.GetSession(ctx, "s2"); err != nil {
+	if _, _, _, _, _, err := store.GetSession(ctx, "s2"); err != nil {
 		t.Fatal("s2 should survive")
 	}
-	if _, _, _, _, err := store.GetSession(ctx, "s3"); err == nil {
+	if _, _, _, _, _, err := store.GetSession(ctx, "s3"); err == nil {
 		t.Fatal("s3 should be deleted")
 	}
 

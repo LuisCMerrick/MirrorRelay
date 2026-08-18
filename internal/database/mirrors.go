@@ -15,7 +15,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 	rate_limit_profile,access_policy,strip_prefix,add_prefix,host_rewrite,header_add,header_remove,connect_timeout_sec,read_timeout_sec,send_timeout_sec,
 	metadata_rewrite_limit_bytes,metadata_ttl_sec,package_ttl_sec,immutable_ttl_sec,blob_ttl_sec,cache_authenticated,
 	auth_mode,token_upstream,blob_redirect_mode,pull_only,config_state,config_error,
-	allow_http,allow_private,insecure_tls,bandwidth_limit_bps,max_concurrency,help_enabled,help_json,created_at,updated_at`
+	allow_http,allow_private,insecure_tls,bandwidth_limit_bps,max_concurrency,help_enabled,help_json,blocked_packages,allowed_packages,created_at,updated_at`
 
 func (s *Store) ListMirrors(ctx context.Context) ([]model.Mirror, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+mirrorColumns+` FROM mirrors ORDER BY slug`)
@@ -46,7 +46,7 @@ func (s *Store) ListMirrors(ctx context.Context) ([]model.Mirror, error) {
 func scanMirror(row scanner) (model.Mirror, error) {
 	var m model.Mirror
 	var enabled, cacheEnabled, rewriteEnabled, htmlRewriteEnabled, healthEnabled, pullOnly, cacheAuthenticated, allowHTTP, allowPrivate, insecure, helpEnabled int
-	var created, updated, rewriteHosts, headerAdd, headerRemove, helpJSON string
+	var created, updated, rewriteHosts, headerAdd, headerRemove, helpJSON, blockedPkg, allowedPkg string
 	err := row.Scan(&m.ID, &m.Name, &m.Slug, &m.Type, &enabled, &m.Description, &m.PublicMode, &m.PublicHost, &m.PublicPath,
 		&m.ProxyMode, &cacheEnabled, &m.CacheProfile, &rewriteEnabled, &htmlRewriteEnabled, &m.RewriteProfile, &rewriteHosts, &healthEnabled,
 		&m.HealthCheckPath, &m.HealthIntervalSec, &m.HealthTimeoutSec, &m.HealthMethod, &m.HealthExpected,
@@ -54,7 +54,7 @@ func scanMirror(row scanner) (model.Mirror, error) {
 		&headerAdd, &headerRemove, &m.ConnectTimeoutSec, &m.ReadTimeoutSec, &m.SendTimeoutSec, &m.MetadataLimitBytes,
 		&m.MetadataTTLSec, &m.PackageTTLSec, &m.ImmutableTTLSec, &m.BlobTTLSec, &cacheAuthenticated, &m.AuthMode,
 		&m.TokenUpstream, &m.BlobRedirectMode, &pullOnly, &m.ConfigState, &m.ConfigError, &allowHTTP, &allowPrivate, &insecure,
-		&m.BandwidthLimitBPS, &m.MaxConcurrency, &helpEnabled, &helpJSON, &created, &updated)
+		&m.BandwidthLimitBPS, &m.MaxConcurrency, &helpEnabled, &helpJSON, &blockedPkg, &allowedPkg, &created, &updated)
 	if err != nil {
 		return m, err
 	}
@@ -66,6 +66,8 @@ func scanMirror(row scanner) (model.Mirror, error) {
 		_ = json.Unmarshal([]byte(helpJSON), &m.Help)
 	}
 	m.Help.Enabled = helpEnabled != 0
+	_ = json.Unmarshal([]byte(blockedPkg), &m.BlockedPackages)
+	_ = json.Unmarshal([]byte(allowedPkg), &m.AllowedPackages)
 	m.CacheAuthenticated = cacheAuthenticated != 0
 	m.AllowHTTP, m.AllowPrivate, m.InsecureTLS = allowHTTP != 0, allowPrivate != 0, insecure != 0
 	m.CreatedAt, m.UpdatedAt = parseTime(created), parseTime(updated)
@@ -115,7 +117,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 	health_timeout_sec,health_method,health_expected,redirect_mode,profile_name,profile_version,rate_limit_profile,access_policy,strip_prefix,add_prefix,host_rewrite,
 		header_add,header_remove,connect_timeout_sec,read_timeout_sec,send_timeout_sec,metadata_rewrite_limit_bytes,metadata_ttl_sec,package_ttl_sec,immutable_ttl_sec,blob_ttl_sec,cache_authenticated,
 		auth_mode,token_upstream,blob_redirect_mode,pull_only,config_state,config_error,allow_http,allow_private,insecure_tls,bandwidth_limit_bps,
-		max_concurrency,help_enabled,help_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		max_concurrency,help_enabled,help_json,blocked_packages,allowed_packages,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.Name, m.Slug, m.Type, m.Enabled, m.Description, m.PublicMode, m.PublicHost, m.PublicPath, m.ProxyMode,
 		m.CacheEnabled, m.CacheProfile, m.RewriteEnabled, m.HTMLRewriteEnabled, m.RewriteProfile, encodeStrings(m.RewriteHosts), m.HealthCheckEnabled, m.HealthCheckPath,
 		m.HealthIntervalSec, m.HealthTimeoutSec, m.HealthMethod, m.HealthExpected, m.RedirectMode, m.ProfileName,
@@ -123,7 +125,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 		m.ConnectTimeoutSec, m.ReadTimeoutSec, m.SendTimeoutSec, m.MetadataLimitBytes, m.MetadataTTLSec, m.PackageTTLSec, m.ImmutableTTLSec, m.BlobTTLSec, m.CacheAuthenticated,
 		m.AuthMode, m.TokenUpstream, m.BlobRedirectMode,
 		m.PullOnly, m.ConfigState, m.ConfigError, m.AllowHTTP, m.AllowPrivate, m.InsecureTLS, m.BandwidthLimitBPS, m.MaxConcurrency,
-		boolToInt(m.Help.Enabled), encodeHelp(m.Help), now, now)
+		boolToInt(m.Help.Enabled), encodeHelp(m.Help), encodeStrings(m.BlockedPackages), encodeStrings(m.AllowedPackages), now, now)
 	if err != nil {
 		return m, err
 	}
@@ -151,7 +153,7 @@ public_path=?,proxy_mode=?,cache_enabled=?,cache_profile=?,rewrite_enabled=?,htm
 health_check_path=?,health_interval_sec=?,health_timeout_sec=?,health_method=?,health_expected=?,redirect_mode=?,profile_name=?,
 	profile_version=?,rate_limit_profile=?,access_policy=?,strip_prefix=?,add_prefix=?,host_rewrite=?,header_add=?,header_remove=?,connect_timeout_sec=?,read_timeout_sec=?,send_timeout_sec=?,
 	metadata_rewrite_limit_bytes=?,metadata_ttl_sec=?,package_ttl_sec=?,immutable_ttl_sec=?,blob_ttl_sec=?,cache_authenticated=?,auth_mode=?,token_upstream=?,blob_redirect_mode=?,pull_only=?,
-	config_state=?,config_error=?,allow_http=?,allow_private=?,insecure_tls=?,bandwidth_limit_bps=?,max_concurrency=?,help_enabled=?,help_json=?,updated_at=? WHERE id=?`,
+	config_state=?,config_error=?,allow_http=?,allow_private=?,insecure_tls=?,bandwidth_limit_bps=?,max_concurrency=?,help_enabled=?,help_json=?,blocked_packages=?,allowed_packages=?,updated_at=? WHERE id=?`,
 		m.Name, m.Slug, m.Type, m.Enabled, m.Description, m.PublicMode, m.PublicHost, m.PublicPath, m.ProxyMode,
 		m.CacheEnabled, m.CacheProfile, m.RewriteEnabled, m.HTMLRewriteEnabled, m.RewriteProfile, encodeStrings(m.RewriteHosts), m.HealthCheckEnabled, m.HealthCheckPath,
 		m.HealthIntervalSec, m.HealthTimeoutSec, m.HealthMethod, m.HealthExpected, m.RedirectMode, m.ProfileName,
@@ -159,7 +161,7 @@ health_check_path=?,health_interval_sec=?,health_timeout_sec=?,health_method=?,h
 		m.ConnectTimeoutSec, m.ReadTimeoutSec, m.SendTimeoutSec, m.MetadataLimitBytes, m.MetadataTTLSec, m.PackageTTLSec, m.ImmutableTTLSec, m.BlobTTLSec, m.CacheAuthenticated,
 		m.AuthMode, m.TokenUpstream, m.BlobRedirectMode,
 		m.PullOnly, m.ConfigState, m.ConfigError, m.AllowHTTP, m.AllowPrivate, m.InsecureTLS, m.BandwidthLimitBPS, m.MaxConcurrency,
-		boolToInt(m.Help.Enabled), encodeHelp(m.Help), nowText(), m.ID)
+		boolToInt(m.Help.Enabled), encodeHelp(m.Help), encodeStrings(m.BlockedPackages), encodeStrings(m.AllowedPackages), nowText(), m.ID)
 	if err != nil {
 		return m, err
 	}
@@ -200,7 +202,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 	health_timeout_sec,health_method,health_expected,redirect_mode,profile_name,profile_version,rate_limit_profile,access_policy,strip_prefix,add_prefix,host_rewrite,
 		header_add,header_remove,connect_timeout_sec,read_timeout_sec,send_timeout_sec,metadata_rewrite_limit_bytes,metadata_ttl_sec,package_ttl_sec,immutable_ttl_sec,blob_ttl_sec,cache_authenticated,
 		auth_mode,token_upstream,blob_redirect_mode,pull_only,config_state,config_error,allow_http,allow_private,insecure_tls,bandwidth_limit_bps,
-		max_concurrency,help_enabled,help_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		max_concurrency,help_enabled,help_json,blocked_packages,allowed_packages,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			m.ID, m.Name, m.Slug, m.Type, m.Enabled, m.Description, m.PublicMode, m.PublicHost, m.PublicPath, m.ProxyMode,
 			m.CacheEnabled, m.CacheProfile, m.RewriteEnabled, m.HTMLRewriteEnabled, m.RewriteProfile, encodeStrings(m.RewriteHosts), m.HealthCheckEnabled, m.HealthCheckPath,
 			m.HealthIntervalSec, m.HealthTimeoutSec, m.HealthMethod, m.HealthExpected, m.RedirectMode, m.ProfileName,
@@ -208,7 +210,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 			m.ConnectTimeoutSec, m.ReadTimeoutSec, m.SendTimeoutSec, m.MetadataLimitBytes, m.MetadataTTLSec, m.PackageTTLSec, m.ImmutableTTLSec, m.BlobTTLSec, m.CacheAuthenticated,
 			m.AuthMode, m.TokenUpstream, m.BlobRedirectMode,
 			m.PullOnly, m.ConfigState, m.ConfigError, m.AllowHTTP, m.AllowPrivate, m.InsecureTLS, m.BandwidthLimitBPS, m.MaxConcurrency,
-			boolToInt(m.Help.Enabled), encodeHelp(m.Help),
+			boolToInt(m.Help.Enabled), encodeHelp(m.Help), encodeStrings(m.BlockedPackages), encodeStrings(m.AllowedPackages),
 			created.UTC().Format(time.RFC3339Nano), updated.UTC().Format(time.RFC3339Nano))
 		if err != nil {
 			return err

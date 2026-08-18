@@ -21,16 +21,17 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 	"github.com/LuisCMerrick/MirrorRelay/internal/upstreamnginx"
+	"github.com/LuisCMerrick/MirrorRelay/internal/webhook"
 )
 
 type Store interface {
 	UserByName(context.Context, string) (model.User, error)
 	UpdatePassword(context.Context, int64, string) error
-	CreateUser(context.Context, string, string) error
+	CreateUser(context.Context, string, string, string) error
 	ListUsers(context.Context) ([]model.User, error)
 	DeleteUser(context.Context, int64) error
-	PutSession(context.Context, string, int64, string, string, time.Time) error
-	GetSession(context.Context, string) (int64, string, string, time.Time, error)
+	PutSession(context.Context, string, int64, string, string, string, time.Time) error
+	GetSession(context.Context, string) (int64, string, string, string, time.Time, error)
 	DeleteSession(context.Context, string) error
 	DeleteUserSessions(context.Context, int64, ...string) error
 	CreateMirror(context.Context, model.Mirror) (model.Mirror, error)
@@ -77,6 +78,7 @@ type Server struct {
 	sessions       *auth.Sessions
 	loginLimiter   *auth.LoginLimiter
 	adminCIDRs     security.CIDRList
+	webhook        *webhook.Dispatcher
 	web            fs.FS
 	build          buildinfo.Info
 	started        time.Time
@@ -117,6 +119,7 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		loginLimiter:  auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures),
 		upstreamNginx: upstreamNginx,
 		adminCIDRs:    cidrs,
+		webhook:       webhook.New(cfg.Webhook),
 		web:           web,
 		build:         build,
 		started:       time.Now(),

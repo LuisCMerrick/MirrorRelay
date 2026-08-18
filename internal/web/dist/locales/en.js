@@ -670,6 +670,31 @@ export default {
                 "type": "boolean"
             }
         ]
+    },
+    {
+        "title": "Webhook & Alerting channels",
+        "fields": [
+            {
+                "path": "webhook.enabled",
+                "label": "Enable Webhook notifications",
+                "type": "boolean"
+            },
+            {
+                "path": "webhook.url",
+                "label": "Webhook endpoint URL (DingTalk, Feishu, WeCom, Slack, Generic)",
+                "type": "text"
+            },
+            {
+                "path": "webhook.secret",
+                "label": "Secret token (for HMAC-SHA256 signature)",
+                "type": "text"
+            },
+            {
+                "path": "webhook.timeout",
+                "label": "Request timeout",
+                "type": "text"
+            }
+        ]
     }
 ],
   duration: function(days, hours, minutes) {
@@ -978,6 +1003,26 @@ export default {
     "Filter audit (User, Action, IP)...": "Filter audit (User, Action, IP)...",
     "Start Live Stream": "Start Live Stream",
     "Stop Stream": "Stop Stream",
-    "No matching log lines.": "No matching log lines."
+    "No matching log lines.": "No matching log lines.",
+    "Add User / Administrator": "Add User / Administrator",
+    "Role": "Role",
+    "Operator (Repositories & Cache)": "Operator (Repositories & Cache)",
+    "Administrator (Full Control)": "Administrator (Full Control)",
+    "Viewer (Read-only)": "Viewer (Read-only)",
+    "Admin": "Admin",
+    "Operator": "Operator",
+    "Viewer": "Viewer",
+    "Package Guard & Supply Chain Security": "Package Guard & Supply Chain Security",
+    "Blocked package patterns (Blacklist regex / wildcards, one per line)": "Blocked package patterns (Blacklist regex / wildcards, one per line)",
+    "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)": "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)",
+    "Blocked packages (Blacklist)": "Blocked packages (Blacklist)",
+    "Allowed packages (Whitelist)": "Allowed packages (Whitelist)",
+    "All permitted": "All permitted",
+    "rules": "rules",
+    "Webhook Alerting & Test Notification": "Webhook Alerting & Test Notification",
+    "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.": "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.",
+    "Target Webhook URL (leave empty to use saved settings)": "Target Webhook URL (leave empty to use saved settings)",
+    "Send Test Notification": "Send Test Notification",
+    "Test webhook notification delivered successfully!": "Test webhook notification delivered successfully!"
 }
 };

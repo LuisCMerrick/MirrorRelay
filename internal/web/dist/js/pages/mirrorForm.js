@@ -70,6 +70,8 @@ function openMirrorForm(repository = null) {
   $('#mirror-enabled').checked = repository?.enabled ?? true; $('#cache-enabled').checked = repository?.cache_enabled ?? false; $('#cache-authenticated').checked = repository?.cache_authenticated ?? false;
   $('#rewrite-enabled').checked = repository?.rewrite_enabled ?? false; $('#html-rewrite-enabled').checked = repository?.html_rewrite_enabled ?? false; $('#health-enabled').checked = repository?.health_check_enabled ?? true; $('#pull-only').checked = repository?.pull_only ?? true;
   $('#allow-http').checked = repository?.allow_http_upstream ?? false; $('#allow-private').checked = repository?.allow_private_upstream ?? false;
+  set('#blocked-packages', (repository?.blocked_packages || []).join('\n'));
+  set('#allowed-packages', (repository?.allowed_packages || []).join('\n'));
   $('#help-enabled').checked = Boolean(repository?.help?.enabled);
   set('#help-template', repository?.help?.template || '');
   set('#help-title', repository?.help?.title || '');
@@ -104,6 +106,8 @@ async function submitMirrorForm(event) {
       rate_limit_profile: $('#rate-profile').value, max_concurrency: Number($('#max-concurrency').value), bandwidth_limit_bps: Number($('#bandwidth-limit').value),
       auth_mode: $('#auth-mode').value, token_upstream: $('#token-upstream').value, blob_redirect_mode: $('#blob-redirect').value, pull_only: $('#pull-only').checked,
       allow_http_upstream: $('#allow-http').checked, allow_private_upstream: $('#allow-private').checked, insecure_skip_verify: false,
+      blocked_packages: parseList($('#blocked-packages').value),
+      allowed_packages: parseList($('#allowed-packages').value),
       help: {
         enabled: $('#help-enabled').checked,
         template: $('#help-template').value,

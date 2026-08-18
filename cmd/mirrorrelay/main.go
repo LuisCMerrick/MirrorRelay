@@ -310,7 +310,7 @@ func bootstrapAdmin(ctx context.Context, store *database.Store, cfg config.Confi
 	if err != nil {
 		return fmt.Errorf("initial administrator password: %w", err)
 	}
-	if err := store.CreateUser(ctx, cfg.Admin.InitialUsername, hash); err != nil {
+	if err := store.CreateUser(ctx, cfg.Admin.InitialUsername, hash, "admin"); err != nil {
 		return err
 	}
 	if dev {

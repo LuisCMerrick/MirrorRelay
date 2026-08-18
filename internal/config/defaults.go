@@ -179,6 +179,13 @@ func Default() Config {
 				Enabled: true,
 			},
 		},
+		Webhook: model.WebhookConfig{
+			Enabled: false,
+			URL:     "",
+			Secret:  "",
+			Events:  []string{"upstream_status", "cache_threshold", "config_change", "security_alert"},
+			Timeout: 5 * time.Second,
+		},
 	}
 }
 

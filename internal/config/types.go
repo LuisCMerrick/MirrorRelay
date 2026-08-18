@@ -28,6 +28,7 @@ type Config struct {
 	UpstreamNginx UpstreamNginxConfig       `yaml:"upstream_nginx"`
 	Distributed   DistributedConfig         `yaml:"distributed"`
 	UIEnhancement model.UIEnhancementConfig `yaml:"ui_enhancement"`
+	Webhook       model.WebhookConfig       `yaml:"webhook"`
 }
 
 type ServerConfig struct {

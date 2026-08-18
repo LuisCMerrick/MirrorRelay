@@ -17,6 +17,7 @@ type Session struct {
 	ID        string
 	UserID    int64
 	Username  string
+	Role      string
 	CSRFToken string
 	ExpiresAt time.Time
 }
@@ -30,8 +31,8 @@ type Sessions struct {
 }
 
 type SessionStore interface {
-	PutSession(context.Context, string, int64, string, string, time.Time) error
-	GetSession(context.Context, string) (int64, string, string, time.Time, error)
+	PutSession(context.Context, string, int64, string, string, string, time.Time) error
+	GetSession(context.Context, string) (int64, string, string, string, time.Time, error)
 	DeleteSession(context.Context, string) error
 	DeleteUserSessions(context.Context, int64, ...string) error
 }
@@ -64,7 +65,10 @@ func randomToken(bytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *Sessions) Create(userID int64, username string) (Session, error) {
+func (s *Sessions) Create(userID int64, username, role string) (Session, error) {
+	if role == "" {
+		role = "admin"
+	}
 	id, err := randomToken(32)
 	if err != nil {
 		return Session{}, err
@@ -73,9 +77,9 @@ func (s *Sessions) Create(userID int64, username string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	session := Session{ID: id, UserID: userID, Username: username, CSRFToken: csrf, ExpiresAt: time.Now().Add(s.ttl)}
+	session := Session{ID: id, UserID: userID, Username: username, Role: role, CSRFToken: csrf, ExpiresAt: time.Now().Add(s.ttl)}
 	if s.store != nil {
-		if err := s.store.PutSession(context.Background(), sessionKey(id), userID, username, csrf, session.ExpiresAt); err != nil {
+		if err := s.store.PutSession(context.Background(), sessionKey(id), userID, username, role, csrf, session.ExpiresAt); err != nil {
 			return Session{}, err
 		}
 	}
@@ -98,9 +102,9 @@ func (s *Sessions) Get(r *http.Request) (Session, bool) {
 	s.mu.RUnlock()
 
 	if s.store != nil {
-		userID, username, csrf, expires, err := s.store.GetSession(r.Context(), key)
+		userID, username, role, csrf, expires, err := s.store.GetSession(r.Context(), key)
 		if err == nil {
-			session = Session{ID: cookie.Value, UserID: userID, Username: username, CSRFToken: csrf, ExpiresAt: expires}
+			session = Session{ID: cookie.Value, UserID: userID, Username: username, Role: role, CSRFToken: csrf, ExpiresAt: expires}
 			ok = true
 		} else {
 			ok = false
@@ -122,7 +126,7 @@ func (s *Sessions) Get(r *http.Request) (Session, bool) {
 		newExpiry := time.Now().Add(s.ttl)
 		session.ExpiresAt = newExpiry
 		if s.store != nil {
-			if err := s.store.PutSession(r.Context(), key, session.UserID, session.Username, session.CSRFToken, newExpiry); err != nil {
+			if err := s.store.PutSession(r.Context(), key, session.UserID, session.Username, session.Role, session.CSRFToken, newExpiry); err != nil {
 				slog.Warn("failed to refresh session expiration", "user", session.Username, "error", err)
 			}
 		}

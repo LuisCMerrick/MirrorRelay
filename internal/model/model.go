@@ -56,6 +56,8 @@ type Mirror struct {
 	InsecureTLS        bool              `json:"insecure_skip_verify"`
 	BandwidthLimitBPS  int64             `json:"bandwidth_limit_bps"`
 	MaxConcurrency     int               `json:"max_concurrency"`
+	BlockedPackages    []string          `json:"blocked_packages,omitempty" yaml:"blocked_packages,omitempty"`
+	AllowedPackages    []string          `json:"allowed_packages,omitempty" yaml:"allowed_packages,omitempty"`
 	Help               HelpConfig        `json:"help"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
@@ -106,8 +108,25 @@ type User struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type WebhookConfig struct {
+	Enabled bool          `json:"enabled" yaml:"enabled"`
+	URL     string        `json:"url" yaml:"url"`
+	Secret  string        `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Events  []string      `json:"events" yaml:"events"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+}
+
+type WebhookPayload struct {
+	Event     string         `json:"event"`
+	Timestamp time.Time      `json:"timestamp"`
+	Title     string         `json:"title"`
+	Message   string         `json:"message"`
+	Data      map[string]any `json:"data,omitempty"`
 }
 
 type AuditEntry struct {

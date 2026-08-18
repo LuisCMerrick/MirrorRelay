@@ -12,7 +12,9 @@ import { state } from '../state.js';
 import { loadMirrors } from './mirrors.js';
 
 function repositorySummary(repository) {
-  return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || 'Custom'} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
+  const blocked = (repository.blocked_packages || []).length > 0 ? `<span class="status-pill status-unhealthy">${(repository.blocked_packages || []).length} ${L('rules')}</span>` : L('None');
+  const allowed = (repository.allowed_packages || []).length > 0 ? `<span class="status-pill status-healthy">${(repository.allowed_packages || []).length} ${L('rules')}</span>` : L('All permitted');
+  return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || 'Custom'} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${kv(L('Blocked packages (Blacklist)'), blocked)}${kv(L('Allowed packages (Whitelist)'), allowed)}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
 }
 
 function generateClientPlayground(repository, currentBaseUrl) {

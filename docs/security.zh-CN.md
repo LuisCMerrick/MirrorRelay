@@ -77,6 +77,32 @@ CapabilityBoundingSet=
 
 ---
 
-## 6. 漏洞报告指引
+## 6. 软件供应链安全与包名黑白名单防御（Package Name Guard）
+
+MirrorRelay 内置企业级供应链投毒与依赖混淆（Dependency Confusion）主动防御机制：
+- **包名黑名单拦截（`blocked_packages`）**：支持正则表达式与 Glob 通配符（如 `^malicious-.*`、`bad-pkg-*.tar.gz`），实时阻断受污染恶意包的拉取。
+- **包名白名单准入（`allowed_packages`）**：支持企业安全准入限定（如 `^internal-.*`），仅允许经合规审计的包通过。
+- 当客户端请求命中拦截规则时，MirrorRelay 将立即终止代理并返回 HTTP `403 Forbidden`，同时向系统审计日志与 Webhook 发送安全拦截警报。
+
+---
+
+## 7. 基于角色的权限访问控制（RBAC）
+
+MirrorRelay 支持三级权限隔离体系：
+- **`admin`（超级管理员）**：拥有全系统控制权，包括用户增删、系统级设置覆写、服务平滑重启及 Webhook 联通性测试。
+- **`operator`（运维管理员）**：具备仓库配置管理（CRUD）、缓存精确刷新、健康检查触发及 Nginx 平滑重载/回滚权限，不可修改系统用户或核心底层配置。
+- **`viewer`（只读审计员）**：仅具备监控大盘、日志、仓库详情与健康状态的只读查看权限，一切写操作均被拒绝（HTTP 403）。
+
+---
+
+## 8. Webhook 告警通知与 HMAC-SHA256 签名
+
+企业级事件通知支持多种通知通道与防篡改验签：
+- 支持钉钉（Markdown 卡片）、飞书（富文本消息）、企业微信（Markdown）、Slack 及标准通用 JSON Webhook。
+- 每次通知均携带 `X-MirrorRelay-Signature: sha256=<hex>` 签名与 `X-MirrorRelay-Event: <event>` 请求头，供接收端验证消息完整性与来源真实性。
+
+---
+
+## 9. 漏洞报告指引
 
 若您在项目中发现潜在安全漏洞，请阅读 [.github/SECURITY.md](../.github/SECURITY.md) 获取负责任披露与报告指引。

@@ -327,6 +327,20 @@
         </fieldset>
 
         <fieldset>
+          <legend data-i18n="packageGuard">Package Guard & Supply Chain Security</legend>
+          <div class="form-grid">
+            <label class="wide">
+              <span data-i18n="blockedPackages">Blocked package patterns (Blacklist regex / wildcards, one per line)</span>
+              <textarea id="blocked-packages" rows="2" placeholder="^malicious-.*\nbad-pkg-*.tar.gz"></textarea>
+            </label>
+            <label class="wide">
+              <span data-i18n="allowedPackages">Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)</span>
+              <textarea id="allowed-packages" rows="2" placeholder="^internal-.*\nnumpy-*.whl"></textarea>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend data-i18n="helpDocumentation">Help and documentation</legend>
           <div class="form-grid">
             <label class="check wide"><input id="help-enabled" type="checkbox"><span data-i18n="enableHelp">Enable client configuration help</span></label>

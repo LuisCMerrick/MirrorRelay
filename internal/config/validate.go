@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
@@ -205,6 +206,26 @@ func (c Config) Validate() error {
 	}
 	if err := ValidateUIEnhancement(&c.UIEnhancement); err != nil {
 		return err
+	}
+	if err := ValidateWebhook(&c.Webhook); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateWebhook(w *model.WebhookConfig) error {
+	if !w.Enabled {
+		return nil
+	}
+	if w.URL == "" {
+		return errors.New("webhook.url is required when webhook is enabled")
+	}
+	u, err := url.Parse(w.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("invalid webhook url %q", w.URL)
+	}
+	if w.Timeout <= 0 {
+		w.Timeout = 5 * time.Second
 	}
 	return nil
 }

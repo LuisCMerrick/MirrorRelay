@@ -216,11 +216,18 @@ CREATE TABLE IF NOT EXISTS cluster_settings (
 		"blob_ttl_sec": "INTEGER NOT NULL DEFAULT 0", "cache_authenticated": "INTEGER NOT NULL DEFAULT 0",
 		"blob_redirect_mode": "TEXT NOT NULL DEFAULT 'full_proxy'", "pull_only": "INTEGER NOT NULL DEFAULT 1", "config_state": "TEXT NOT NULL DEFAULT 'pending'",
 		"config_error": "TEXT NOT NULL DEFAULT ''", "help_enabled": "INTEGER NOT NULL DEFAULT 0", "help_json": "TEXT NOT NULL DEFAULT '{}'",
+		"blocked_packages": "TEXT NOT NULL DEFAULT '[]'", "allowed_packages": "TEXT NOT NULL DEFAULT '[]'",
 	}
 	for name, definition := range columns {
 		if err := s.ensureColumn(ctx, "mirrors", name, definition); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureColumn(ctx, "users", "role", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "sessions", "role", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
+		return err
 	}
 	if err := s.ensureColumn(ctx, "upstreams", "host", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

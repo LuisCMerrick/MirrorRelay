@@ -67,7 +67,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case path == "/auth/session" && r.Method == http.MethodGet:
-		writeJSON(w, 200, map[string]any{"username": session.Username, "csrf_token": session.CSRFToken})
+		writeJSON(w, 200, map[string]any{"username": session.Username, "role": session.Role, "csrf_token": session.CSRFToken})
 	case path == "/auth/logout" && r.Method == http.MethodPost:
 		_ = s.audit(r, session.Username, "logout", "session", "", true)
 		s.sessions.Delete(r)
@@ -75,6 +75,8 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	case path == "/auth/password" && r.Method == http.MethodPut:
 		s.password(w, r, session)
+	case path == "/webhooks/test" && r.Method == http.MethodPost:
+		s.testWebhook(w, r, session)
 	case path == "/users" && r.Method == http.MethodGet:
 		users, err := s.store.ListUsers(r.Context())
 		if err != nil {
@@ -83,8 +85,14 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, users)
 	case path == "/users" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.createUser(w, r, session)
 	case strings.HasPrefix(path, "/users/") && r.Method == http.MethodDelete:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.deleteUser(w, r, session, strings.TrimPrefix(path, "/users/"))
 	case path == "/mirrors" && r.Method == http.MethodGet:
 		mirrors, err := s.store.ListMirrors(r.Context())
@@ -94,8 +102,14 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, mirrors)
 	case path == "/mirrors" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.createMirror(w, r, session)
 	case strings.HasPrefix(path, "/mirrors/"):
+		if r.Method != http.MethodGet && !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.mirrorAction(w, r, session, strings.TrimPrefix(path, "/mirrors/"))
 	case path == "/cache" && r.Method == http.MethodGet:
 		summary := s.cache.Summary()
@@ -107,6 +121,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		summary["purge_jobs"] = jobs
 		writeJSON(w, 200, summary)
 	case path == "/cache" && r.Method == http.MethodDelete:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.clearCache(w, r, session, 0)
 	case path == "/stats" && r.Method == http.MethodGet:
 		s.dashboard(w, r)
@@ -141,7 +158,11 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			"upstream_address": upstreamAddress, "upstream_nginx": s.upstreamNginx.Status(),
 		})
 	case (path == "/system/restart" || path == "/restart") && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		_ = s.audit(r, session.Username, "system_restart", "system", "service restart requested from Web UI", true)
+		s.dispatchAlert("security_alert", "Service Restart", fmt.Sprintf("MirrorRelay restart triggered by %s", session.Username), nil)
 		writeJSON(w, 200, map[string]any{"ok": true, "status": "restarting", "message": "restart initiated"})
 		go func() {
 			time.Sleep(100 * time.Millisecond)
@@ -150,14 +171,26 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "/settings" && r.Method == http.MethodGet:
 		s.webSettings(w, r)
 	case path == "/settings" && r.Method == http.MethodPut:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.updateWebSettings(w, r, session)
 	case path == "/settings" && r.Method == http.MethodDelete:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.resetWebSettings(w, r, session)
 	case path == "/appearance" && r.Method == http.MethodGet:
 		writeJSON(w, 200, s.cfg.UIEnhancement)
 	case path == "/appearance" && r.Method == http.MethodPut:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.updateAppearance(w, r, session)
 	case (path == "/appearance/reset" || (path == "/appearance" && r.Method == http.MethodDelete)) && (r.Method == http.MethodPost || r.Method == http.MethodDelete):
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.resetAppearance(w, r, session)
 	case path == "/help/templates" && r.Method == http.MethodGet:
 		writeJSON(w, 200, help.ListTemplates())
@@ -214,6 +247,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, values)
 	case path == "/upstream-nginx/reload" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		v, err := s.upstreamNginx.Reconcile(r.Context(), session.Username, "manual reconcile")
 		if err != nil {
 			_ = s.audit(r, session.Username, "upstream_nginx_reload", "managed-upstream-nginx", err.Error(), false)
@@ -225,8 +261,12 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = s.audit(r, session.Username, "upstream_nginx_reload", "managed-upstream-nginx", fmt.Sprintf("version %d", v.Version), true)
+		s.dispatchAlert("config_change", "Nginx Reloaded", fmt.Sprintf("Configuration reloaded to version %d by %s", v.Version, session.Username), nil)
 		writeJSON(w, 200, v)
 	case strings.HasPrefix(path, "/upstream-nginx/history/") && strings.HasSuffix(path, "/rollback") && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		raw := strings.TrimSuffix(strings.TrimPrefix(path, "/upstream-nginx/history/"), "/rollback")
 		version, err := strconv.ParseInt(strings.Trim(raw, "/"), 10, 64)
 		if err != nil {
@@ -244,6 +284,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = s.audit(r, session.Username, "config_rollback", "managed-upstream-nginx", fmt.Sprintf("version %d", version), true)
+		s.dispatchAlert("config_change", "Config Rollback", fmt.Sprintf("Configuration rolled back to version %d by %s", version, session.Username), nil)
 		writeJSON(w, 200, v)
 	case path == "/custom-configs" && r.Method == http.MethodGet:
 		values, err := s.store.ListCustomConfigs(r.Context())
@@ -253,20 +294,38 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, values)
 	case path == "/custom-configs" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.createCustomConfig(w, r, session)
 	case strings.HasPrefix(path, "/custom-configs/"):
+		if r.Method != http.MethodGet && !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.customConfigAction(w, r, session, strings.TrimPrefix(path, "/custom-configs/"))
 	case strings.HasPrefix(path, "/upstream-nginx/rollback/") && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.rollbackConfig(w, r, session, strings.TrimPrefix(path, "/upstream-nginx/rollback/"))
 	case path == "/cluster/overview" && r.Method == http.MethodGet:
 		s.clusterOverview(w, r)
 	case path == "/cluster/nodes" && r.Method == http.MethodGet:
 		s.listClusterNodes(w, r)
 	case path == "/cluster/nodes" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.createClusterNode(w, r, session)
 	case strings.HasPrefix(path, "/cluster/nodes/"):
+		if r.Method != http.MethodGet && !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		s.clusterNodeAction(w, r, session, strings.TrimPrefix(path, "/cluster/nodes/"))
 	case path == "/cluster/fingerprint/reset" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.resetClusterFingerprint(w, r, session)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
@@ -277,6 +336,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, session auth
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Role     string `json:"role"`
 	}
 	if decodeJSON(w, r, &input) != nil {
 		return
@@ -286,12 +346,20 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, session auth
 		writeError(w, 400, "username must be 3..64 non-space characters")
 		return
 	}
+	input.Role = strings.ToLower(strings.TrimSpace(input.Role))
+	if input.Role == "" {
+		input.Role = "operator"
+	}
+	if input.Role != "admin" && input.Role != "operator" && input.Role != "viewer" {
+		writeError(w, 400, "role must be admin, operator or viewer")
+		return
+	}
 	hash, err := auth.HashPassword(input.Password)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return
 	}
-	if err := s.store.CreateUser(r.Context(), input.Username, hash); err != nil {
+	if err := s.store.CreateUser(r.Context(), input.Username, hash, input.Role); err != nil {
 		if database.IsConflict(err) {
 			writeError(w, 409, "username already exists")
 			return
@@ -299,8 +367,8 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, session auth
 		writeInternal(w, err)
 		return
 	}
-	_ = s.audit(r, session.Username, "user_create", "user", input.Username, true)
-	writeJSON(w, 201, map[string]string{"username": input.Username})
+	_ = s.audit(r, session.Username, "user_create", "user", fmt.Sprintf("%s (%s)", input.Username, input.Role), true)
+	writeJSON(w, 201, map[string]string{"username": input.Username, "role": input.Role})
 }
 
 func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request, session auth.Session, rawID string) {
@@ -372,14 +440,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	release(true)
-	session, err := s.sessions.Create(user.ID, user.Username)
+	session, err := s.sessions.Create(user.ID, user.Username, user.Role)
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
 	s.sessions.SetCookie(w, session)
 	_ = s.audit(r, user.Username, "login", "session", "", true)
-	writeJSON(w, 200, map[string]any{"username": user.Username, "csrf_token": session.CSRFToken})
+	writeJSON(w, 200, map[string]any{"username": user.Username, "role": user.Role, "csrf_token": session.CSRFToken})
 }
 
 func (s *Server) password(w http.ResponseWriter, r *http.Request, session auth.Session) {
@@ -409,4 +477,18 @@ func (s *Server) password(w http.ResponseWriter, r *http.Request, session auth.S
 	}
 	_ = s.audit(r, session.Username, "change_password", "user", session.Username, true)
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+func (s *Server) requireRole(w http.ResponseWriter, session auth.Session, allowedRoles ...string) bool {
+	role := session.Role
+	if role == "" {
+		role = "admin"
+	}
+	for _, r := range allowedRoles {
+		if strings.EqualFold(r, role) {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, "insufficient permissions: role "+role+" is not allowed to perform this operation")
+	return false
 }

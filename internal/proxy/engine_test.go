@@ -276,3 +276,31 @@ func TestCredentialPartitionKey(t *testing.T) {
 		t.Fatal("different tokens must have different partition keys")
 	}
 }
+
+func TestPackageFilteringGuard(t *testing.T) {
+	repo := model.Mirror{
+		BlockedPackages: []string{"^malicious-.*", "bad-package-*.tar.gz"},
+		AllowedPackages: []string{"^safe-.*", "numpy*", "*.whl"},
+	}
+
+	// Blocked by blacklist
+	if blocked, _ := isPackageBlocked(repo, "/packages/malicious-pkg-1.0.tar.gz"); !blocked {
+		t.Fatal("malicious-pkg should be blocked by blacklist")
+	}
+	if blocked, _ := isPackageBlocked(repo, "/bad-package-1.2.3.tar.gz"); !blocked {
+		t.Fatal("bad-package-*.tar.gz should be blocked by blacklist")
+	}
+
+	// Allowed by whitelist
+	if blocked, _ := isPackageBlocked(repo, "/simple/safe-package/"); blocked {
+		t.Fatal("safe-package should be allowed by whitelist")
+	}
+	if blocked, _ := isPackageBlocked(repo, "/packages/numpy-1.24.whl"); blocked {
+		t.Fatal("numpy whl should be allowed by whitelist")
+	}
+
+	// Blocked because not in whitelist
+	if blocked, _ := isPackageBlocked(repo, "/packages/untrusted-tool.rpm"); !blocked {
+		t.Fatal("untrusted-tool should be blocked because it is not in whitelist")
+	}
+}

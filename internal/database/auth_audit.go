@@ -14,14 +14,17 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
-func (s *Store) CreateUser(ctx context.Context, username, passwordHash string) error {
+func (s *Store) CreateUser(ctx context.Context, username, passwordHash, role string) error {
 	now := nowText()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO users(username,password_hash,created_at,updated_at) VALUES(?,?,?,?)`, username, passwordHash, now, now)
+	if role == "" {
+		role = "admin"
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES(?,?,?,?,?)`, username, passwordHash, role, now, now)
 	return err
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,username,created_at,updated_at FROM users ORDER BY username`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,username,role,created_at,updated_at FROM users ORDER BY username`)
 	if err != nil {
 		return nil, err
 	}
@@ -30,8 +33,11 @@ func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 	for rows.Next() {
 		var user model.User
 		var created, updated string
-		if err := rows.Scan(&user.ID, &user.Username, &created, &updated); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.Role, &created, &updated); err != nil {
 			return nil, err
+		}
+		if user.Role == "" {
+			user.Role = "admin"
 		}
 		user.CreatedAt, user.UpdatedAt = parseTime(created), parseTime(updated)
 		users = append(users, user)
@@ -50,19 +56,25 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Store) PutSession(ctx context.Context, idHash string, userID int64, username, csrf string, expires time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(id_hash,user_id,username,csrf_token,expires_at,updated_at) VALUES(?,?,?,?,?,?)
-ON CONFLICT(id_hash) DO UPDATE SET user_id=excluded.user_id,username=excluded.username,csrf_token=excluded.csrf_token,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
-		idHash, userID, username, csrf, expires.UTC().Format(time.RFC3339Nano), nowText())
+func (s *Store) PutSession(ctx context.Context, idHash string, userID int64, username, role, csrf string, expires time.Time) error {
+	if role == "" {
+		role = "admin"
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(id_hash,user_id,username,role,csrf_token,expires_at,updated_at) VALUES(?,?,?,?,?,?,?)
+ON CONFLICT(id_hash) DO UPDATE SET user_id=excluded.user_id,username=excluded.username,role=excluded.role,csrf_token=excluded.csrf_token,expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
+		idHash, userID, username, role, csrf, expires.UTC().Format(time.RFC3339Nano), nowText())
 	return err
 }
 
-func (s *Store) GetSession(ctx context.Context, idHash string) (int64, string, string, time.Time, error) {
+func (s *Store) GetSession(ctx context.Context, idHash string) (int64, string, string, string, time.Time, error) {
 	var userID int64
-	var username, csrf, expires string
-	err := s.db.QueryRowContext(ctx, `SELECT user_id,username,csrf_token,expires_at FROM sessions WHERE id_hash=?`, idHash).
-		Scan(&userID, &username, &csrf, &expires)
-	return userID, username, csrf, parseTime(expires), err
+	var username, role, csrf, expires string
+	err := s.db.QueryRowContext(ctx, `SELECT user_id,username,role,csrf_token,expires_at FROM sessions WHERE id_hash=?`, idHash).
+		Scan(&userID, &username, &role, &csrf, &expires)
+	if role == "" {
+		role = "admin"
+	}
+	return userID, username, role, csrf, parseTime(expires), err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, idHash string) error {
@@ -82,8 +94,11 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID int64, exceptIDHa
 func (s *Store) UserByName(ctx context.Context, username string) (model.User, error) {
 	var u model.User
 	var created, updated string
-	err := s.db.QueryRowContext(ctx, `SELECT id,username,password_hash,created_at,updated_at FROM users WHERE username=?`, username).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &created, &updated)
+	err := s.db.QueryRowContext(ctx, `SELECT id,username,password_hash,role,created_at,updated_at FROM users WHERE username=?`, username).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &created, &updated)
+	if u.Role == "" {
+		u.Role = "admin"
+	}
 	u.CreatedAt, u.UpdatedAt = parseTime(created), parseTime(updated)
 	return u, err
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,6 +67,9 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 	}
 	if unsafeRepositoryPath(relative) {
 		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "repository path contains an unsafe segment"}
+	}
+	if blocked, reason := isPackageBlocked(repository, relative); blocked {
+		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusForbidden, text: reason}
 	}
 	if !strings.HasPrefix(relative, "/__fetch/") {
 		if !strings.HasPrefix(relative, "/__fetch_template/") {
@@ -470,4 +474,61 @@ func cloneURL(value *url.URL) *url.URL {
 func isRedirect(status int) bool {
 	return status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther ||
 		status == http.StatusTemporaryRedirect || status == http.StatusPermanentRedirect
+}
+
+func isPackageBlocked(repository model.Mirror, relativePath string) (bool, string) {
+	if len(repository.BlockedPackages) == 0 && len(repository.AllowedPackages) == 0 {
+		return false, ""
+	}
+	cleanPath := strings.TrimPrefix(relativePath, "/")
+	baseName := path.Base(cleanPath)
+
+	// Check blocked packages list (blacklist)
+	for _, pattern := range repository.BlockedPackages {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if matchPattern(pattern, cleanPath, baseName) {
+			return true, "package is blocked by repository security policy (" + pattern + ")"
+		}
+	}
+
+	// Check allowed packages whitelist if configured
+	if len(repository.AllowedPackages) > 0 {
+		matched := false
+		for _, pattern := range repository.AllowedPackages {
+			pattern = strings.TrimSpace(pattern)
+			if pattern == "" {
+				continue
+			}
+			if matchPattern(pattern, cleanPath, baseName) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return true, "package is not in repository allowed packages whitelist"
+		}
+	}
+
+	return false, ""
+}
+
+func matchPattern(pattern, cleanPath, baseName string) bool {
+	if strings.EqualFold(pattern, baseName) || strings.EqualFold(pattern, cleanPath) {
+		return true
+	}
+	if ok, _ := path.Match(pattern, baseName); ok {
+		return true
+	}
+	if ok, _ := path.Match(pattern, cleanPath); ok {
+		return true
+	}
+	if re, err := regexp.Compile(pattern); err == nil {
+		if re.MatchString(baseName) || re.MatchString(cleanPath) {
+			return true
+		}
+	}
+	return false
 }

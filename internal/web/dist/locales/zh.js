@@ -670,6 +670,31 @@ export default {
                 "type": "boolean"
             }
         ]
+    },
+    {
+        "title": "Webhook 自动化告警通知",
+        "fields": [
+            {
+                "path": "webhook.enabled",
+                "label": "启用 Webhook 告警通知",
+                "type": "boolean"
+            },
+            {
+                "path": "webhook.url",
+                "label": "Webhook 端点 URL (钉钉、飞书、企微、Slack、通用 JSON)",
+                "type": "text"
+            },
+            {
+                "path": "webhook.secret",
+                "label": "密钥 Token (用于 HMAC-SHA256 验签)",
+                "type": "text"
+            },
+            {
+                "path": "webhook.timeout",
+                "label": "请求超时时间",
+                "type": "text"
+            }
+        ]
     }
 ],
   duration: function(days, hours, minutes) {
@@ -978,6 +1003,26 @@ export default {
     "Filter audit (User, Action, IP)...": "过滤审计记录 (用户, 动作, IP)...",
     "Start Live Stream": "开启实时流",
     "Stop Stream": "暂停流",
-    "No matching log lines.": "无匹配的日志行。"
+    "No matching log lines.": "无匹配的日志行。",
+    "Add User / Administrator": "新增用户 / 管理员",
+    "Role": "角色",
+    "Operator (Repositories & Cache)": "运维管理员（仓库与缓存管理）",
+    "Administrator (Full Control)": "超级管理员（全部管理权限）",
+    "Viewer (Read-only)": "只读审计员（只读查看）",
+    "Admin": "管理员",
+    "Operator": "运维",
+    "Viewer": "只读",
+    "Package Guard & Supply Chain Security": "软件包过滤与供应链安全",
+    "Blocked package patterns (Blacklist regex / wildcards, one per line)": "禁止拉取的包名正则/通配符（黑名单，每行一条）",
+    "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)": "允许拉取的包名正则/通配符（白名单，留空表示允许全部）",
+    "Blocked packages (Blacklist)": "包名黑名单",
+    "Allowed packages (Whitelist)": "包名白名单",
+    "All permitted": "允许全部",
+    "rules": "条规则",
+    "Webhook Alerting & Test Notification": "Webhook 告警与通知测试",
+    "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.": "发送测试事件通知，验证钉钉、飞书、企业微信、Slack 或自定义 Webhook 接收端点。",
+    "Target Webhook URL (leave empty to use saved settings)": "目标 Webhook 地址（留空则使用已保存配置）",
+    "Send Test Notification": "发送测试通知",
+    "Test webhook notification delivered successfully!": "测试 Webhook 通知发送成功！"
 }
 };
