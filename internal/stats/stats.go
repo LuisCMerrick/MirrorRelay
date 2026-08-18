@@ -30,6 +30,16 @@ type MirrorCounters struct {
 	Status5xx      uint64 `json:"status_5xx"`
 }
 
+type HourlyBucket struct {
+	Hour     string         `json:"hour"`
+	Counters MirrorCounters `json:"counters"`
+}
+
+type DailyBucket struct {
+	Date     string         `json:"date"`
+	Counters MirrorCounters `json:"counters"`
+}
+
 type Snapshot struct {
 	StartedAt    time.Time                `json:"started_at"`
 	Active       int64                    `json:"active_requests"`
@@ -37,6 +47,8 @@ type Snapshot struct {
 	Today        MirrorCounters           `json:"today"`
 	Last24Hours  MirrorCounters           `json:"last_24_hours"`
 	Last7Days    MirrorCounters           `json:"last_7_days"`
+	Hourly       []HourlyBucket           `json:"hourly,omitempty"`
+	Daily        []DailyBucket            `json:"daily,omitempty"`
 	ByMirror     map[int64]MirrorCounters `json:"by_mirror"`
 	Status       map[int]uint64           `json:"status"`
 	LatencySumMS uint64                   `json:"upstream_latency_sum_ms"`
@@ -262,19 +274,49 @@ func (s *Stats) Snapshot() Snapshot {
 		statuses[k] = v
 	}
 	var last24, last7 MirrorCounters
+	var hourlyBuckets []HourlyBucket
+	var hourlyKeys []string
 	hourCutoff := time.Now().Add(-24 * time.Hour).Format("2006-01-02T15")
 	for key, value := range s.hourly {
 		if key >= hourCutoff {
 			merge(&last24, value)
+			hourlyKeys = append(hourlyKeys, key)
 		}
 	}
+	sort.Strings(hourlyKeys)
+	for _, key := range hourlyKeys {
+		hourlyBuckets = append(hourlyBuckets, HourlyBucket{Hour: key, Counters: s.hourly[key]})
+	}
+
+	var dailyBuckets []DailyBucket
+	var dailyKeys []string
 	dayCutoff := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	for key, value := range s.daily {
 		if key >= dayCutoff {
 			merge(&last7, value)
+			dailyKeys = append(dailyKeys, key)
 		}
 	}
-	return Snapshot{StartedAt: s.started, Active: s.active.Load(), Total: s.total, Today: s.today.counters, Last24Hours: last24, Last7Days: last7, ByMirror: byMirror, Status: statuses, LatencySumMS: s.latencySumMS, LatencyCount: s.latencyCount, Runtime: runtimeSnapshot()}
+	sort.Strings(dailyKeys)
+	for _, key := range dailyKeys {
+		dailyBuckets = append(dailyBuckets, DailyBucket{Date: key, Counters: s.daily[key]})
+	}
+
+	return Snapshot{
+		StartedAt:    s.started,
+		Active:       s.active.Load(),
+		Total:        s.total,
+		Today:        s.today.counters,
+		Last24Hours:  last24,
+		Last7Days:    last7,
+		Hourly:       hourlyBuckets,
+		Daily:        dailyBuckets,
+		ByMirror:     byMirror,
+		Status:       statuses,
+		LatencySumMS: s.latencySumMS,
+		LatencyCount: s.latencyCount,
+		Runtime:      runtimeSnapshot(),
+	}
 }
 
 func runtimeSnapshot() RuntimeMetrics {

@@ -1,7 +1,8 @@
-// Dashboard page: fleet overview, topology, cache usage and per-repository stats.
+// Dashboard page: fleet overview, topology, real-time SVG charts, cache usage and per-repository stats.
 import { api } from '../api.js';
 import { $, esc } from '../dom.js';
 import { card, kv } from '../components.js';
+import { renderAreaChart, renderDonutChart } from '../charts.js';
 import { bytes, duration, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
@@ -109,6 +110,55 @@ export async function loadDashboard() {
     </div>
   </div>`;
 
+  // Prepare chart series from hourly data
+  const hourlyData = (dashboard.stats.hourly || []).map(b => {
+    const hourStr = (b.hour || '').slice(-2) + ':00';
+    return {
+      label: hourStr,
+      requests: b.counters?.requests || 0,
+      bytes: b.counters?.bytes || 0,
+      hits: b.counters?.cache_hits || 0
+    };
+  });
+
+  const chartRequestsHTML = renderAreaChart({
+    title: `${L('Hourly Requests (24h)')}`,
+    data: hourlyData,
+    xLabel: item => item.label,
+    yValue: item => item.requests,
+    color: '#38bdf8',
+    gradientId: 'req-grad',
+    unit: 'req'
+  });
+
+  const chartTrafficHTML = renderAreaChart({
+    title: `${L('Hourly Traffic (24h)')}`,
+    data: hourlyData,
+    xLabel: item => item.label,
+    yValue: item => Math.round((item.bytes || 0) / (1024 * 1024)),
+    color: '#10b981',
+    gradientId: 'traf-grad',
+    unit: 'MB'
+  });
+
+  const statusDonutHTML = renderDonutChart({
+    title: L('HTTP Status Breakdown (Today)'),
+    slices: [
+      { label: '2xx OK', value: today.status_2xx || 0, color: '#10b981' },
+      { label: '3xx Redirect', value: today.status_3xx || 0, color: '#38bdf8' },
+      { label: '4xx Client Err', value: today.status_4xx || 0, color: '#f59e0b' },
+      { label: '5xx Upstream Err', value: today.status_5xx || 0, color: '#f43f5e' }
+    ]
+  });
+
+  const cacheDonutHTML = renderDonutChart({
+    title: L('Cache Hit Distribution (Today)'),
+    slices: [
+      { label: 'Cache HIT', value: today.cache_hits || 0, color: '#10b981' },
+      { label: 'Cache MISS', value: today.cache_misses || 0, color: '#64748b' }
+    ]
+  });
+
   $('#page-dashboard').innerHTML = topoHTML + `<div class="cards">
     ${card(L('Repositories / enabled'), `${dashboard.mirrors} / ${dashboard.enabled_mirrors}`, false, 'layers', `${dashboard.healthy_mirrors || 0} healthy`)}
     ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, dashboard.unhealthy_mirrors === 0, 'activity', dashboard.unhealthy_mirrors === 0 ? 'All systems nominal' : `${dashboard.unhealthy_mirrors} degraded`)}
@@ -119,6 +169,22 @@ export async function loadDashboard() {
     ${card(L('Traffic / 24 h'), bytes(last24.bytes), false, 'access', 'Rolling 24 hours')}
     ${card(L('Traffic / 7 d'), bytes(last7.bytes), false, 'system', 'Rolling 7 days')}
     ${card(L('Cache hit rate'), `${hitRate.toFixed(1)}%`, hitRate > 50, 'cache', `${number(today.cache_hits)} hits / ${number(today.cache_misses)} misses`)}
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <h2>${icon('trend-up', 18)} ${L('Performance & Traffic Analytics (24h)')}</h2>
+      <div class="charts-grid">
+        ${chartRequestsHTML}
+        ${chartTrafficHTML}
+      </div>
+    </div>
+    <div class="panel">
+      <h2>${icon('activity', 18)} ${L('Traffic & Cache Breakdown')}</h2>
+      <div class="charts-grid">
+        ${statusDonutHTML}
+        ${cacheDonutHTML}
+      </div>
+    </div>
   </div>
   <div class="grid2">
     <div class="panel">

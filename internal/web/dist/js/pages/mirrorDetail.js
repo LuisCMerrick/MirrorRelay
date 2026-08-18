@@ -1,5 +1,5 @@
 // Repository detail dialog: desired/active comparison, statistics, upstreams,
-// client examples, configuration previews, cache purge and profile upgrades.
+// interactive client config playground, configuration previews, cache purge and profile upgrades.
 import { api } from '../api.js';
 import { registerAction } from '../actions.js';
 import { card, kv, showPreview } from '../components.js';
@@ -15,12 +15,223 @@ function repositorySummary(repository) {
   return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || 'Custom'} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
 }
 
+function generateClientPlayground(repository, currentBaseUrl) {
+  const type = repository.type;
+  const slug = repository.slug;
+  const baseUrl = currentBaseUrl || publicURL(repository);
+  let defaultVariant = '';
+  let variants = [];
+
+  switch (type) {
+    case 'apt':
+      variants = [
+        { id: 'debian-12', label: 'Debian 12 (Bookworm)', suite: 'bookworm', components: 'main contrib non-free-firmware', format: 'list' },
+        { id: 'debian-11', label: 'Debian 11 (Bullseye)', suite: 'bullseye', components: 'main contrib non-free', format: 'list' },
+        { id: 'ubuntu-2404', label: 'Ubuntu 24.04 (Noble)', suite: 'noble', components: 'main restricted universe multiverse', format: 'sources' },
+        { id: 'ubuntu-2204', label: 'Ubuntu 22.04 (Jammy)', suite: 'jammy', components: 'main restricted universe multiverse', format: 'list' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'rpm':
+      variants = [
+        { id: 'rocky-9', label: 'Rocky Linux 9', contentdir: 'rocky', releasever: '9' },
+        { id: 'rocky-8', label: 'Rocky Linux 8', contentdir: 'rocky', releasever: '8' },
+        { id: 'almalinux-9', label: 'AlmaLinux 9', contentdir: 'almalinux', releasever: '9' },
+        { id: 'centos-7', label: 'CentOS 7', contentdir: 'centos', releasever: '7' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'pypi':
+      variants = [
+        { id: 'pip', label: 'pip (Standard)', cli: `pip config set global.index-url ${baseUrl}/simple/` },
+        { id: 'uv', label: 'uv (Astral)', cli: `export UV_DEFAULT_INDEX="${baseUrl}/simple/"` },
+        { id: 'poetry', label: 'poetry', cli: `poetry source add --priority=default mirror ${baseUrl}/simple/` }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'npm':
+      variants = [
+        { id: 'npm', label: 'npm', cli: `npm config set registry ${baseUrl}/` },
+        { id: 'yarn', label: 'yarn', cli: `yarn config set registry ${baseUrl}/` },
+        { id: 'pnpm', label: 'pnpm', cli: `pnpm config set registry ${baseUrl}/` }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'docker-registry':
+    case 'oci-registry':
+      variants = [
+        { id: 'daemon-json', label: 'Docker daemon.json mirror' },
+        { id: 'podman', label: 'Podman registry' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'goproxy':
+      variants = [
+        { id: 'go', label: 'Go Environment', cli: `go env -w GOPROXY=${baseUrl},direct` }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'cargo':
+      variants = [
+        { id: 'cargo', label: 'Cargo (Rust)', filename: 'config.toml' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    case 'maven':
+      variants = [
+        { id: 'maven', label: 'Maven', filename: 'settings.xml' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
+    default:
+      variants = [
+        { id: 'generic', label: 'Standard', cli: `curl -fLO ${baseUrl}/path/to/file` }
+      ];
+      defaultVariant = variants[0].id;
+  }
+
+  return { variants, defaultVariant, baseUrl, slug, type };
+}
+
+function computePlaygroundOutput(type, variantId, baseUrl) {
+  let cliCmd = '';
+  let fileContent = '';
+  let fileName = '';
+  let filePath = '';
+
+  switch (type) {
+    case 'apt':
+      if (variantId === 'ubuntu-2404') {
+        fileName = 'ubuntu.sources';
+        filePath = '/etc/apt/sources.list.d/ubuntu.sources';
+        fileContent = `Types: deb\nURIs: ${baseUrl}/\nSuites: noble noble-updates noble-backports noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg`;
+        cliCmd = `sudo sed -i.bak 's|http://archive.ubuntu.com/ubuntu|${baseUrl}|g; s|http://security.ubuntu.com/ubuntu|${baseUrl}|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true\nsudo apt update`;
+      } else if (variantId === 'debian-12') {
+        fileName = 'debian.list';
+        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
+        fileContent = `deb ${baseUrl}/ bookworm main contrib non-free non-free-firmware\ndeb ${baseUrl}/ bookworm-updates main contrib non-free non-free-firmware\ndeb ${baseUrl}/ bookworm-backports main contrib non-free non-free-firmware\ndeb ${baseUrl}-security/ bookworm-security main contrib non-free non-free-firmware`;
+        cliCmd = `sudo sed -i.bak 's|http://deb.debian.org/debian|${baseUrl}|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true\nsudo apt update`;
+      } else if (variantId === 'debian-11') {
+        fileName = 'debian.list';
+        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
+        fileContent = `deb ${baseUrl}/ bullseye main contrib non-free\ndeb ${baseUrl}/ bullseye-updates main contrib non-free\ndeb ${baseUrl}/ bullseye-backports main contrib non-free`;
+        cliCmd = `sudo sed -i.bak 's|http://deb.debian.org/debian|${baseUrl}|g' /etc/apt/sources.list 2>/dev/null || true\nsudo apt update`;
+      } else {
+        fileName = 'ubuntu.list';
+        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
+        fileContent = `deb ${baseUrl}/ jammy main restricted universe multiverse\ndeb ${baseUrl}/ jammy-updates main restricted universe multiverse\ndeb ${baseUrl}/ jammy-security main restricted universe multiverse`;
+        cliCmd = `sudo sed -i.bak 's|http://archive.ubuntu.com/ubuntu|${baseUrl}|g' /etc/apt/sources.list 2>/dev/null || true\nsudo apt update`;
+      }
+      break;
+
+    case 'rpm':
+      fileName = 'mirrorrelay.repo';
+      filePath = '/etc/yum.repos.d/mirrorrelay.repo';
+      if (variantId.startsWith('rocky')) {
+        const ver = variantId.endsWith('9') ? '9' : '8';
+        fileContent = `[baseos]\nname=Rocky Linux $releasever - BaseOS\nbaseurl=${baseUrl}/$releasever/BaseOS/$basearch/os/\ngpgcheck=1\nenabled=1\n\n[appstream]\nname=Rocky Linux $releasever - AppStream\nbaseurl=${baseUrl}/$releasever/AppStream/$basearch/os/\ngpgcheck=1\nenabled=1`;
+        cliCmd = `sudo sed -e 's|^mirrorlist=|#mirrorlist=|g' -e 's|^#baseurl=http://dl.rockylinux.org/\\$contentdir|baseurl=${baseUrl}|g' -i.bak /etc/yum.repos.d/rocky*.repo\nsudo dnf makecache`;
+      } else if (variantId.startsWith('almalinux')) {
+        fileContent = `[baseos]\nname=AlmaLinux $releasever - BaseOS\nbaseurl=${baseUrl}/$releasever/BaseOS/$basearch/os/\ngpgcheck=1\nenabled=1\n\n[appstream]\nname=AlmaLinux $releasever - AppStream\nbaseurl=${baseUrl}/$releasever/AppStream/$basearch/os/\ngpgcheck=1\nenabled=1`;
+        cliCmd = `sudo sed -e 's|^mirrorlist=|#mirrorlist=|g' -e 's|^# baseurl=https://repo.almalinux.org/almalinux|baseurl=${baseUrl}|g' -i.bak /etc/yum.repos.d/almalinux*.repo\nsudo dnf makecache`;
+      } else {
+        fileContent = `[base]\nname=CentOS-$releasever - Base\nbaseurl=${baseUrl}/7/os/$basearch/\ngpgcheck=1\nenabled=1`;
+        cliCmd = `sudo sed -e 's|^mirrorlist=|#mirrorlist=|g' -e 's|^#baseurl=http://mirror.centos.org/centos|baseurl=${baseUrl}|g' -i.bak /etc/yum.repos.d/CentOS-Base.repo\nsudo yum makecache`;
+      }
+      break;
+
+    case 'pypi':
+      fileName = 'pip.conf';
+      filePath = '~/.pip/pip.conf';
+      fileContent = `[global]\nindex-url = ${baseUrl}/simple/\ntrusted-host = ${baseUrl.replace(/^https?:\/\//, '').split(':')[0].split('/')[0]}`;
+      if (variantId === 'uv') {
+        cliCmd = `export UV_DEFAULT_INDEX="${baseUrl}/simple/"`;
+      } else if (variantId === 'poetry') {
+        cliCmd = `poetry source add --priority=default mirror ${baseUrl}/simple/`;
+      } else {
+        cliCmd = `pip config set global.index-url ${baseUrl}/simple/`;
+      }
+      break;
+
+    case 'npm':
+      fileName = '.npmrc';
+      filePath = '~/.npmrc';
+      fileContent = `registry=${baseUrl}/\nstrict-ssl=false`;
+      if (variantId === 'yarn') {
+        cliCmd = `yarn config set registry ${baseUrl}/`;
+      } else if (variantId === 'pnpm') {
+        cliCmd = `pnpm config set registry ${baseUrl}/`;
+      } else {
+        cliCmd = `npm config set registry ${baseUrl}/`;
+      }
+      break;
+
+    case 'docker-registry':
+    case 'oci-registry':
+      const host = baseUrl.replace(/^https?:\/\//, '');
+      fileName = 'daemon.json';
+      filePath = '/etc/docker/daemon.json';
+      fileContent = JSON.stringify({
+        "registry-mirrors": [baseUrl],
+        "insecure-registries": [host]
+      }, null, 2);
+      cliCmd = `docker pull ${host}/library/nginx:latest`;
+      break;
+
+    case 'goproxy':
+      fileName = 'go.env';
+      filePath = '~/.config/go/env';
+      fileContent = `GOPROXY="${baseUrl},direct"`;
+      cliCmd = `go env -w GOPROXY=${baseUrl},direct`;
+      break;
+
+    case 'cargo':
+      fileName = 'config.toml';
+      filePath = '~/.cargo/config.toml';
+      fileContent = `[source.crates-io]\nreplace-with = 'mirrorrelay'\n\n[source.mirrorrelay]\nregistry = "sparse+${baseUrl}/"`;
+      cliCmd = `mkdir -p ~/.cargo && cat << 'EOF' > ~/.cargo/config.toml\n[source.crates-io]\nreplace-with = 'mirrorrelay'\n\n[source.mirrorrelay]\nregistry = "sparse+${baseUrl}/"\nEOF`;
+      break;
+
+    case 'maven':
+      fileName = 'settings.xml';
+      filePath = '~/.m2/settings.xml';
+      fileContent = `<settings>\n  <mirrors>\n    <mirror>\n      <id>mirrorrelay</id>\n      <name>MirrorRelay Central</name>\n      <url>${baseUrl}/</url>\n      <mirrorOf>central</mirrorOf>\n    </mirror>\n  </mirrors>\n</settings>`;
+      cliCmd = `mkdir -p ~/.m2`;
+      break;
+
+    default:
+      fileName = 'download.sh';
+      filePath = './download.sh';
+      fileContent = `curl -fLO ${baseUrl}/`;
+      cliCmd = `curl -fLO ${baseUrl}/`;
+  }
+
+  return { cliCmd, fileContent, fileName, filePath };
+}
+
+function triggerDownload(fileName, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function showRepository(id) {
   try {
     const [repositoryState, examples] = await Promise.all([api(`/mirrors/${id}/state`), api(`/mirrors/${id}/client-config`)]);
     const desired = repositoryState.desired, active = repositoryState.active_found ? repositoryState.active : null, statistics = repositoryState.statistics || {};
     const latest = state.profiles.find(profile => profile.name === desired.profile_name && profile.latest_stable);
     const upgrade = latest && latest.version !== desired.profile_version ? `<button class="btn-primary" data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${icon('zap', 13)} ${L('Preview upgrade to %s', latest.version)}</button>` : '';
+
+    const playgroundData = generateClientPlayground(desired);
+    let selectedVariant = playgroundData.defaultVariant;
+
+    const variantOptions = playgroundData.variants.map(v => `<option value="${esc(v.id)}"${v.id === selectedVariant ? ' selected' : ''}>${esc(v.label)}</option>`).join('');
 
     $('#detail-title').textContent = desired.name;
     $('#detail-content').innerHTML = `
@@ -46,6 +257,46 @@ async function showRepository(id) {
           ${upgrade}
         </div>
       </div>
+      
+      <!-- Interactive Client Setup Playground -->
+      <div class="panel playground-panel">
+        <div class="panel-header-row">
+          <h2>${icon('terminal', 18)} ${L('Interactive One-Click Setup Generator')}</h2>
+          <span class="badge blue">${esc(desired.type)}</span>
+        </div>
+        <div class="playground-controls form-grid">
+          <label>
+            <span>${L('Client / Environment Variant')}</span>
+            <select id="playground-variant">${variantOptions}</select>
+          </label>
+          <label>
+            <span>${L('Target Base URL')}</span>
+            <input id="playground-url" value="${esc(playgroundData.baseUrl)}" />
+          </label>
+        </div>
+
+        <div class="playground-output">
+          <div class="example">
+            <div class="toolbar">
+              <strong>${icon('terminal', 14)} ${L('One-liner CLI Command')}</strong>
+              <button id="copy-cli-btn" class="secondary small">${icon('copy', 12)} ${L('Copy CLI')}</button>
+            </div>
+            <pre id="playground-cli-pre"></pre>
+          </div>
+
+          <div class="example">
+            <div class="toolbar">
+              <strong>${icon('file-text', 14)} <span id="playground-file-path"></span></strong>
+              <div class="actions">
+                <button id="download-file-btn" class="secondary small">${icon('external-link', 12)} ${L('Download')}</button>
+                <button id="copy-file-btn" class="secondary small">${icon('copy', 12)} ${L('Copy File')}</button>
+              </div>
+            </div>
+            <pre id="playground-file-pre"></pre>
+          </div>
+        </div>
+      </div>
+
       <div class="grid2">
         <div class="panel">
           <h2>${icon('settings', 16)} ${L('Desired configuration')}</h2>
@@ -84,24 +335,44 @@ async function showRepository(id) {
             </tbody>
           </table>
         </div>
-      </div>
-      <div class="panel">
-        <h2>${icon('code', 16)} ${L('Client configuration examples')}</h2>
-        ${examples.map((example, index) => `
-          <div class="example">
-            <div class="toolbar">
-              <strong>${esc(example.name)}</strong>
-              <button class="copy-example secondary small" data-index="${index}">${icon('copy', 12)} ${L('Copy')}</button>
-            </div>
-            <pre>${esc(example.command)}</pre>
-          </div>
-        `).join('')}
       </div>`;
 
-    $('#detail-content').querySelectorAll('.copy-example').forEach(button => button.addEventListener('click', async () => {
-      await copyText(examples[Number(button.dataset.index)].command);
-      notice(L('Copied.'));
-    }));
+    // Bind playground interactions
+    const updatePlaygroundView = () => {
+      const vId = $('#playground-variant')?.value || selectedVariant;
+      const bUrl = $('#playground-url')?.value.trim() || playgroundData.baseUrl;
+      const out = computePlaygroundOutput(desired.type, vId, bUrl);
+
+      const cliPre = $('#playground-cli-pre');
+      const filePre = $('#playground-file-pre');
+      const filePathSpan = $('#playground-file-path');
+
+      if (cliPre) cliPre.textContent = out.cliCmd;
+      if (filePre) filePre.textContent = out.fileContent;
+      if (filePathSpan) filePathSpan.textContent = out.filePath || out.fileName;
+
+      $('#copy-cli-btn')?.replaceWith($('#copy-cli-btn').cloneNode(true));
+      $('#copy-file-btn')?.replaceWith($('#copy-file-btn').cloneNode(true));
+      $('#download-file-btn')?.replaceWith($('#download-file-btn').cloneNode(true));
+
+      $('#copy-cli-btn')?.addEventListener('click', async () => {
+        await copyText(out.cliCmd);
+        notice(L('CLI command copied.'));
+      });
+      $('#copy-file-btn')?.addEventListener('click', async () => {
+        await copyText(out.fileContent);
+        notice(L('Configuration file copied.'));
+      });
+      $('#download-file-btn')?.addEventListener('click', () => {
+        triggerDownload(out.fileName, out.fileContent);
+        notice(L('Downloaded %s', out.fileName));
+      });
+    };
+
+    $('#playground-variant')?.addEventListener('change', updatePlaygroundView);
+    $('#playground-url')?.addEventListener('input', updatePlaygroundView);
+    updatePlaygroundView();
+
     $('#detail-dialog').showModal();
   } catch (error) {
     notice(error.message, true);
