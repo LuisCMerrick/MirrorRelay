@@ -233,7 +233,8 @@ func (s *Stats) Record(mirrorID int64, status int, bytes, upstreamBytes, cacheBy
 	if s.today.date != today {
 		s.today = bucket{date: today, byMirror: make(map[int64]MirrorCounters), status: make(map[int]uint64)}
 	}
-	hit, miss := cacheStatus == "HIT", cacheStatus == "MISS"
+	hit := cacheStatus == "HIT" || cacheStatus == "VALIDATOR" || cacheStatus == "ACCEL"
+	miss := cacheStatus == "MISS"
 	add(&s.total, status, bytes, upstreamBytes, cacheBytes, hit, miss, upstreamErr)
 	add(&s.today.counters, status, bytes, upstreamBytes, cacheBytes, hit, miss, upstreamErr)
 	hourKey := time.Now().Format("2006-01-02T15")

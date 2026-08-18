@@ -9,6 +9,8 @@ export default {
     "signOut": "退出",
     "restart": "重启",
     "restartService": "重启服务",
+    "Zero-Copy Acceleration": "零拷贝加速",
+    "Adaptive Active": "自适应开启",
     "navDashboard": "概览",
     "navRepositories": "仓库",
     "navProfiles": "模板",

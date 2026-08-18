@@ -52,6 +52,7 @@ export async function loadSystem() {
         ${system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) + kv(L('Private key'), system.tls_private_key) : ''}
         ${kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`)}
         ${kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`)}
+        ${kv(L('Zero-Copy Acceleration'), system.zero_copy_bypass ? `${L('Adaptive Active')} (X-Accel-Redirect)` : L('Disabled'))}
       </div>
       <div class="panel">
         <h2>${icon('server', 18)} ${L('Managed Upstream Nginx')}</h2>

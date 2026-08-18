@@ -217,7 +217,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		}
 	}
 
-	if e.cfg.Performance.ZeroCopyBypass && request.Header.Get("X-Accel-Supported") == "1" &&
+	if e.cfg.Performance.ZeroCopyBypass && supportsXAccel(request) &&
 		!rewriteMetadata && !rewriteHTML && dynamic == nil &&
 		(class == "package" || class == "immutable" || (class == "blob" && repository.BlobRedirectMode != "pass")) {
 		targetPath := "/_repo/" + strconv.FormatInt(repository.ID, 10) + "/" + strconv.FormatInt(active.ID, 10) + "/" + class + ensureLeadingSlash(relative)
@@ -269,7 +269,7 @@ func (e *Engine) finishRequest(start time.Time, clientIP string, repository mode
 	}
 	upstreamBytes := uint64(writer.bytes)
 	cacheBytes := uint64(0)
-	if cacheStatus == "HIT" || cacheStatus == "VALIDATOR" {
+	if cacheStatus == "HIT" || cacheStatus == "VALIDATOR" || cacheStatus == "ACCEL" {
 		upstreamBytes, cacheBytes = 0, uint64(writer.bytes)
 	}
 	e.stats.Record(repository.ID, writer.status, uint64(writer.bytes), upstreamBytes, cacheBytes, cacheStatus,

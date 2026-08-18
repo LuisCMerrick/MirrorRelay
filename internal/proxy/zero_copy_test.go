@@ -95,5 +95,23 @@ func TestZeroCopyXAccelRedirectBypass(t *testing.T) {
 		t.Fatalf("disabled zero copy should not emit X-Accel-Redirect")
 	}
 
+	// 4. Adaptive header detection (X-Accel-Supported: true, X-Accel-Mapping, X-Sendfile-Type)
+	for _, headerCase := range []struct {
+		key   string
+		value string
+	}{
+		{"X-Accel-Supported", "true"},
+		{"X-Accel-Mapping", "/var/cache=/uri"},
+		{"X-Sendfile-Type", "X-Accel-Redirect"},
+	} {
+		rAdaptive := httptest.NewRequest(http.MethodGet, "http://localhost/debian/pool/main/v/vim.deb", nil)
+		rAdaptive.Header.Set(headerCase.key, headerCase.value)
+		wAdaptive := httptest.NewRecorder()
+		engine.ServeHTTP(wAdaptive, rAdaptive)
+		if wAdaptive.Header().Get("X-Accel-Redirect") == "" {
+			t.Fatalf("expected X-Accel-Redirect for header %s: %s", headerCase.key, headerCase.value)
+		}
+	}
+
 	_ = repoID
 }

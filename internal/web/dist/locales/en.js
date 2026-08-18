@@ -9,6 +9,8 @@ export default {
     "signOut": "Sign out",
     "restart": "Restart",
     "restartService": "Restart service",
+    "Zero-Copy Acceleration": "Zero-Copy Acceleration",
+    "Adaptive Active": "Adaptive Active",
     "navDashboard": "Dashboard",
     "navRepositories": "Repositories",
     "navProfiles": "Profiles",

@@ -156,6 +156,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			"tls_private_key": s.cfg.TLS.PrivateKey, "frontend_network": frontendNetwork,
 			"frontend_address": frontendAddress, "upstream_network": upstreamNetwork,
 			"upstream_address": upstreamAddress, "upstream_nginx": s.upstreamNginx.Status(),
+			"zero_copy_bypass": s.cfg.Performance.ZeroCopyBypass,
 		})
 	case (path == "/system/restart" || path == "/restart") && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin") {

@@ -111,5 +111,19 @@ func responseWriterFromContext(ctx context.Context) (*captureWriter, bool) {
 	return value, ok
 }
 
+func supportsXAccel(r *http.Request) bool {
+	val := r.Header.Get("X-Accel-Supported")
+	if val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes") {
+		return true
+	}
+	if r.Header.Get("X-Accel-Mapping") != "" {
+		return true
+	}
+	if strings.EqualFold(r.Header.Get("X-Sendfile-Type"), "X-Accel-Redirect") {
+		return true
+	}
+	return false
+}
+
 var _ httputil.BufferPool = (*bufferPool)(nil)
 var _ io.Writer = (*captureWriter)(nil)
