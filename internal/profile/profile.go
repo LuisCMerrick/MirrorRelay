@@ -170,6 +170,7 @@ var builtins = []Profile{
 	{Name: "OCI Registry Generic", Version: "1.0.0", LatestStable: true, Type: "oci-registry", ProxyMode: "registry", Upstream: "https://registry.example.com/", CacheEnabled: true, CacheProfile: "registry", PublicMode: "host", AuthMode: "direct", RedirectMode: "full_proxy"},
 	{
 		Name: "Ubuntu Releases (ISO)", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://releases.ubuntu.com/", HealthPath: "24.04/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		RewriteHosts: []string{"releases.ubuntu.com", "cdimage.ubuntu.com", "*.ubuntu.com", "*.canonical.com"},
 		Help: model.HelpConfig{
 			Enabled: true, Title: "Ubuntu Releases (ISO)", Summary: "Ubuntu 官方系统安装 ISO 镜像下载", Template: "builtin://help/ubuntu-iso.md", TemplateVersion: 1,
 			Variants: []model.HelpVariant{
@@ -180,6 +181,7 @@ var builtins = []Profile{
 	},
 	{
 		Name: "Debian CD (ISO)", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://cdimage.debian.org/debian-cd/", HealthPath: "current/amd64/iso-cd/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		RewriteHosts: []string{"cdimage.debian.org", "get.debian.org", "*.debian.org", "*.acc.umu.se", "gensho.acc.umu.se", "caesar.acc.umu.se"},
 		Help: model.HelpConfig{
 			Enabled: true, Title: "Debian CD / ISO", Summary: "Debian 官方安装盘与 Live ISO 镜像下载", Template: "builtin://help/debian-cd.md", TemplateVersion: 1,
 			Variants: []model.HelpVariant{
@@ -190,6 +192,7 @@ var builtins = []Profile{
 	},
 	{
 		Name: "Rocky Linux ISO", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://download.rockylinux.org/pub/rocky/", HealthPath: "9/isos/x86_64/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		RewriteHosts: []string{"download.rockylinux.org", "dl.rockylinux.org", "*.rockylinux.org"},
 		Help: model.HelpConfig{
 			Enabled: true, Title: "Rocky Linux ISO", Summary: "Rocky Linux 官方系统安装镜像下载", Template: "builtin://help/rocky-iso.md", TemplateVersion: 1,
 			Variants: []model.HelpVariant{
@@ -200,6 +203,7 @@ var builtins = []Profile{
 	},
 	{
 		Name: "Arch Linux ISO", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://geo.mirror.pkgbuild.com/iso/", HealthPath: "latest/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		RewriteHosts: []string{"geo.mirror.pkgbuild.com", "mirror.pkgbuild.com", "*.pkgbuild.com", "*.archlinux.org"},
 		Help: model.HelpConfig{
 			Enabled: true, Title: "Arch Linux ISO", Summary: "Arch Linux 官方安装镜像下载", Template: "builtin://help/arch-iso.md", TemplateVersion: 1,
 		},

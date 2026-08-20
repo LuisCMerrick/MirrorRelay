@@ -299,7 +299,16 @@ func isAllowedRewriteOrigin(repository model.Mirror, target *url.URL) bool {
 		} else {
 			aHost = strings.ToLower(strings.TrimSuffix(aHost, "."))
 		}
+		hostMatches := false
 		if aHost == targetHost {
+			hostMatches = true
+		} else if strings.HasPrefix(aHost, "*.") {
+			suffix := aHost[1:]
+			if strings.HasSuffix(targetHost, suffix) || targetHost == aHost[2:] {
+				hostMatches = true
+			}
+		}
+		if hostMatches {
 			if aPort != "" {
 				if aPort == targetPort {
 					return true
