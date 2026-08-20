@@ -82,6 +82,9 @@ func (s *Server) healthStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func repositoryHealthState(repository model.Mirror) string {
+	if !repository.Enabled || !repository.HealthCheckEnabled {
+		return "disabled"
+	}
 	hasUnknown, hasEnabled := false, false
 	for _, upstream := range repository.Upstreams {
 		if !upstream.Enabled {

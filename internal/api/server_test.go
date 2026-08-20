@@ -168,6 +168,8 @@ func TestWebSettingsResetReportsRestartAfterAppliedOverride(t *testing.T) {
 func TestRepositoryHealthStateUsesAnyViableUpstream(t *testing.T) {
 	t.Run("healthy backup", func(t *testing.T) {
 		repo := model.Mirror{
+			Enabled:            true,
+			HealthCheckEnabled: true,
 			Upstreams: []model.Upstream{
 				{Enabled: true, HealthStatus: "unhealthy"},
 				{Enabled: true, HealthStatus: "healthy"},
@@ -179,6 +181,8 @@ func TestRepositoryHealthStateUsesAnyViableUpstream(t *testing.T) {
 	})
 	t.Run("unknown remains viable", func(t *testing.T) {
 		repo := model.Mirror{
+			Enabled:            true,
+			HealthCheckEnabled: true,
 			Upstreams: []model.Upstream{
 				{Enabled: true, HealthStatus: "unhealthy"},
 				{Enabled: true, HealthStatus: "unknown"},
@@ -190,6 +194,8 @@ func TestRepositoryHealthStateUsesAnyViableUpstream(t *testing.T) {
 	})
 	t.Run("all unhealthy", func(t *testing.T) {
 		repo := model.Mirror{
+			Enabled:            true,
+			HealthCheckEnabled: true,
 			Upstreams: []model.Upstream{
 				{Enabled: true, HealthStatus: "unhealthy"},
 				{Enabled: false, HealthStatus: "healthy"},
@@ -201,12 +207,26 @@ func TestRepositoryHealthStateUsesAnyViableUpstream(t *testing.T) {
 	})
 	t.Run("no enabled upstream", func(t *testing.T) {
 		repo := model.Mirror{
+			Enabled:            true,
+			HealthCheckEnabled: true,
 			Upstreams: []model.Upstream{
 				{Enabled: false, HealthStatus: "healthy"},
 			},
 		}
 		if state := repositoryHealthState(repo); state != "unknown" {
 			t.Fatalf("expected unknown when no upstreams are enabled, got %q", state)
+		}
+	})
+	t.Run("disabled repository", func(t *testing.T) {
+		repo := model.Mirror{
+			Enabled:            false,
+			HealthCheckEnabled: true,
+			Upstreams: []model.Upstream{
+				{Enabled: true, HealthStatus: "healthy"},
+			},
+		}
+		if state := repositoryHealthState(repo); state != "disabled" {
+			t.Fatalf("expected disabled when repository is disabled, got %q", state)
 		}
 	})
 }

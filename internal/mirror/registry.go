@@ -207,6 +207,7 @@ var repositoryTypes = map[string]bool{
 	"generic": true, "apt": true, "rpm": true, "apk": true, "opkg": true,
 	"pypi": true, "npm": true, "maven": true, "nuget": true, "cargo": true,
 	"goproxy": true, "conda": true, "docker-registry": true, "oci-registry": true,
+	"iso": true,
 }
 
 func NormalizeAndValidate(m *model.Mirror, allowHTTP, globallyAllowPrivate bool) error {

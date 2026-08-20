@@ -85,6 +85,15 @@ function generateClientPlayground(repository, currentBaseUrl) {
       ];
       defaultVariant = variants[0].id;
       break;
+    case 'iso':
+      variants = [
+        { id: 'aria2', label: 'Aria2 (16-thread High Speed)' },
+        { id: 'wget', label: 'Wget (Resumable Download)' },
+        { id: 'curl', label: 'Curl' },
+        { id: 'sha256', label: 'SHA256 Checksum Verification' }
+      ];
+      defaultVariant = variants[0].id;
+      break;
     default:
       variants = [
         { id: 'generic', label: 'Standard', cli: `curl -fLO ${baseUrl}/path/to/file` }
@@ -199,6 +208,26 @@ function computePlaygroundOutput(type, variantId, baseUrl) {
       filePath = '~/.m2/settings.xml';
       fileContent = `<settings>\n  <mirrors>\n    <mirror>\n      <id>mirrorrelay</id>\n      <name>MirrorRelay Central</name>\n      <url>${baseUrl}/</url>\n      <mirrorOf>central</mirrorOf>\n    </mirror>\n  </mirrors>\n</settings>`;
       cliCmd = `mkdir -p ~/.m2`;
+      break;
+
+    case 'iso':
+      fileName = 'download.sh';
+      filePath = './download.sh';
+      if (variantId === 'aria2') {
+        fileContent = `aria2c -x 16 -s 16 -k 1M -c "${baseUrl}/path/to/image.iso"`;
+        cliCmd = `aria2c -x 16 -s 16 -k 1M -c "${baseUrl}/path/to/image.iso"`;
+      } else if (variantId === 'wget') {
+        fileContent = `wget -c --progress=bar:force "${baseUrl}/path/to/image.iso"`;
+        cliCmd = `wget -c --progress=bar:force "${baseUrl}/path/to/image.iso"`;
+      } else if (variantId === 'sha256') {
+        fileName = 'verify.sh';
+        filePath = './verify.sh';
+        fileContent = `curl -sSL "${baseUrl}/SHA256SUMS" | sha256sum -c --ignore-missing`;
+        cliCmd = `curl -sSL "${baseUrl}/SHA256SUMS" | sha256sum -c --ignore-missing`;
+      } else {
+        fileContent = `curl -C - -O -L "${baseUrl}/path/to/image.iso"`;
+        cliCmd = `curl -C - -O -L "${baseUrl}/path/to/image.iso"`;
+      }
       break;
 
     default:

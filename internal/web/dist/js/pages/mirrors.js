@@ -60,11 +60,11 @@ function renderMirrorsTable() {
         <span class="upstream-pill">${esc((active.url || '').replace(/^https?:\/\//, '').slice(0, 36) || '—')}</span>
       </td>
       <td>
-        <span class="badge ${isHealthy ? 'ok' : 'bad'}">
-          <span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>
+        <span class="badge ${isHealthy ? 'ok' : (health === 'disabled' ? '' : (health === 'unknown' ? 'yellow' : 'bad'))}">
+          ${health === 'disabled' ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
           ${esc(stateLabel(health))}
         </span>
-        <small>${active.latency_ms ? `${number(active.latency_ms)} ms` : '—'}</small>
+        <small>${active.latency_ms && health !== 'disabled' ? `${number(active.latency_ms)} ms` : '—'}</small>
       </td>
       <td>
         <span class="badge ${repository.config_state === 'active' ? 'ok' : 'bad'}" title="${esc(repository.config_error || '')}">

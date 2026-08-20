@@ -25,10 +25,11 @@ export async function loadHealth() {
       <div class="health-repo-list">
         ${(health.repositories || []).map(repository => {
           const isHealthy = repository.health_state === 'healthy';
+          const isDisabled = repository.health_state === 'disabled';
           return `<div class="kv">
             <span><strong>${esc(repository.name)}</strong></span>
-            <span class="badge ${isHealthy ? 'ok' : 'bad'}">
-              <span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>
+            <span class="badge ${isHealthy ? 'ok' : (isDisabled ? '' : (repository.health_state === 'unknown' ? 'yellow' : 'bad'))}">
+              ${isDisabled ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
               ${esc(stateLabel(repository.health_state))}
             </span>
           </div>`;

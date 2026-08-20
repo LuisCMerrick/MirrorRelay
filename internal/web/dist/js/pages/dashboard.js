@@ -39,8 +39,8 @@ export async function loadDashboard() {
         <small>${esc(repository.slug)}</small>
       </td>
       <td>
-        <span class="badge ${isHealthy ? 'ok' : 'bad'}">
-          <span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>
+        <span class="badge ${isHealthy ? 'ok' : (health === 'disabled' ? '' : (health === 'unknown' ? 'yellow' : 'bad'))}">
+          ${health === 'disabled' ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
           ${esc(stateLabel(health))}
         </span>
       </td>

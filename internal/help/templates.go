@@ -256,6 +256,129 @@ sed -i.bak 's|https://downloads.openwrt.org|{{REPOSITORY_URL}}|g' /etc/opkg/dist
 opkg update
 ` + "```" + `
 `,
+
+	"builtin://help/ubuntu-iso.md": `## Ubuntu Releases 官方 ISO 镜像下载
+
+### 1. 镜像目录地址
+当前镜像站公开访问路径：
+` + "```" + `text
+{{REPOSITORY_URL}}
+` + "```" + `
+
+### 2. 常用版本快捷下载 (推荐使用多线程断点续传)
+
+#### Aria2 (高速 16 线程下载)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}noble/ubuntu-24.04-desktop-amd64.iso
+` + "```" + `
+
+#### Wget (断点续传)
+` + "```" + `bash
+wget -c {{REPOSITORY_URL}}noble/ubuntu-24.04-desktop-amd64.iso
+` + "```" + `
+
+#### Curl
+` + "```" + `bash
+curl -C - -O -L {{REPOSITORY_URL}}noble/ubuntu-24.04-desktop-amd64.iso
+` + "```" + `
+
+### 3. SHA256 完整性校验
+` + "```" + `bash
+curl -sSL {{REPOSITORY_URL}}noble/SHA256SUMS | sha256sum -c --ignore-missing
+` + "```" + `
+`,
+
+	"builtin://help/debian-cd.md": `## Debian CD / Live ISO 镜像下载
+
+### 1. 镜像目录地址
+当前镜像站公开访问路径：
+` + "```" + `text
+{{REPOSITORY_URL}}
+` + "```" + `
+
+### 2. 常用安装盘下载
+
+#### Netinst 网络安装盘 (约 700MB)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso
+` + "```" + `
+
+#### DVD 离线完整安装盘 (约 4.4GB)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}current/amd64/iso-dvd/debian-12.8.0-amd64-DVD-1.iso
+` + "```" + `
+
+### 3. SHA256 校验
+` + "```" + `bash
+curl -sSL {{REPOSITORY_URL}}current/amd64/iso-cd/SHA256SUMS | sha256sum -c --ignore-missing
+` + "```" + `
+`,
+
+	"builtin://help/rocky-iso.md": `## Rocky Linux 官方安装 ISO 镜像下载
+
+### 1. 镜像目录地址
+当前镜像站公开访问路径：
+` + "```" + `text
+{{REPOSITORY_URL}}
+` + "```" + `
+
+### 2. 常用 ISO 镜像下载
+
+#### Rocky Linux 9 x86_64 DVD ISO (完整离线安装)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}9/isos/x86_64/Rocky-9-latest-x86_64-dvd.iso
+` + "```" + `
+
+#### Rocky Linux 9 x86_64 Minimal ISO (最小化安装)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso
+` + "```" + `
+`,
+
+	"builtin://help/arch-iso.md": `## Arch Linux 官方安装镜像下载
+
+### 1. 镜像目录地址
+当前镜像站公开访问路径：
+` + "```" + `text
+{{REPOSITORY_URL}}
+` + "```" + `
+
+### 2. 最新 ISO 镜像下载
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}latest/archlinux-x86_64.iso
+` + "```" + `
+
+### 3. SHA256 校验
+` + "```" + `bash
+curl -sSL {{REPOSITORY_URL}}latest/sha256sums.txt | sha256sum -c --ignore-missing
+` + "```" + `
+`,
+
+	"builtin://help/iso.md": `## 系统镜像与 ISO 资源下载说明
+
+### 1. 镜像文件目录
+当前镜像站公开访问路径：
+` + "```" + `text
+{{REPOSITORY_URL}}
+` + "```" + `
+
+### 2. 多线程与断点续传下载工具
+
+#### Aria2 (推荐，16 并发分块下载)
+` + "```" + `bash
+aria2c -x 16 -s 16 -k 1M -c {{REPOSITORY_URL}}path/to/image.iso
+` + "```" + `
+
+#### Wget (断点续传)
+` + "```" + `bash
+wget -c {{REPOSITORY_URL}}path/to/image.iso
+` + "```" + `
+
+#### Curl (断点续传)
+` + "```" + `bash
+curl -C - -O -L {{REPOSITORY_URL}}path/to/image.iso
+` + "```" + `
+`,
 }
 
 // GetTemplate returns the raw template text by template ID.
@@ -289,5 +412,10 @@ func ListTemplates() []TemplateInfo {
 		{ID: "builtin://help/npm.md", Title: "npm", Summary: "npm JavaScript 软件包注册表使用说明", Type: "npm", Version: 1},
 		{ID: "builtin://help/docker-ce.md", Title: "Docker CE", Summary: "Docker CE 社区版安装源使用说明", Type: "apt", Version: 1},
 		{ID: "builtin://help/openwrt.md", Title: "OpenWrt", Summary: "OpenWrt opkg 软件包仓库使用说明", Type: "opkg", Version: 1},
+		{ID: "builtin://help/ubuntu-iso.md", Title: "Ubuntu Releases (ISO)", Summary: "Ubuntu 官方 ISO 系统镜像下载指南", Type: "iso", Version: 1},
+		{ID: "builtin://help/debian-cd.md", Title: "Debian CD / ISO", Summary: "Debian 官方安装盘与 Live ISO 镜像下载指南", Type: "iso", Version: 1},
+		{ID: "builtin://help/rocky-iso.md", Title: "Rocky Linux ISO", Summary: "Rocky Linux 官方系统安装镜像下载指南", Type: "iso", Version: 1},
+		{ID: "builtin://help/arch-iso.md", Title: "Arch Linux ISO", Summary: "Arch Linux 官方安装镜像下载指南", Type: "iso", Version: 1},
+		{ID: "builtin://help/iso.md", Title: "Generic ISO / Images", Summary: "通用操作系统镜像与 ISO 下载说明", Type: "iso", Version: 1},
 	}
 }

@@ -202,8 +202,13 @@ func (c *Checker) check(parent context.Context, repository model.Mirror, upstrea
 	if expected == 0 {
 		expected = http.StatusOK
 	}
-	result.Healthy = response.StatusCode == expected
-	if !result.Healthy {
+	isRegistryV2 := repository.Type == "docker-registry" || repository.Type == "oci-registry" || strings.HasSuffix(strings.TrimRight(repository.HealthCheckPath, "/"), "v2")
+	if isRegistryV2 && (response.StatusCode == http.StatusOK || response.StatusCode == http.StatusUnauthorized) {
+		result.Healthy = true
+	} else if response.StatusCode == expected {
+		result.Healthy = true
+	} else {
+		result.Healthy = false
 		result.Error = fmt.Sprintf("expected %d, got %d", expected, response.StatusCode)
 	}
 	return result

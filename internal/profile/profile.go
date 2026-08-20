@@ -168,6 +168,43 @@ var builtins = []Profile{
 	{Name: "Docker Hub", Version: "1.0.0", LatestStable: false, Type: "docker-registry", ProxyMode: "registry", Upstream: "https://registry-1.docker.io/", HealthPath: "v2/", CacheEnabled: true, CacheProfile: "registry", PublicMode: "host", AuthMode: "full_proxy", RedirectMode: "full_proxy"},
 	{Name: "Docker Hub", Version: "1.1.0", LatestStable: true, Type: "docker-registry", ProxyMode: "registry", Upstream: "https://registry-1.docker.io/", HealthPath: "v2/", CacheEnabled: true, CacheProfile: "registry", CacheAuthenticated: true, RewriteHosts: []string{"auth.docker.io", "registry-1.docker.io", "production.cloudfront.docker.com"}, PublicMode: "host", AuthMode: "full_proxy", RedirectMode: "full_proxy", BlobTTLSec: 31536000},
 	{Name: "OCI Registry Generic", Version: "1.0.0", LatestStable: true, Type: "oci-registry", ProxyMode: "registry", Upstream: "https://registry.example.com/", CacheEnabled: true, CacheProfile: "registry", PublicMode: "host", AuthMode: "direct", RedirectMode: "full_proxy"},
+	{
+		Name: "Ubuntu Releases (ISO)", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://releases.ubuntu.com/", HealthPath: "24.04/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Ubuntu Releases (ISO)", Summary: "Ubuntu 官方系统安装 ISO 镜像下载", Template: "builtin://help/ubuntu-iso.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "24.04", Label: "Ubuntu 24.04 LTS (Noble)", Codename: "24.04", Default: true},
+				{Key: "22.04", Label: "Ubuntu 22.04 LTS (Jammy)", Codename: "22.04"},
+			},
+		},
+	},
+	{
+		Name: "Debian CD (ISO)", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://cdimage.debian.org/debian-cd/", HealthPath: "current/amd64/iso-cd/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Debian CD / ISO", Summary: "Debian 官方安装盘与 Live ISO 镜像下载", Template: "builtin://help/debian-cd.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "12", Label: "Debian 12 (Bookworm)", Codename: "12", Default: true},
+				{Key: "11", Label: "Debian 11 (Bullseye)", Codename: "11"},
+			},
+		},
+	},
+	{
+		Name: "Rocky Linux ISO", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://download.rockylinux.org/pub/rocky/", HealthPath: "9/isos/x86_64/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Rocky Linux ISO", Summary: "Rocky Linux 官方系统安装镜像下载", Template: "builtin://help/rocky-iso.md", TemplateVersion: 1,
+			Variants: []model.HelpVariant{
+				{Key: "9", Label: "Rocky Linux 9", Codename: "9", Default: true},
+				{Key: "8", Label: "Rocky Linux 8", Codename: "8"},
+			},
+		},
+	},
+	{
+		Name: "Arch Linux ISO", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://geo.mirror.pkgbuild.com/iso/", HealthPath: "latest/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true,
+		Help: model.HelpConfig{
+			Enabled: true, Title: "Arch Linux ISO", Summary: "Arch Linux 官方安装镜像下载", Template: "builtin://help/arch-iso.md", TemplateVersion: 1,
+		},
+	},
+	{Name: "Generic ISO / Images", Version: "1.0.0", LatestStable: true, Type: "iso", ProxyMode: "transparent", Upstream: "https://example.com/iso/", CacheEnabled: true, CacheProfile: "packages", PublicMode: "path", HTMLRewrite: true},
 	{Name: "Custom", Version: "1.0.0", LatestStable: true, Type: "generic", ProxyMode: "custom", Upstream: "https://example.com/", CacheProfile: "standard", PublicMode: "path"},
 }
 
