@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.12
+- **Settings State Discrepancy & False Restart Prompt Resolution**:
+  - Eliminated false "Saved values differ from the running process; restart MirrorRelay" warnings on the settings page by normalizing dynamic appearance configs (`UIEnhancement`), `nil` vs empty slice representations (`AdminCIDRs`), and duration string formatting across comparison routines.
+- **Wildcard Rewrite Host & Upstream Redirect Mirror Matching**:
+  - Enhanced `isAllowedRewriteOrigin` with wildcard subdomain matching (`*.acc.umu.se`, `*.debian.org`, `*.ubuntu.com`, `*.rockylinux.org`, `*.pkgbuild.com`, `*.archlinux.org`), enabling seamless proxying and caching for Debian CD/Live ISO and other mirrors that redirect via geo-dispatchers.
+- **CI Automation on Push**:
+  - Configured GitHub Actions CI workflow to trigger automatically on direct pushes to `main`.
+
 ## v0.0.11
 - **Docker / OCI Registry Health Check Handshake Compliance**:
   - Aligned health checker probe validation with the OCI Distribution Specification and Docker Registry v2 API: unauthenticated `/v2/` probes receiving `HTTP 401 Unauthorized` with `Www-Authenticate` challenge headers are recognized as healthy endpoints alongside `HTTP 200 OK`.
