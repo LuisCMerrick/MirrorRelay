@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.11
+- **Docker / OCI Registry Health Check Handshake Compliance**:
+  - Aligned health checker probe validation with the OCI Distribution Specification and Docker Registry v2 API: unauthenticated `/v2/` probes receiving `HTTP 401 Unauthorized` with `Www-Authenticate` challenge headers are recognized as healthy endpoints alongside `HTTP 200 OK`.
+- **Disabled Repository State Semantics & UI Normalization**:
+  - Fixed health state resolution for disabled repositories (`Enabled = false` or `HealthCheckEnabled = false`) to explicitly return `"disabled"` instead of `"unknown"`.
+  - Updated Web UI dashboard, repository table, and health view to render neutral `"Disabled"` (`已禁用`) badges and suppress alarm indicators for disabled mirrors.
+- **Operating System ISO / Image Repository Support & Templates**:
+  - Added native `iso` repository type support across core registry, routing, and proxy pipelines.
+  - Added built-in profiles and interactive help guides for major OS distributions: Ubuntu Releases (ISO), Debian CD/Live ISO, Rocky Linux ISO, Arch Linux ISO, and Generic ISO / OS Images.
+  - Added interactive Client Setup Generator downloads and multi-threaded CLI commands (`aria2c -x 16`, `wget -c`, `curl -C -`, `sha256sum -c`) for ISO repositories.
+
 ## v0.0.10
 - **Smart Cache Warm-Up & Predictive Pre-Fetching Engine (`warmup`)**:
   - Implemented intelligent upstream package & index warm-up with recursive metadata extraction (APT `Packages.gz`/`InRelease`, RPM `repodata.xml`, PyPI `simple/`).

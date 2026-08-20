@@ -1,6 +1,6 @@
 .PHONY: build check package release release-mirrorrelay test test-integration test-race upstream-nginx-musl upstream-nginx-musl-amd64 upstream-nginx-musl-arm64 verify-package
 
-VERSION ?= 0.0.10
+VERSION ?= 0.0.11
 ARCH ?= amd64
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
 SOURCE_DATE_EPOCH ?= $(shell git show -s --format=%ct HEAD 2>/dev/null || date +%s)
