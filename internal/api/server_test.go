@@ -165,6 +165,37 @@ func TestWebSettingsResetReportsRestartAfterAppliedOverride(t *testing.T) {
 	}
 }
 
+func TestWebSettingsEqualIgnoresAppearanceAndNormalizesDurations(t *testing.T) {
+	cfg := config.Default()
+	left := config.WebSettingsFrom(cfg)
+	right := config.WebSettingsFrom(cfg)
+
+	// Mutate dynamic appearance config on one side
+	left.UIEnhancement.Enabled = true
+	left.UIEnhancement.Theme = "dark"
+	left.UIEnhancement.AccentColor = "#123456"
+
+	// Express durations in different formats
+	left.HTTP.ReadTimeout = "20s"
+	right.HTTP.ReadTimeout = "20000ms"
+	left.HTTP.WriteTimeout = "1h"
+	right.HTTP.WriteTimeout = "1h0m0s"
+
+	// Nil vs empty slice
+	left.Security.AdminCIDRs = nil
+	right.Security.AdminCIDRs = []string{}
+
+	if !webSettingsEqual(left, right) {
+		t.Fatalf("expected webSettingsEqual to be true for matching operational settings despite appearance/duration differences")
+	}
+
+	// Changing an operational setting should report mismatch
+	right.Logging.KeepDays += 7
+	if webSettingsEqual(left, right) {
+		t.Fatalf("expected webSettingsEqual to be false when operational settings differ")
+	}
+}
+
 func TestRepositoryHealthStateUsesAnyViableUpstream(t *testing.T) {
 	t.Run("healthy backup", func(t *testing.T) {
 		repo := model.Mirror{

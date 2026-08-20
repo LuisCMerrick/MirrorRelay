@@ -161,7 +161,7 @@ func WebSettingsFrom(c Config) WebSettings {
 		Logging: WebLoggingSettings{QueueSize: c.Logging.QueueSize, MaxSizeMB: c.Logging.MaxSizeMB, KeepDays: c.Logging.KeepDays},
 		Security: WebSecuritySettings{AllowHTTPUpstream: c.Security.AllowHTTPUpstream, AllowPrivateUpstream: c.Security.AllowPrivateUpstream,
 			ExposeClientIP: c.Security.ExposeClientIP, SessionTimeout: c.Security.SessionTimeout.String(), LoginWindow: c.Security.LoginWindow.String(),
-			LoginMaxFailures: c.Security.LoginMaxFailures, AdminCIDRs: append([]string(nil), c.Security.AdminCIDRs...)},
+			LoginMaxFailures: c.Security.LoginMaxFailures, AdminCIDRs: append([]string{}, c.Security.AdminCIDRs...)},
 		Transport: WebTransportSettings{DialTimeout: c.Transport.DialTimeout.String(), KeepAlive: c.Transport.KeepAlive.String(),
 			TLSHandshakeTimeout: c.Transport.TLSHandshakeTimeout.String(), ResponseHeaderTimeout: c.Transport.ResponseHeaderTimeout.String(),
 			IdleConnTimeout: c.Transport.IdleConnTimeout.String(), MaxIdleConns: c.Transport.MaxIdleConns, MaxIdleConnsPerHost: c.Transport.MaxIdleConnsPerHost},
@@ -195,7 +195,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.Logging.QueueSize, candidate.Logging.MaxSizeMB, candidate.Logging.KeepDays = w.Logging.QueueSize, w.Logging.MaxSizeMB, w.Logging.KeepDays
 	candidate.Security.AllowHTTPUpstream, candidate.Security.AllowPrivateUpstream = w.Security.AllowHTTPUpstream, w.Security.AllowPrivateUpstream
 	candidate.Security.ExposeClientIP, candidate.Security.LoginMaxFailures = w.Security.ExposeClientIP, w.Security.LoginMaxFailures
-	candidate.Security.AdminCIDRs = append([]string(nil), w.Security.AdminCIDRs...)
+	candidate.Security.AdminCIDRs = append([]string{}, w.Security.AdminCIDRs...)
 	candidate.Transport.MaxIdleConns, candidate.Transport.MaxIdleConnsPerHost = w.Transport.MaxIdleConns, w.Transport.MaxIdleConnsPerHost
 	candidate.Limits.MaxTotalConcurrency, candidate.Limits.MaxIPConcurrency = w.Limits.MaxTotalConcurrency, w.Limits.MaxIPConcurrency
 	candidate.Limits.BandwidthLimitBPS = w.Limits.BandwidthLimitBPS

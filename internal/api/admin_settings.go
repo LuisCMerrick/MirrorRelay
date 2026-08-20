@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
@@ -31,9 +32,48 @@ var webSettingsFileOnly = []string{
 	"upstream_nginx.ca_bundle",
 }
 
+func normalizeForComparison(w config.WebSettings) config.WebSettings {
+	w.UIEnhancement = model.UIEnhancementConfig{}
+	w.Warmup = model.WarmupConfig{}
+	if w.Security.AdminCIDRs == nil {
+		w.Security.AdminCIDRs = []string{}
+	}
+	normalizeDuration := func(s *string) {
+		if *s != "" {
+			if d, err := time.ParseDuration(*s); err == nil {
+				*s = d.String()
+			}
+		}
+	}
+	normalizeDuration(&w.HTTP.ReadTimeout)
+	normalizeDuration(&w.HTTP.WriteTimeout)
+	normalizeDuration(&w.HTTP.IdleTimeout)
+	normalizeDuration(&w.Cache.Inactive)
+	normalizeDuration(&w.Cache.MetadataTTL)
+	normalizeDuration(&w.Cache.PackageTTL)
+	normalizeDuration(&w.Cache.CleanupInterval)
+	normalizeDuration(&w.Cache.WaitForFill)
+	normalizeDuration(&w.Security.SessionTimeout)
+	normalizeDuration(&w.Security.LoginWindow)
+	normalizeDuration(&w.Transport.DialTimeout)
+	normalizeDuration(&w.Transport.KeepAlive)
+	normalizeDuration(&w.Transport.TLSHandshakeTimeout)
+	normalizeDuration(&w.Transport.ResponseHeaderTimeout)
+	normalizeDuration(&w.Transport.IdleConnTimeout)
+	normalizeDuration(&w.Health.WorkerInterval)
+	normalizeDuration(&w.Shutdown.GracePeriod)
+	normalizeDuration(&w.UpstreamNginx.ResolverRefresh)
+	normalizeDuration(&w.UpstreamNginx.RestartWindow)
+	normalizeDuration(&w.UpstreamNginx.RestartInitialBackoff)
+	normalizeDuration(&w.UpstreamNginx.RestartMaxBackoff)
+	return w
+}
+
 func webSettingsEqual(left, right config.WebSettings) bool {
-	leftJSON, leftErr := json.Marshal(left)
-	rightJSON, rightErr := json.Marshal(right)
+	leftNorm := normalizeForComparison(left)
+	rightNorm := normalizeForComparison(right)
+	leftJSON, leftErr := json.Marshal(leftNorm)
+	rightJSON, rightErr := json.Marshal(rightNorm)
 	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
