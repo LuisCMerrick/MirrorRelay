@@ -85,6 +85,7 @@ distributed:
   enabled: true
   role: coordinator           # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
+  allow_http: false           # 除非显式开启，否则强制 HTTPS
   node:
     name: "coord-01"
     public_base_url: "https://repo-hub.example.com"
@@ -131,6 +132,7 @@ distributed:
   enabled: true
   role: edge                  # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
+  allow_http: false
   node:
     name: "Edge Shanghai"
     public_base_url: "https://edge-sh.example.com"
@@ -142,8 +144,8 @@ distributed:
 
 ## 5. 安全与隔离规范
 
-- **集群通信双向鉴权**：Coordinator 与 Edge 节点间的探针交互（`/api/v1/cluster/manifest`、`/api/v1/cluster/health`）必须携带加密集群 Token 并经由常量时间比较校验。
-- **探针 SSRF 安全**：节点探针在发起 HTTP 请求前严格校验解析 IP，默认禁止非授权私网地址。
+- **集群通信鉴权**：探针、同步与淘汰端点都要求共享的高强度集群 Token，并使用常量时间比较。同步接收端位于浏览器 Session/CSRF 流程之外，但只接受 `POST`、Edge 角色及该集群 Token；请求体有大小上限并采用严格 JSON 解码。
+- **SSRF 安全**：节点 URL 只能是 Origin，不允许凭据、路径前缀、查询或片段。默认强制 HTTPS；明文 HTTP 必须显式设置 `distributed.allow_http: true`，私网/环回/链路本地目标还必须独立设置 `security.allow_private_upstream: true`。健康检查、配置同步及缓存淘汰在发送 Token 前都执行同一策略，连接只使用策略允许的地址，保留 TLS 主机名验证，并禁止重定向。
 - **缓存数据物理隔离**：各边缘节点缓存独立落盘，互不污染。
 
 ---
@@ -152,11 +154,13 @@ distributed:
 
 MirrorRelay 提供了一键式及自动化的多节点边缘配置分发与缓存广播机制：
 
-1. **清单推送与多节点同步 (Manifest Push Sync)**：
-   - Coordinator 自动计算全量活跃仓库的标准配置指纹（Canonical Configuration Fingerprint）。
-   - 通过 Web UI 上的「同步全部节点」按钮或 REST API（`POST /admin/api/v1/cluster/sync`），Coordinator 向所有启用的边缘节点并发广播最新配置清单，边缘节点原子热重载生效。
+1. **完整 Active 配置同步**：
+   - Coordinator 仅从本机 Active 仓库快照计算权威标准指纹，绝不会把 Edge 指纹采纳为集群权威。
+   - 通过 Web UI 上的「同步全部节点」按钮或 REST API（`POST /admin/api/v1/cluster/sync`），Coordinator 向每个启用的 Edge 的 `POST /api/v1/cluster/sync/apply` 并发发送完整 Active 仓库与自定义配置快照。
+   - Edge 先验证协议、Generation、Payload 指纹、Capabilities、仓库与路由冲突，再进入正常的 Managed Upstream Nginx Candidate 校验、原子发布与 Graceful Reload 流程。校验或 Reload 失败时保留先前 Active 配置。
+   - HTTP 200 本身不代表成功；Coordinator 只接受严格 JSON 中明确的 `applied` 状态以及完全匹配的指纹、协议、Generation 与 Capabilities，之后才把 Edge 记录为已同步。
 2. **分布式缓存淘汰广播 (Distributed Cache Purge)**：
-   - 当在主节点执行全局缓存淘汰（`DELETE /cache`）或定向路径淘汰时，系统自动向所有健康边缘节点并发广播淘汰事件（`POST /cluster/sync/purge`），实现集群级缓存一致性。
+   - Coordinator 上的全局、仓库及对象淘汰会先推进本地 Generation，再向每个启用的 Edge 的 `POST /api/v1/cluster/sync/purge` 广播同一 Scope。
+   - 每个 Edge 回执都会被校验。API 响应与单条汇总审计会记录目标数、成功数及逐节点失败（包括部分失败），而本地淘汰仍然有效。
 3. **配置漂移告警与可视化巡检**：
    - 探针实时比对各边缘节点返回的指纹。一旦发生网络分区或配置漂移，自动触发 `config_change` Webhook 告警并在前端高亮展示。
-

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +15,116 @@ import (
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
 	"github.com/LuisCMerrick/MirrorRelay/internal/database"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
+
+type reloadFailureRunner struct {
+	reloadCalls  int
+	failReloadAt int
+}
+
+func (r *reloadFailureRunner) Run(_ context.Context, _ string, args ...string) (string, error) {
+	if strings.Contains(strings.Join(args, " "), "-s reload") {
+		r.reloadCalls++
+		if r.reloadCalls == r.failReloadAt {
+			return "forced reload failure", errors.New("forced reload failure")
+		}
+	}
+	return "ok", nil
+}
+
+func (*reloadFailureRunner) Start(string, ...string) (processHandle, error) {
+	return nil, errors.New("unexpected process start")
+}
+
+func TestApplyConfigurationRestoresDesiredAndActiveAfterReloadFailure(t *testing.T) {
+	ctx := context.Background()
+	store, err := database.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRoot := t.TempDir()
+	cfg := config.Default()
+	cfg.UpstreamNginx.Mode = "external"
+	cfg.UpstreamNginx.Binary = executable
+	cfg.UpstreamNginx.Prefix = filepath.Join(runtimeRoot, "upstream-nginx")
+	cfg.UpstreamNginx.PID = filepath.Join(runtimeRoot, "upstream-nginx.pid")
+	cfg.UpstreamNginx.LogPath = filepath.Join(runtimeRoot, "logs")
+	cfg.UpstreamNginx.UpstreamSocketEnabled = false
+	cfg.UpstreamNginx.UpstreamLocalPort = listener.Addr().(*net.TCPAddr).Port
+	cfg.Cache.Path = filepath.Join(runtimeRoot, "cache")
+	if err := os.WriteFile(cfg.UpstreamNginx.PID, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	activeRepository := model.Mirror{
+		ID: 1, Name: "Packages", Slug: "packages", Type: "generic", Enabled: true,
+		PublicMode: "path", PublicPath: "/packages/", CacheEnabled: true,
+		Upstreams: []model.Upstream{{URL: "https://8.8.8.8/", Enabled: true, Priority: 100, Weight: 100}},
+	}
+	if err := mirror.NormalizeAndValidate(&activeRepository, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceConfiguration(ctx, []model.Mirror{activeRepository}, []model.CustomConfig{}); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &reloadFailureRunner{}
+	controller := newController(cfg, store, NewGenerator(cfg, nil), runner)
+	activeVersion, err := controller.Reconcile(ctx, "test", "initial active configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousTarget, err := os.Readlink(filepath.Join(cfg.UpstreamNginx.Prefix, "current"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidate := activeRepository
+	candidate.Upstreams = append([]model.Upstream(nil), activeRepository.Upstreams...)
+	candidate.Upstreams[0].URL = "https://1.1.1.1/"
+	runner.failReloadAt = runner.reloadCalls + 1
+	if _, err := controller.ApplyConfiguration(ctx, []model.Mirror{candidate}, []model.CustomConfig{}, "cluster", "failing edge sync"); err == nil || !strings.Contains(err.Error(), "forced reload failure") {
+		t.Fatalf("candidate reload unexpectedly succeeded: %v", err)
+	}
+
+	desired, err := store.ListMirrors(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, custom, available := controller.ActiveConfiguration()
+	if !available || len(desired) != 1 || len(active) != 1 || custom == nil ||
+		desired[0].Upstreams[0].URL != activeRepository.Upstreams[0].URL || active[0].Upstreams[0].URL != activeRepository.Upstreams[0].URL {
+		t.Fatalf("previous desired/active configuration was not preserved: desired=%+v active=%+v custom=%+v", desired, active, custom)
+	}
+	currentTarget, err := os.Readlink(filepath.Join(cfg.UpstreamNginx.Prefix, "current"))
+	if err != nil || currentTarget != previousTarget {
+		t.Fatalf("published configuration was not restored: got=%q want=%q err=%v", currentTarget, previousTarget, err)
+	}
+	versions, err := store.ListConfigVersions(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 || versions[0].Active || !versions[1].Active || versions[1].Version != activeVersion.Version {
+		t.Fatalf("failed candidate was recorded as active: %+v", versions)
+	}
+	effective, err := controller.EffectiveConfig(ctx)
+	if err != nil || effective != activeVersion.Configuration {
+		t.Fatalf("effective configuration did not remain on the active version: err=%v", err)
+	}
+}
 
 func TestRecoverLastActivePublishesPersistedRoutingSnapshot(t *testing.T) {
 	store, err := database.Open(filepath.Join(t.TempDir(), "state.db"))

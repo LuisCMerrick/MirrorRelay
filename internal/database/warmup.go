@@ -158,12 +158,12 @@ func (s *Store) UpdateWarmupJob(ctx context.Context, job model.WarmupJob) (model
 	const query = `
 UPDATE warmup_jobs SET
 	mirror_id = ?, name = ?, cron_expression = ?, url_patterns = ?,
-	enabled = ?, updated_at = ?
+	next_run_at = ?, enabled = ?, updated_at = ?
 WHERE id = ?`
 
 	res, err := s.db.ExecContext(ctx, query,
 		job.MirrorID, job.Name, job.CronExpression, string(patternsBytes),
-		enabledInt, timeText(now), job.ID,
+		job.NextRunAt, enabledInt, timeText(now), job.ID,
 	)
 	if err != nil {
 		return model.WarmupJob{}, fmt.Errorf("update warmup job: %w", err)
@@ -176,6 +176,11 @@ WHERE id = ?`
 		return model.WarmupJob{}, ErrWarmupJobNotFound
 	}
 	return s.GetWarmupJob(ctx, job.ID)
+}
+
+func (s *Store) UpdateWarmupJobSchedule(ctx context.Context, id int64, nextRun string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE warmup_jobs SET next_run_at=?,updated_at=? WHERE id=?`, nextRun, nowText(), id)
+	return err
 }
 
 func (s *Store) UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error {

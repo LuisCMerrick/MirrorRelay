@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { $, esc, notice } from '../dom.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { setTheme } from '../theme.js';
 
 export async function loadAppearance() {
   const appearance = await api('/appearance').catch(() => ({
@@ -19,18 +20,18 @@ export async function loadAppearance() {
   $('#page-appearance').innerHTML = `
     <div class="panel">
       <h2>${icon('palette', 18)} ${L('Appearance & Branding')}</h2>
-      <p class="muted">${L('Configure Web UI appearance, color themes, branding, custom CSS and directory browser. Appearance settings apply immediately across all interface components.')}</p>
+      <p class="muted">${L('Configure the default administration theme and optional public repository UI enhancements. Browser theme choices are applied immediately and saved locally.')}</p>
     </div>
     <form id="appearance-form" class="settings-form">
       <fieldset>
         <legend>${L('Theme and colors')}</legend>
         <div class="form-grid">
-          <label class="check wide"><input id="app-ui-enabled" type="checkbox" ${appearance.enabled ? 'checked' : ''}><span>${L('Enable UI Enhancement (Themes & Repository Browser)')}</span></label>
+          <label class="check wide"><input id="app-ui-enabled" type="checkbox" ${appearance.enabled ? 'checked' : ''}><span>${L('Enable public repository UI enhancement')}</span></label>
           <label><span>${L('Theme')}</span><select id="app-theme">
-            <option value="system" ${appearance.theme === 'system' ? 'selected' : ''}>System (自动跟随系统)</option>
-            <option value="light" ${appearance.theme === 'light' ? 'selected' : ''}>Light (浅色明亮)</option>
-            <option value="dark" ${appearance.theme === 'dark' ? 'selected' : ''}>Dark (深色暗黑)</option>
-          </select></label>
+            <option value="system" ${appearance.theme === 'system' ? 'selected' : ''}>${L('Auto (follow system)')}</option>
+            <option value="light" ${appearance.theme === 'light' ? 'selected' : ''}>${L('Light')}</option>
+            <option value="dark" ${appearance.theme === 'dark' ? 'selected' : ''}>${L('Dark')}</option>
+          </select><small class="field-help">${L('Instance default for browsers without a saved theme preference.')}</small></label>
           <label><span>${L('Accent Color')}</span><input type="color" id="app-accent-color" value="${esc(appearance.accent_color || '#2563eb')}"></label>
         </div>
       </fieldset>
@@ -98,7 +99,8 @@ export async function loadAppearance() {
       }
     };
     try {
-      await api('/appearance', {method: 'PUT', body: JSON.stringify(payload)});
+      const saved = await api('/appearance', {method: 'PUT', body: JSON.stringify(payload)});
+      setTheme(saved.theme);
       notice(L('Appearance settings saved successfully.'));
       await loadAppearance();
     } catch (err) {
@@ -109,7 +111,8 @@ export async function loadAppearance() {
   $('#reset-appearance-btn').addEventListener('click', async () => {
     if (!confirm(L('Reset appearance settings to default values?'))) return;
     try {
-      await api('/appearance/reset', {method: 'POST'});
+      const reset = await api('/appearance/reset', {method: 'POST'});
+      setTheme(reset.theme);
       notice(L('Appearance settings reset to defaults.'));
       await loadAppearance();
     } catch (err) {

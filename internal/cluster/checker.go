@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -22,7 +21,7 @@ import (
 type Store interface {
 	ListClusterNodes(context.Context) ([]model.ClusterNode, error)
 	GetClusterNode(context.Context, int64) (model.ClusterNode, error)
-	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, string, time.Time) error
+	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, int64, string, time.Time) error
 	ClusterSetting(context.Context, string) (string, bool, error)
 	PutClusterSetting(context.Context, string, string) error
 }
@@ -61,6 +60,9 @@ func NewChecker(cfg config.Config, store Store, router *Router, metrics *Metrics
 	client := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	c := &Checker{
@@ -102,13 +104,14 @@ func (c *Checker) SetClusterFingerprint(ctx context.Context, fp string) error {
 }
 
 func (c *Checker) CheckNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
-	if err := security.ValidateResolvedURL(ctx, node.URL, c.cfg.Security.AllowHTTPUpstream, c.cfg.Security.AllowPrivateUpstream, net.DefaultResolver); err != nil {
-		return c.recordFailure(ctx, node, fmt.Sprintf("validate cluster node url: %v", err))
+	manifestURL, err := nodeEndpointURL(ctx, c.cfg, node.URL, "/api/v1/cluster/manifest")
+	if err != nil {
+		return c.recordFailure(ctx, node, fmt.Sprintf("validate cluster node URL: %v", err))
 	}
-
-	baseURL := strings.TrimRight(node.URL, "/")
-	manifestURL := baseURL + "/api/v1/cluster/manifest"
-	healthURL := baseURL + "/api/v1/cluster/health"
+	healthURL, err := nodeEndpointURL(ctx, c.cfg, node.URL, "/api/v1/cluster/health")
+	if err != nil {
+		return c.recordFailure(ctx, node, fmt.Sprintf("validate cluster node URL: %v", err))
+	}
 
 	token := c.cfg.Distributed.Token
 
@@ -201,7 +204,7 @@ func (c *Checker) recordFailure(ctx context.Context, node model.ClusterNode, err
 	node.LastCheck = now
 
 	if c.store != nil {
-		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, node.Capabilities, errMsg, now)
+		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, node.Capabilities, node.LatencyMS, errMsg, now)
 	}
 
 	return node, nil
@@ -212,18 +215,6 @@ func (c *Checker) recordSuccess(ctx context.Context, node model.ClusterNode, man
 	c.consecutiveS[node.ID]++
 	c.consecutiveF[node.ID] = 0
 	succCount := c.consecutiveS[node.ID]
-
-	// Establish cluster fingerprint if empty
-	if c.fingerprint == "" && manifest.ConfigFingerprint != "" {
-		c.fingerprint = manifest.ConfigFingerprint
-		if c.store != nil {
-			_ = c.store.PutClusterSetting(ctx, "cluster_fingerprint", c.fingerprint)
-		}
-		slog.Info("cluster fingerprint initialized", "fingerprint", c.fingerprint, "source_node", node.Name)
-		if c.audit != nil {
-			c.audit.Record("system", "cluster_fingerprint_init", "cluster", fmt.Sprintf("initialized from %s to %s", node.Name, c.fingerprint), true)
-		}
-	}
 	clusterFP := c.fingerprint
 	c.mu.Unlock()
 
@@ -240,7 +231,7 @@ func (c *Checker) recordSuccess(ctx context.Context, node model.ClusterNode, man
 	var newConfigStatus string
 	if manifest.ProtocolVersion != ClusterProtocolVersion {
 		newConfigStatus = "version_incompatible"
-	} else if clusterFP == "" || manifest.ConfigFingerprint == clusterFP {
+	} else if clusterFP != "" && manifest.ConfigFingerprint == clusterFP {
 		newConfigStatus = "match"
 	} else {
 		newConfigStatus = "mismatch"
@@ -271,7 +262,7 @@ func (c *Checker) recordSuccess(ctx context.Context, node model.ClusterNode, man
 	node.LastCheck = now
 
 	if c.store != nil {
-		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, newConfigStatus, manifest.ConfigFingerprint, manifest.MirrorRelayVersion, manifest.ProtocolVersion, manifest.Capabilities, "", now)
+		_ = c.store.UpdateClusterNodeStatus(ctx, node.ID, newHealth, newConfigStatus, manifest.ConfigFingerprint, manifest.MirrorRelayVersion, manifest.ProtocolVersion, manifest.Capabilities, node.LatencyMS, "", now)
 	}
 
 	return node, nil

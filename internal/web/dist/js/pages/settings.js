@@ -8,6 +8,80 @@ import { icon } from '../icons.js';
 import { getLocale, L } from '../i18n.js';
 import { triggerRestart } from '../restart.js';
 
+const webhookTestProviders = {
+  configured: {
+    label: 'Running configuration',
+    help: 'Uses the single webhook destination in the running process. Saved changes waiting for a restart are not used.'
+  },
+  dingtalk: {
+    label: 'DingTalk',
+    host: 'oapi.dingtalk.com',
+    placeholder: 'https://oapi.dingtalk.com/robot/send?access_token=...',
+    help: 'Sends the DingTalk Markdown payload format to this one-time target.'
+  },
+  feishu: {
+    label: 'Feishu / Lark',
+    host: 'open.feishu.cn',
+    placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/...',
+    help: 'Sends the Feishu rich-post payload format to this one-time target.'
+  },
+  wecom: {
+    label: 'WeCom',
+    host: 'qyapi.weixin.qq.com',
+    placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
+    help: 'Sends the WeCom Markdown payload format to this one-time target.'
+  },
+  slack: {
+    label: 'Slack',
+    host: 'hooks.slack.com',
+    placeholder: 'https://hooks.slack.com/services/...',
+    help: 'Sends the Slack webhook payload format to this one-time target.'
+  },
+  custom: {
+    label: 'Custom JSON webhook',
+    placeholder: 'https://alerts.example.com/hooks/mirrorrelay',
+    help: 'Hosts not recognized as a built-in provider receive the standard MirrorRelay JSON payload.'
+  }
+};
+
+function webhookProviderOptions() {
+  return Object.entries(webhookTestProviders)
+    .map(([value, provider]) => `<option value="${value}">${L(provider.label)}</option>`)
+    .join('');
+}
+
+function updateWebhookTestFields() {
+  const provider = webhookTestProviders[$('#webhook-test-provider').value] || webhookTestProviders.configured;
+  const temporary = provider !== webhookTestProviders.configured;
+  $('#webhook-test-url-field').classList.toggle('hidden', !temporary);
+  $('#webhook-test-secret-field').classList.toggle('hidden', !temporary);
+  $('#webhook-test-url').required = temporary;
+  $('#webhook-test-url').placeholder = provider.placeholder || '';
+  $('#webhook-test-provider-help').textContent = L(provider.help);
+  $('#webhook-test-error').textContent = '';
+}
+
+function webhookTestPayload() {
+  const providerKey = $('#webhook-test-provider').value;
+  const provider = webhookTestProviders[providerKey] || webhookTestProviders.configured;
+  if (providerKey === 'configured') return {};
+
+  const value = $('#webhook-test-url').value.trim();
+  let target;
+  try {
+    target = new URL(value);
+  } catch (_) {
+    throw new Error(L('Enter a valid absolute Webhook URL.'));
+  }
+  if (!['http:', 'https:'].includes(target.protocol)) {
+    throw new Error(L('Webhook URLs must use HTTP or HTTPS.'));
+  }
+  if (provider.host && target.hostname.toLowerCase() !== provider.host) {
+    throw new Error(L('The selected provider requires a URL on %s.', provider.host));
+  }
+  return { url: value, secret: $('#webhook-test-secret').value };
+}
+
 function settingsInput(field, settings) {
   const value = nestedValue(settings, field.path);
   const label = field.label;
@@ -70,17 +144,33 @@ export async function loadSettings() {
       </footer>
     </form>
     <div class="panel" id="webhook-test-panel">
-      <h2>${icon('send', 18)} ${L('Webhook Alerting & Test Notification')}</h2>
-      <p>${L('Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.')}</p>
-      <div class="form-grid">
-        <label class="wide">
-          <span>${L('Target Webhook URL (leave empty to use saved settings)')}</span>
-          <input id="webhook-test-url" type="url" placeholder="https://oapi.dingtalk.com/... or https://open.feishu.cn/...">
-        </label>
+      <h2>${icon('send', 18)} ${L('Webhook notification test')}</h2>
+      <div class="info-callout">
+        <strong>${L('One active destination')}</strong>
+        <p>${L('MirrorRelay has one configured Webhook destination at a time. Its payload format is detected from the URL. The platform choices below test one target; they do not add notification channels.')}</p>
       </div>
-      <footer>
-        <button type="button" class="btn-primary" id="send-test-webhook-btn">${icon('send', 13)} ${L('Send Test Notification')}</button>
-      </footer>
+      <form id="webhook-test-form">
+        <div class="form-grid">
+          <label>
+            <span>${L('Test destination')}</span>
+            <select id="webhook-test-provider">${webhookProviderOptions()}</select>
+            <small id="webhook-test-provider-help" class="field-help"></small>
+          </label>
+          <label class="wide hidden" id="webhook-test-url-field">
+            <span>${L('One-time Webhook URL')}</span>
+            <input id="webhook-test-url" type="url" autocomplete="off">
+          </label>
+          <label class="wide hidden" id="webhook-test-secret-field">
+            <span>${L('Optional HMAC signing secret')}</span>
+            <input id="webhook-test-secret" type="password" autocomplete="new-password">
+            <small class="field-help">${L('Used only for this test in the X-MirrorRelay-Signature header; platform access tokens remain part of the Webhook URL.')}</small>
+          </label>
+        </div>
+        <footer>
+          <div id="webhook-test-error" class="error" role="alert"></div>
+          <button type="submit" class="btn-primary" id="send-test-webhook-btn">${icon('send', 13)} ${L('Send test notification')}</button>
+        </footer>
+      </form>
     </div>`;
 
   const restartNoticeBtn = $('#restart-service-btn');
@@ -88,18 +178,23 @@ export async function loadSettings() {
   const restartFooterBtn = $('#restart-settings-btn');
   if (restartFooterBtn) restartFooterBtn.addEventListener('click', triggerRestart);
 
+  const webhookTestForm = $('#webhook-test-form');
   const webhookTestBtn = $('#send-test-webhook-btn');
-  if (webhookTestBtn) {
-    webhookTestBtn.addEventListener('click', async () => {
+  $('#webhook-test-provider').addEventListener('change', updateWebhookTestFields);
+  updateWebhookTestFields();
+  if (webhookTestForm && webhookTestBtn) {
+    webhookTestForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      $('#webhook-test-error').textContent = '';
       try {
         webhookTestBtn.disabled = true;
-        const res = await api('/webhooks/test', {
+        await api('/webhooks/test', {
           method: 'POST',
-          body: JSON.stringify({ url: $('#webhook-test-url').value.trim() })
+          body: JSON.stringify(webhookTestPayload())
         });
-        notice(L('Test webhook notification delivered successfully!'));
+        notice(L('Test Webhook notification delivered successfully.'));
       } catch (err) {
-        notice(err.message, true);
+        $('#webhook-test-error').textContent = err.message;
       } finally {
         webhookTestBtn.disabled = false;
       }

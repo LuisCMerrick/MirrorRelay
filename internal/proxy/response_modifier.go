@@ -15,6 +15,7 @@ import (
 )
 
 func (e *Engine) modifyResponse(response *http.Response) error {
+	uiEnhancement := e.appearanceConfig()
 	meta, ok := response.Request.Context().Value(requestMetaKey{}).(requestMeta)
 	if !ok {
 		return errors.New("missing proxy request metadata")
@@ -39,18 +40,18 @@ func (e *Engine) modifyResponse(response *http.Response) error {
 		}
 	}
 	if response.Request.Method == http.MethodHead {
-		if ((meta.rewriteHTML || (e.cfg.UIEnhancement.Enabled && e.cfg.UIEnhancement.RepositoryBrowser.Enabled)) && shouldRewriteHTMLBody(response)) || (meta.rewriteMetadata && shouldRewriteBody(response)) {
+		if ((meta.rewriteHTML || (uiEnhancement.Enabled && uiEnhancement.RepositoryBrowser.Enabled)) && shouldRewriteHTMLBody(response)) || (meta.rewriteMetadata && shouldRewriteBody(response)) {
 			sanitizeRewrittenMetadataHead(response)
 		}
 		return nil
 	}
-	if (meta.rewriteHTML || (e.cfg.UIEnhancement.Enabled && e.cfg.UIEnhancement.RepositoryBrowser.Enabled)) && shouldRewriteHTMLBody(response) {
+	if (meta.rewriteHTML || (uiEnhancement.Enabled && uiEnhancement.RepositoryBrowser.Enabled)) && shouldRewriteHTMLBody(response) {
 		metadataConfig := e.cfg.Metadata
 		if meta.repository.MetadataLimitBytes > 0 {
 			metadataConfig.RewriteBufferLimit = meta.repository.MetadataLimitBytes
 		}
 		validator, changed, err := rewriteHTMLResponseBody(response, meta.repository, selected.upstream, meta.logicalURL,
-			metadataConfig, e.cfg.UIEnhancement, acceptsGzip(meta.clientEncoding), &e.compressors)
+			metadataConfig, uiEnhancement, acceptsGzip(meta.clientEncoding), &e.compressors)
 		if err != nil {
 			return err
 		}

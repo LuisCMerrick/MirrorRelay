@@ -114,11 +114,13 @@ type User struct {
 }
 
 type WebhookConfig struct {
-	Enabled bool          `json:"enabled" yaml:"enabled"`
-	URL     string        `json:"url" yaml:"url"`
-	Secret  string        `json:"secret,omitempty" yaml:"secret,omitempty"`
-	Events  []string      `json:"events" yaml:"events"`
-	Timeout time.Duration `json:"timeout" yaml:"timeout"`
+	Enabled      bool          `json:"enabled" yaml:"enabled"`
+	URL          string        `json:"url" yaml:"url"`
+	Secret       string        `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Events       []string      `json:"events" yaml:"events"`
+	Timeout      time.Duration `json:"timeout" yaml:"timeout"`
+	AllowHTTP    bool          `json:"allow_http" yaml:"allow_http"`
+	AllowPrivate bool          `json:"allow_private" yaml:"allow_private"`
 }
 
 type WebhookPayload struct {
@@ -198,6 +200,37 @@ type ClusterManifest struct {
 	ConfigGeneration   int64    `json:"config_generation"`
 	ConfigFingerprint  string   `json:"config_fingerprint"`
 	Capabilities       []string `json:"capabilities"`
+}
+
+type ClusterSyncRequest struct {
+	Manifest      ClusterManifest `json:"manifest"`
+	Repositories  []Mirror        `json:"repositories"`
+	CustomConfigs []CustomConfig  `json:"custom_configs"`
+}
+
+type ClusterSyncResponse struct {
+	Status             string   `json:"status"`
+	Fingerprint        string   `json:"fingerprint"`
+	ProtocolVersion    int      `json:"protocol_version"`
+	ConfigGeneration   int64    `json:"config_generation"`
+	MirrorRelayVersion string   `json:"mirrorrelay_version"`
+	Capabilities       []string `json:"capabilities"`
+}
+
+type ClusterPurgeRequest struct {
+	Scope          string `json:"scope"`
+	RepositorySlug string `json:"repository_slug,omitempty"`
+	ObjectID       string `json:"object_id,omitempty"`
+	ObjectPath     string `json:"object_path,omitempty"`
+}
+
+type ClusterPurgeResponse struct {
+	Status          string `json:"status"`
+	Scope           string `json:"scope"`
+	RepositorySlug  string `json:"repository_slug,omitempty"`
+	ObjectID        string `json:"object_id,omitempty"`
+	Generation      int64  `json:"generation"`
+	PhysicalReclaim string `json:"physical_reclaim"`
 }
 
 type ClusterHealth struct {

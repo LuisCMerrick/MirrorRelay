@@ -77,6 +77,11 @@ func (s *Store) ConfigVersion(ctx context.Context, version int64) (model.ConfigV
 validation_ok,validation_result,active,snapshot,configuration FROM config_versions WHERE version=?`, version))
 }
 
+func (s *Store) ActiveConfigVersion(ctx context.Context) (model.ConfigVersion, error) {
+	return scanConfigVersion(s.db.QueryRowContext(ctx, `SELECT id,version,created_at,operator,description,configuration_hash,
+validation_ok,validation_result,active,snapshot,configuration FROM config_versions WHERE active=1 ORDER BY version DESC LIMIT 1`))
+}
+
 func scanConfigVersion(row scanner) (model.ConfigVersion, error) {
 	var v model.ConfigVersion
 	var created string

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LuisCMerrick/MirrorRelay/internal/appearance"
 	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
 	"github.com/LuisCMerrick/MirrorRelay/internal/database"
@@ -66,6 +67,12 @@ func normalizeForComparison(w config.WebSettings) config.WebSettings {
 	normalizeDuration(&w.UpstreamNginx.RestartWindow)
 	normalizeDuration(&w.UpstreamNginx.RestartInitialBackoff)
 	normalizeDuration(&w.UpstreamNginx.RestartMaxBackoff)
+	if w.Webhook != nil {
+		webhook := *w.Webhook
+		webhook.Events = append([]string{}, w.Webhook.Events...)
+		w.Webhook = &webhook
+		normalizeDuration(&w.Webhook.Timeout)
+	}
 	return w
 }
 
@@ -77,7 +84,7 @@ func webSettingsEqual(left, right config.WebSettings) bool {
 	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
-func (s *Server) webSettings(w http.ResponseWriter, r *http.Request) {
+func (s *Server) webSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	current := config.WebSettingsFrom(s.cfg)
 	fromFile := config.WebSettingsFrom(s.fileConfig)
 	stored, found, err := s.store.Setting(r.Context(), config.WebSettingsKey)
@@ -86,8 +93,10 @@ func (s *Server) webSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
+		restartRequired := !webSettingsEqual(fromFile, current)
+		redactWebSettingsForRole(&fromFile, session.Role)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"settings": fromFile, "source": "configuration_file", "restart_required": !webSettingsEqual(fromFile, current), "file_only": webSettingsFileOnly,
+			"settings": fromFile, "source": "configuration_file", "restart_required": restartRequired, "file_only": webSettingsFileOnly,
 		})
 		return
 	}
@@ -96,13 +105,28 @@ func (s *Server) webSettings(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	if _, err := settings.Apply(s.fileConfig); err != nil {
+	candidate, err := settings.Apply(s.fileConfig)
+	if err != nil {
 		writeInternal(w, err)
 		return
 	}
+	// Normalize newly introduced optional sections so older persisted settings
+	// documents remain editable without losing their YAML-backed values.
+	settings = config.WebSettingsFrom(candidate)
+	restartRequired := !webSettingsEqual(settings, current)
+	redactWebSettingsForRole(&settings, session.Role)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings": settings, "source": "web_ui", "restart_required": !webSettingsEqual(settings, current), "file_only": webSettingsFileOnly,
+		"settings": settings, "source": "web_ui", "restart_required": restartRequired, "file_only": webSettingsFileOnly,
 	})
+}
+
+func redactWebSettingsForRole(settings *config.WebSettings, role string) {
+	if role != "admin" && settings.Webhook != nil {
+		if settings.Webhook.URL != "" {
+			settings.Webhook.URL = redactedValue
+		}
+		settings.Webhook.Secret = ""
+	}
 }
 
 func (s *Server) updateWebSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
@@ -163,7 +187,10 @@ func (s *Server) updateAppearance(w http.ResponseWriter, r *http.Request, sessio
 		writeInternal(w, err)
 		return
 	}
-	s.cfg.UIEnhancement = input
+	if s.appearance == nil {
+		s.appearance = appearance.New(s.cfg.UIEnhancement)
+	}
+	s.appearance.Store(input)
 	_ = s.audit(r, session.Username, "appearance_update", "appearance", "updated UI appearance settings", true)
 	writeJSON(w, http.StatusOK, input)
 }
@@ -173,7 +200,10 @@ func (s *Server) resetAppearance(w http.ResponseWriter, r *http.Request, session
 		writeInternal(w, err)
 		return
 	}
-	s.cfg.UIEnhancement = s.fileConfig.UIEnhancement
+	if s.appearance == nil {
+		s.appearance = appearance.New(s.cfg.UIEnhancement)
+	}
+	s.appearance.Store(s.fileConfig.UIEnhancement)
 	_ = s.audit(r, session.Username, "appearance_reset", "appearance", "reset UI appearance settings to defaults", true)
-	writeJSON(w, http.StatusOK, s.cfg.UIEnhancement)
+	writeJSON(w, http.StatusOK, s.appearanceConfig())
 }

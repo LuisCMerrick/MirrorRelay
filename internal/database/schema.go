@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS cluster_nodes (
   version TEXT NOT NULL DEFAULT '',
   protocol_version INTEGER NOT NULL DEFAULT 0,
   capabilities TEXT NOT NULL DEFAULT '[]',
+  latency_ms INTEGER NOT NULL DEFAULT 0,
   last_check TEXT NOT NULL DEFAULT '',
   last_error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
@@ -249,6 +250,9 @@ CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
 		return err
 	}
 	if err := s.ensureColumn(ctx, "upstreams", "host", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "cluster_nodes", "latency_ms", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	for name, definition := range map[string]string{

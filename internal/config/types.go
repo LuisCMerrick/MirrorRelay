@@ -180,6 +180,7 @@ type DistributedConfig struct {
 	Enabled     bool                     `yaml:"enabled"`
 	Role        string                   `yaml:"role"`
 	Token       string                   `yaml:"token"`
+	AllowHTTP   bool                     `yaml:"allow_http"`
 	Node        DistributedNodeConfig    `yaml:"node"`
 	Routing     DistributedRoutingConfig `yaml:"routing"`
 	HealthCheck DistributedHealthConfig  `yaml:"health_check"`

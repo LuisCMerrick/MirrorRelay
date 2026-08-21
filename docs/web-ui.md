@@ -166,11 +166,16 @@ Bootstrap, credential, filesystem and executable locations remain file-only so t
 
 Repository Desired/Active changes are separate from this page and continue to validate and activate immediately.
 
+The Webhook section configures one active notification destination. MirrorRelay detects DingTalk, Feishu/Lark, WeCom and Slack formats from the URL and uses generic JSON for other hosts. The test panel separates the running destination from one-time platform targets; selecting a one-time target does not save or add another channel.
+
 ## Appearance and Branding
 
-The **Appearance** page manages Web UI styling, color themes, branding identity, custom CSS, and directory browser settings:
+Light, Dark and Auto controls are always available on the login page and in the administration header. The browser saves this preference locally; Auto follows the operating-system `prefers-color-scheme` value and updates when it changes.
 
-- **Theme Mode**: Choose between `System` (auto-detect OS preference), `Light`, or `Dark`.
+The **Appearance** page manages the instance default theme, branding identity, custom CSS, and public directory browser settings:
+
+- **Theme Mode**: Set the instance default for browsers without a local preference: `System` (auto-detect OS preference), `Light`, or `Dark`.
+- **Public UI Enhancement**: Control public repository directory restyling independently from the administration theme selector.
 - **Accent Color**: Customize the primary theme accent color (default `#2563eb`).
 - **Branding**: Set the instance title/name, custom logo URL, and favicon URL.
 - **Login Page**: Customize login page heading title and subtitle.

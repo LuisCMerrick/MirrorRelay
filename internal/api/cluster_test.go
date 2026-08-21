@@ -129,6 +129,20 @@ func TestCoordinatorDistributed307Redirect(t *testing.T) {
 		t.Fatalf("Location mismatch: got %q, want %q", loc, expectedLoc)
 	}
 
+	// Preserve escaped separators, percent signs, Unicode, duplicate slashes and query bytes.
+	escapedURL := "https://repo.example.com/debian/pool/a%2Fb%25c/%E4%B8%AD//pkg?x=%2F&y=%25"
+	escapedRequest := httptest.NewRequest(http.MethodGet, escapedURL, nil)
+	escapedRequest.RemoteAddr = "10.20.1.5:1234"
+	escapedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(escapedRecorder, escapedRequest)
+	if escapedRecorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected encoded request redirect, got %d: %s", escapedRecorder.Code, escapedRecorder.Body.String())
+	}
+	wantEscapedLocation := "https://jp.repo.example.com/debian/pool/a%2Fb%25c/%E4%B8%AD//pkg?x=%2F&y=%25"
+	if got := escapedRecorder.Header().Get("Location"); got != wantEscapedLocation {
+		t.Fatalf("encoded Location changed semantics: got %q, want %q", got, wantEscapedLocation)
+	}
+
 	// 2. Client request for docker-registry -> 501 / Not implemented
 	r2 := httptest.NewRequest(http.MethodGet, "https://repo.example.com/docker/v2/", nil)
 	r2.RemoteAddr = "10.20.1.5:1234"

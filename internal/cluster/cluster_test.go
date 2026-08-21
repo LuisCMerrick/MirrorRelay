@@ -56,6 +56,11 @@ func TestCanonicalFingerprintStability(t *testing.T) {
 	if fp3 == fp1 {
 		t.Fatalf("changing repository type should alter fingerprint")
 	}
+	m4 := m1
+	m4.BlockedPackages = []string{"malicious-*"}
+	if CanonicalFingerprint([]model.Mirror{m4}) == fp1 {
+		t.Fatal("changing package guard policy should alter fingerprint")
+	}
 }
 
 func TestRouterSelection(t *testing.T) {
@@ -176,7 +181,7 @@ func (m *mockStore) GetClusterNode(ctx context.Context, id int64) (model.Cluster
 	return m.nodes[id], nil
 }
 
-func (m *mockStore) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, lastError string, lastCheck time.Time) error {
+func (m *mockStore) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, latencyMS int64, lastError string, lastCheck time.Time) error {
 	n := m.nodes[id]
 	n.HealthStatus = healthStatus
 	n.ConfigStatus = configStatus
@@ -184,6 +189,7 @@ func (m *mockStore) UpdateClusterNodeStatus(ctx context.Context, id int64, healt
 	n.Version = version
 	n.ProtocolVersion = protoVer
 	n.Capabilities = caps
+	n.LatencyMS = latencyMS
 	n.LastError = lastError
 	n.LastCheck = lastCheck
 	m.nodes[id] = n
@@ -247,6 +253,7 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	cfg.Distributed.HealthCheck.Timeout = time.Second
 	cfg.Distributed.HealthCheck.HealthyThreshold = 1
 	cfg.Distributed.HealthCheck.UnhealthyThreshold = 1
+	cfg.Distributed.AllowHTTP = true
 	cfg.Security.AllowHTTPUpstream = true
 	cfg.Security.AllowPrivateUpstream = true
 
@@ -268,9 +275,21 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	metrics := NewMetrics()
 	audit := &mockAudit{}
 	router := NewRouter(cfg)
-	checker := NewChecker(cfg, store, router, metrics, audit)
+	uninitialized := NewChecker(cfg, store, router, metrics, audit)
+	firstReport, err := uninitialized.recordSuccess(context.Background(), store.nodes[1], manifest, health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uninitialized.ClusterFingerprint() != "" || firstReport.ConfigStatus != "mismatch" {
+		t.Fatalf("first Edge report became authoritative: fingerprint=%q node=%+v", uninitialized.ClusterFingerprint(), firstReport)
+	}
 
-	// 1. Initial check: should succeed and initialize cluster fingerprint
+	checker := NewChecker(cfg, store, router, metrics, audit)
+	if err := checker.SetClusterFingerprint(context.Background(), "sha256:valid_fingerprint"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Initial check: compare against the Coordinator-owned fingerprint.
 	node, err := checker.CheckNode(context.Background(), store.nodes[1])
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +298,7 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 		t.Fatalf("unexpected node status after check: %+v", node)
 	}
 	if checker.ClusterFingerprint() != "sha256:valid_fingerprint" {
-		t.Fatalf("cluster fingerprint not initialized: %s", checker.ClusterFingerprint())
+		t.Fatalf("cluster fingerprint changed unexpectedly: %s", checker.ClusterFingerprint())
 	}
 
 	// 2. Config drift: modify manifest returned by edge

@@ -20,10 +20,10 @@ go run ./cmd/mirrorrelay -dev
 ### 方式 B：生产环境发行版安装包部署 (DEB / RPM)
 ```bash
 # Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
 
 # RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
 
 # 配置初始管理员密码并启用服务：
 echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment

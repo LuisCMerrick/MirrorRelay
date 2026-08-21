@@ -300,7 +300,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 	health_timeout_sec,health_method,health_expected,redirect_mode,profile_name,profile_version,rate_limit_profile,access_policy,strip_prefix,add_prefix,host_rewrite,
 		header_add,header_remove,connect_timeout_sec,read_timeout_sec,send_timeout_sec,metadata_rewrite_limit_bytes,metadata_ttl_sec,package_ttl_sec,immutable_ttl_sec,blob_ttl_sec,cache_authenticated,
 		auth_mode,token_upstream,blob_redirect_mode,pull_only,config_state,config_error,allow_http,allow_private,insecure_tls,bandwidth_limit_bps,
-		max_concurrency,help_enabled,help_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		max_concurrency,help_enabled,help_json,blocked_packages,allowed_packages,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			m.ID, m.Name, m.Slug, m.Type, m.Enabled, m.Description, m.PublicMode, m.PublicHost, m.PublicPath, m.ProxyMode,
 			m.CacheEnabled, m.CacheProfile, m.RewriteEnabled, m.HTMLRewriteEnabled, m.RewriteProfile, encodeStrings(m.RewriteHosts), m.HealthCheckEnabled, m.HealthCheckPath,
 			m.HealthIntervalSec, m.HealthTimeoutSec, m.HealthMethod, m.HealthExpected, m.RedirectMode, m.ProfileName,
@@ -308,7 +308,7 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 			m.ConnectTimeoutSec, m.ReadTimeoutSec, m.SendTimeoutSec, m.MetadataLimitBytes, m.MetadataTTLSec, m.PackageTTLSec, m.ImmutableTTLSec, m.BlobTTLSec, m.CacheAuthenticated,
 			m.AuthMode, m.TokenUpstream, m.BlobRedirectMode,
 			m.PullOnly, m.ConfigState, m.ConfigError, m.AllowHTTP, m.AllowPrivate, m.InsecureTLS, m.BandwidthLimitBPS, m.MaxConcurrency,
-			boolToInt(m.Help.Enabled), encodeHelp(m.Help),
+			boolToInt(m.Help.Enabled), encodeHelp(m.Help), encodeStrings(m.BlockedPackages), encodeStrings(m.AllowedPackages),
 			created.UTC().Format(time.RFC3339Nano), updated.UTC().Format(time.RFC3339Nano))
 		if err != nil {
 			return err

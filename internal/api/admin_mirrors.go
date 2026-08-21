@@ -85,13 +85,13 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
-		writeJSON(w, 200, m)
+		writeJSON(w, 200, mirrorForRole(m, session.Role))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "state" && r.Method == http.MethodGet {
 		active, activeFound := s.registry.GetByID(id)
 		writeJSON(w, 200, map[string]any{
-			"desired": m, "active": active, "active_found": activeFound,
+			"desired": mirrorForRole(m, session.Role), "active": mirrorForRole(active, session.Role), "active_found": activeFound,
 			"effective_config_version": s.upstreamNginx.Status().CurrentConfigVersion,
 			"statistics":               s.stats.Snapshot().ByMirror[id],
 		})
@@ -171,6 +171,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			writeInternal(w, err)
 			return
 		}
+		s.broadcastClusterPurge(r, session.Username, model.ClusterPurgeRequest{Scope: "repository", RepositorySlug: m.Slug})
 		if err := s.store.DeleteMirror(r.Context(), id); err != nil {
 			writeInternal(w, err)
 			return
@@ -235,6 +236,9 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		return
 	}
 	if len(parts) == 2 && parts[1] == "config" && r.Method == http.MethodGet {
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		desired, loadErr := s.store.ListMirrors(r.Context())
 		if loadErr != nil {
 			writeInternal(w, loadErr)
@@ -322,8 +326,17 @@ func (s *Server) clearCache(w http.ResponseWriter, r *http.Request, session auth
 	if id > 0 {
 		object = strconv.FormatInt(id, 10)
 	}
+	purgeRequest := model.ClusterPurgeRequest{Scope: scope}
+	if id > 0 {
+		if repository, found := s.registry.GetByID(id); found {
+			purgeRequest.RepositorySlug = repository.Slug
+		} else if repository, lookupErr := s.store.Mirror(r.Context(), id); lookupErr == nil {
+			purgeRequest.RepositorySlug = repository.Slug
+		}
+	}
+	clusterSummary := s.broadcastClusterPurge(r, session.Username, purgeRequest)
 	_ = s.audit(r, session.Username, "clear_cache", "cache", object, true)
-	writeJSON(w, 200, map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "job": job})
+	writeJSON(w, 200, addClusterPurgeSummary(map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "job": job}, clusterSummary))
 }
 
 func (s *Server) purgeRepositoryCache(w http.ResponseWriter, r *http.Request, session auth.Session, repository model.Mirror) {
@@ -340,8 +353,9 @@ func (s *Server) purgeRepositoryCache(w http.ResponseWriter, r *http.Request, se
 			writeInternal(w, err)
 			return
 		}
+		clusterSummary := s.broadcastClusterPurge(r, session.Username, model.ClusterPurgeRequest{Scope: "repository", RepositorySlug: repository.Slug})
 		_ = s.audit(r, session.Username, "cache_purge", "repository", repository.Slug, true)
-		writeJSON(w, 200, map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "job": job})
+		writeJSON(w, 200, addClusterPurgeSummary(map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "job": job}, clusterSummary))
 		return
 	}
 	activeRepository, found := s.registry.GetByID(repository.ID)
@@ -360,8 +374,11 @@ func (s *Server) purgeRepositoryCache(w http.ResponseWriter, r *http.Request, se
 		writeInternal(w, err)
 		return
 	}
+	clusterSummary := s.broadcastClusterPurge(r, session.Username, model.ClusterPurgeRequest{
+		Scope: "object", RepositorySlug: repository.Slug, ObjectID: objectID, ObjectPath: input.Path,
+	})
 	_ = s.audit(r, session.Username, "cache_purge", "object", repository.Slug+":"+input.Path, true)
-	writeJSON(w, 200, map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "object_id": objectID, "job": job})
+	writeJSON(w, 200, addClusterPurgeSummary(map[string]any{"logical_purge": "completed", "physical_reclaim": job.ReclaimState, "object_id": objectID, "job": job}, clusterSummary))
 }
 
 func (s *Server) validateUpstreams(parent context.Context, m model.Mirror) error {

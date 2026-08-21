@@ -10,7 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
@@ -32,16 +32,12 @@ type SyncResult struct {
 type SyncManager struct {
 	cfg        config.Config
 	store      Store
-	router     *Router
-	checker    *Checker
-	audit      AuditRecorder
 	httpClient *http.Client
 }
 
-func NewSyncManager(cfg config.Config, store Store, router *Router, checker *Checker, audit AuditRecorder) *SyncManager {
+func NewSyncManager(cfg config.Config, store Store) *SyncManager {
 	timeout := 10 * time.Second
 	dialer := security.NewSafeDialer(timeout, timeout, cfg.Security.AllowPrivateUpstream)
-
 	transport := &http.Transport{
 		DialContext:           dialer.DialContext,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
@@ -49,47 +45,54 @@ func NewSyncManager(cfg config.Config, store Store, router *Router, checker *Che
 		MaxIdleConns:          50,
 		MaxIdleConnsPerHost:   10,
 	}
-
 	return &SyncManager{
-		cfg:     cfg,
-		store:   store,
-		router:  router,
-		checker: checker,
-		audit:   audit,
+		cfg:   cfg,
+		store: store,
 		httpClient: &http.Client{
 			Timeout:   timeout,
 			Transport: transport,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 	}
 }
 
-// SyncNode pushes the canonical manifest to a single edge node.
-func (sm *SyncManager) SyncNode(ctx context.Context, node model.ClusterNode, manifest model.ClusterManifest) SyncResult {
+// SyncNode pushes one complete, active configuration snapshot to an edge.
+func (sm *SyncManager) SyncNode(ctx context.Context, node model.ClusterNode, payload model.ClusterSyncRequest) SyncResult {
 	start := time.Now()
-	res := SyncResult{
-		NodeID:   node.ID,
-		NodeURL:  node.URL,
-		SyncedAt: start.UTC(),
-	}
-
-	manifestData, err := json.Marshal(manifest)
-	if err != nil {
-		res.Error = fmt.Sprintf("marshal manifest: %v", err)
+	res := SyncResult{NodeID: node.ID, NodeURL: node.URL, SyncedAt: start.UTC()}
+	finish := func(message string) SyncResult {
+		res.LatencyMS = time.Since(start).Milliseconds()
+		res.Error = message
 		return res
 	}
-
-	targetURL := strings.TrimRight(node.URL, "/") + "/admin/api/v1/cluster/apply-sync"
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(manifestData))
-	if err != nil {
-		res.Error = fmt.Sprintf("build request: %v", err)
-		return res
+	if sm.cfg.Distributed.Token == "" {
+		return finish("cluster token is empty")
 	}
-
+	if payload.Manifest.ProtocolVersion != ClusterProtocolVersion || payload.Manifest.ConfigFingerprint == "" {
+		return finish("invalid local cluster sync manifest")
+	}
+	if payload.Repositories == nil || payload.CustomConfigs == nil ||
+		CanonicalFingerprint(payload.Repositories) != payload.Manifest.ConfigFingerprint ||
+		!slices.Equal(ExtractCapabilities(payload.Repositories), payload.Manifest.Capabilities) {
+		return finish("local cluster sync payload does not match its manifest")
+	}
+	targetURL, err := nodeEndpointURL(ctx, sm.cfg, node.URL, SyncApplyPath)
+	if err != nil {
+		return finish(fmt.Sprintf("validate node URL: %v", err))
+	}
+	payloadData, err := json.Marshal(payload)
+	if err != nil {
+		return finish(fmt.Sprintf("marshal sync payload: %v", err))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(payloadData))
+	if err != nil {
+		return finish(fmt.Sprintf("build request: %v", err))
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "MirrorRelay-ClusterSync/1.0")
-	if sm.cfg.Distributed.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+sm.cfg.Distributed.Token)
-	}
+	req.Header.Set("Authorization", "Bearer "+sm.cfg.Distributed.Token)
 
 	resp, err := sm.httpClient.Do(req)
 	res.LatencyMS = time.Since(start).Milliseconds()
@@ -98,134 +101,167 @@ func (sm *SyncManager) SyncNode(ctx context.Context, node model.ClusterNode, man
 		return res
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		res.Error = fmt.Sprintf("edge returned HTTP %d: %s", resp.StatusCode, string(body))
 		return res
 	}
 
-	var edgeResp struct {
-		Fingerprint string `json:"fingerprint"`
-		Status      string `json:"status"`
+	var edgeResp model.ClusterSyncResponse
+	decoder := json.NewDecoder(io.LimitReader(resp.Body, 64<<10))
+	if err := decoder.Decode(&edgeResp); err != nil {
+		res.Error = fmt.Sprintf("decode edge response: %v", err)
+		return res
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&edgeResp); err == nil {
-		res.Fingerprint = edgeResp.Fingerprint
-	} else {
-		res.Fingerprint = manifest.ConfigFingerprint
+	if err := requireJSONEOF(decoder); err != nil {
+		res.Error = fmt.Sprintf("decode edge response: %v", err)
+		return res
+	}
+	if edgeResp.Status != "applied" {
+		res.Error = fmt.Sprintf("edge returned invalid sync status %q", edgeResp.Status)
+		return res
+	}
+	if edgeResp.Fingerprint == "" || edgeResp.Fingerprint != payload.Manifest.ConfigFingerprint {
+		res.Error = fmt.Sprintf("edge fingerprint mismatch: got %q, want %q", edgeResp.Fingerprint, payload.Manifest.ConfigFingerprint)
+		return res
+	}
+	if edgeResp.ProtocolVersion != payload.Manifest.ProtocolVersion {
+		res.Error = fmt.Sprintf("edge protocol version mismatch: got %d, want %d", edgeResp.ProtocolVersion, payload.Manifest.ProtocolVersion)
+		return res
+	}
+	if edgeResp.ConfigGeneration != payload.Manifest.ConfigGeneration {
+		res.Error = fmt.Sprintf("edge configuration generation mismatch: got %d, want %d", edgeResp.ConfigGeneration, payload.Manifest.ConfigGeneration)
+		return res
+	}
+	if !slices.Equal(edgeResp.Capabilities, payload.Manifest.Capabilities) {
+		res.Error = fmt.Sprintf("edge capabilities mismatch: got %v, want %v", edgeResp.Capabilities, payload.Manifest.Capabilities)
+		return res
 	}
 
+	res.Fingerprint = edgeResp.Fingerprint
 	res.Success = true
 	if sm.store != nil {
-		_ = sm.store.UpdateClusterNodeStatus(
-			ctx, node.ID, "healthy", "in_sync", res.Fingerprint,
-			node.Version, int(res.LatencyMS), nil, "", time.Now().UTC(),
-		)
+		version := edgeResp.MirrorRelayVersion
+		if version == "" {
+			version = node.Version
+		}
+		_ = sm.store.UpdateClusterNodeStatus(ctx, node.ID, "healthy", "match", res.Fingerprint,
+			version, edgeResp.ProtocolVersion, edgeResp.Capabilities, res.LatencyMS, "", time.Now().UTC())
 	}
 	return res
 }
 
 // BroadcastSync synchronizes all enabled edge nodes concurrently.
-func (sm *SyncManager) BroadcastSync(ctx context.Context, manifest model.ClusterManifest) []SyncResult {
+func (sm *SyncManager) BroadcastSync(ctx context.Context, payload model.ClusterSyncRequest) []SyncResult {
 	if sm.store == nil {
 		return nil
 	}
-
 	nodes, err := sm.store.ListClusterNodes(ctx)
 	if err != nil {
 		slog.Error("ListClusterNodes failed during broadcast sync", "err", err)
-		return nil
+		return []SyncResult{{Error: err.Error(), SyncedAt: time.Now().UTC()}}
 	}
-
-	var wg sync.WaitGroup
-	results := make([]SyncResult, len(nodes))
-
-	for i, node := range nodes {
-		if !node.Enabled {
-			results[i] = SyncResult{
-				NodeID:   node.ID,
-				NodeURL:  node.URL,
-				Success:  false,
-				Error:    "Node is disabled",
-				SyncedAt: time.Now().UTC(),
-			}
-			continue
+	targets := make([]model.ClusterNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Enabled {
+			targets = append(targets, node)
 		}
+	}
 
+	results := make([]SyncResult, len(targets))
+	var wg sync.WaitGroup
+	for index, node := range targets {
 		wg.Add(1)
-		go func(idx int, n model.ClusterNode) {
+		go func(index int, node model.ClusterNode) {
 			defer wg.Done()
-			results[idx] = sm.SyncNode(ctx, n, manifest)
-		}(i, node)
+			results[index] = sm.SyncNode(ctx, node, payload)
+		}(index, node)
 	}
-
 	wg.Wait()
-	if sm.audit != nil {
-		sm.audit.Record("system", "cluster_sync", "broadcast", fmt.Sprintf("Synchronized %d edge nodes", len(nodes)), true)
-	}
 	return results
 }
 
-// BroadcastPurge propagates a cache purge event to all active edge nodes.
-func (sm *SyncManager) BroadcastPurge(ctx context.Context, repoSlug, objectPath string) map[int64]error {
+// BroadcastPurge propagates one explicit cache invalidation scope to every
+// enabled edge. A nil map value records a successful receiver acknowledgement.
+func (sm *SyncManager) BroadcastPurge(ctx context.Context, payload model.ClusterPurgeRequest) map[int64]error {
+	results := make(map[int64]error)
 	if sm.store == nil {
-		return nil
+		return results
 	}
-
 	nodes, err := sm.store.ListClusterNodes(ctx)
 	if err != nil {
-		return nil
+		results[0] = err
+		return results
+	}
+	payloadData, err := json.Marshal(payload)
+	if err != nil {
+		results[0] = err
+		return results
 	}
 
-	results := make(map[int64]error)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-
-	payload, _ := json.Marshal(map[string]string{
-		"repository_slug": repoSlug,
-		"object_path":     objectPath,
-	})
-
 	for _, node := range nodes {
-		if !node.Enabled || node.HealthStatus != "healthy" {
+		if !node.Enabled {
 			continue
 		}
-
 		wg.Add(1)
-		go func(n model.ClusterNode) {
+		go func(node model.ClusterNode) {
 			defer wg.Done()
-
-			targetURL := strings.TrimRight(n.URL, "/") + "/admin/api/v1/cluster/sync/purge"
-			req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(payload))
-			if err != nil {
-				mu.Lock()
-				results[n.ID] = err
-				mu.Unlock()
-				return
-			}
-
-			req.Header.Set("Content-Type", "application/json")
-			if sm.cfg.Distributed.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+sm.cfg.Distributed.Token)
-			}
-
-			resp, err := sm.httpClient.Do(req)
-			if err != nil {
-				mu.Lock()
-				results[n.ID] = err
-				mu.Unlock()
-				return
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode >= 400 {
-				mu.Lock()
-				results[n.ID] = errors.New(resp.Status)
-				mu.Unlock()
-			}
+			result := sm.purgeNode(ctx, node, payload, payloadData)
+			mu.Lock()
+			results[node.ID] = result
+			mu.Unlock()
 		}(node)
 	}
-
 	wg.Wait()
 	return results
+}
+
+func (sm *SyncManager) purgeNode(ctx context.Context, node model.ClusterNode, payload model.ClusterPurgeRequest, payloadData []byte) error {
+	if sm.cfg.Distributed.Token == "" {
+		return errors.New("cluster token is empty")
+	}
+	targetURL, err := nodeEndpointURL(ctx, sm.cfg, node.URL, SyncPurgePath)
+	if err != nil {
+		return fmt.Errorf("validate node URL: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(payloadData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "MirrorRelay-ClusterSync/1.0")
+	req.Header.Set("Authorization", "Bearer "+sm.cfg.Distributed.Token)
+	resp, err := sm.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("edge returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	var edgeResp model.ClusterPurgeResponse
+	decoder := json.NewDecoder(io.LimitReader(resp.Body, 64<<10))
+	if err := decoder.Decode(&edgeResp); err != nil {
+		return fmt.Errorf("decode edge response: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return fmt.Errorf("decode edge response: %w", err)
+	}
+	if edgeResp.Status != "applied" || edgeResp.Scope != payload.Scope || edgeResp.RepositorySlug != payload.RepositorySlug || edgeResp.ObjectID != payload.ObjectID || edgeResp.Generation <= 0 {
+		return errors.New("edge returned an invalid purge acknowledgement")
+	}
+	return nil
+}
+
+func requireJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); errors.Is(err, io.EOF) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return errors.New("multiple JSON values are not allowed")
 }

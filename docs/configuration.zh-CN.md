@@ -25,7 +25,7 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 保存或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
-Web UI 覆盖端点启用状态与回环端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出及 Managed Upstream Nginx 生命周期。Bootstrap 与信任边界路径仍以 YAML 为准：
+Web UI 覆盖端点启用状态与回环端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。Bootstrap 与信任边界路径仍以 YAML 为准：
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -137,6 +137,22 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | `warmup.retry_count` | 预热对象失败重试次数（默认 `2`） |
 | `warmup.metadata_depth` | 元数据软件包递归解析深度（默认 `1` 自动提取 APT/RPM/PyPI 元数据中的软件包并预热） |
 
+预热任务接受按 UTC 求值的五字段数字 Cron 表达式，或 `@hourly`、`@daily`、`@every <duration>`（最短间隔 `30s`）。数字字段支持 `*`、列表、范围和步长。MirrorRelay 在创建/更新时校验表达式，持久化计算出的 `next_run_at`，绝不会把非法或未知表达式作为兜底任务反复执行。由 Metadata 发现的软件包 URL 会复用已配置的 Frontend 端点；关闭 Unix Socket 时会保留 `server.local_port`。
+
+## Webhook 投递
+
+| 配置 | 说明 |
+|---|---|
+| `webhook.enabled` | 启用异步事件投递 |
+| `webhook.url` | 单个生效目标 URL；默认强制 HTTPS，并根据主机名自动识别平台消息格式 |
+| `webhook.secret` | 可选 HMAC-SHA256 签名密钥；非管理员读取设置时会同时隐藏密钥与目标 URL |
+| `webhook.events` | 需要投递的事件名称；空列表表示全部事件 |
+| `webhook.timeout` | 请求、TLS 握手与响应头超时 |
+| `webhook.allow_http` | 独立的明文 HTTP 显式许可；默认 `false` |
+| `webhook.allow_private` | 独立的私网、环回与链路本地地址显式许可；默认 `false` |
+
+MirrorRelay 会把每个事件投递到一个已配置的 Webhook 目标；钉钉、飞书/Lark、企业微信和 Slack 主机使用各自的平台消息格式，其他主机使用标准 MirrorRelay JSON。Webhook 目标及每次重定向都会在连接前执行结构校验、DNS 解析与网段过滤；网络连接只使用通过策略的地址，并保留 TLS 主机名验证。测试可使用当前运行中目标，也可使用一个经过校验的临时 URL/Secret；临时 URL 绝不会继承运行中目标的密钥，非法测试 JSON 不会产生任何投递副作用。
+
 ## 安全与限制
 
 | 配置 | 说明 |
@@ -174,7 +190,7 @@ MirrorRelay 提供可选的界面主题增强、颜色定制、统一仓库目�
 
 | 配置项 | 说明 |
 |---|---|
-| `ui_enhancement.enabled` | 全局界面增强总开关（默认 `false`）。为 `false` 时完全不介入响应重写与样式注入。 |
+| `ui_enhancement.enabled` | 公开仓库界面增强开关（默认 `false`）。为 `false` 时不改写或重设上游目录响应样式；管理界面主题切换仍然可用。 |
 | `ui_enhancement.theme` | 主题模式：`system`（默认跟随系统）、`light`（浅色明亮）或 `dark`（深色暗黑） |
 | `ui_enhancement.accent_color` | 主色调十六进制颜色代码（如 `#2563eb`） |
 | `ui_enhancement.branding.title` | 自定义站点/实例标题（默认 `MirrorRelay`） |
@@ -185,6 +201,8 @@ MirrorRelay 提供可选的界面主题增强、颜色定制、统一仓库目�
 | `ui_enhancement.custom_css.enabled` | 启用自定义 CSS 注入 |
 | `ui_enhancement.custom_css.file` | 自定义 CSS 文件路径（通过 `GET /ui/custom.css` 提供） |
 | `ui_enhancement.repository_browser.enabled` | 启用现代自适应仓库目录浏览器（界面增强启用时默认 `true`） |
+
+管理界面的登录页和顶栏还提供浏览器本地的“亮色 / 暗色 / 自动”切换。“自动”会跟随 `prefers-color-scheme`；浏览器保存的偏好会覆盖实例默认值，直到用户在本地再次修改。
 
 > **安全模式 (Safe Mode)**：在任何目录或帮助页面 URL 后添加 `?safe-ui=1` 参数即可绕过所有界面增强与脚本，直接回退并显示上游原始 HTML 响应。
 
@@ -218,7 +236,8 @@ MirrorRelay 支持由一个协调器（Coordinator）与多个边缘节点（Edg
 |---|---|
 | `distributed.enabled` | 全局分布式模式开关 |
 | `distributed.role` | 节点角色：`standalone`（默认单机）、`coordinator`（协调器）或 `edge`（边缘节点） |
-| `distributed.token` | 集群间探针 API 认证 Token（`/api/v1/cluster/manifest`、`/api/v1/cluster/health`） |
+| `distributed.token` | 探针、配置同步与缓存淘汰 API 必填的共享认证 Token |
+| `distributed.allow_http` | 集群节点 Origin 使用明文 HTTP 的独立显式许可；默认 `false` |
 | `distributed.node.name` | 边缘节点唯一标识名称 |
 | `distributed.node.public_base_url` | 协调器向客户端重定向时使用的边缘节点公开 Base URL |
 | `distributed.node.region` | 节点所在地域标识（用于 Geo/CIDR 调度） |
@@ -235,6 +254,6 @@ MirrorRelay 支持由一个协调器（Coordinator）与多个边缘节点（Edg
 ### 分布式不变量
 
 - **数据面隔离**：协调器永不代为拉取源站或边缘节点的包文件；它始终返回保留原始请求路径与 Query 字符串的 `HTTP 307 临时重定向`。
-- **配置一致性与漂移检测**：集群内所有边缘节点必须共享一致的逻辑配置指纹（`sha256:...`）。发生配置漂移的节点自动标记为 `mismatch` 并剔除路由。
+- **配置一致性与漂移检测**：Coordinator 只从本机 Active 仓库快照计算权威指纹；Edge 的回执只能用于比对，不能初始化或改写权威值。发生漂移的节点会标记为 `mismatch` 并剔除路由。
+- **安全控制面**：集群节点 URL 必须是不含凭据、路径、查询或片段的绝对 Origin。默认强制 HTTPS；`distributed.allow_http` 与全局私网地址策略是两个独立的显式决定。
 - **容器镜像仓库限制**：V1 阶段分布式调度明确不支持 Docker / OCI Registry（返回 HTTP 501）。
-

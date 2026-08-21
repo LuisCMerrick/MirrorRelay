@@ -106,10 +106,10 @@ Open `https://127.0.0.1:8443/admin/` in your browser and sign in with `admin` / 
 1. **Install Package**:
    ```bash
    # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+   sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
 
    # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
+   sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
    ```
 2. **Configure Initial Admin Password & Enable Service**:
    ```bash
@@ -191,6 +191,8 @@ Pre-compiled, statically linked packages are produced for `linux/amd64` and `lin
 |---|---|---|---|
 | **amd64** | `mirrorrelay_<version>_amd64.deb` | `mirrorrelay-<version>.x86_64.rpm` | `mirrorrelay-<version>-linux-amd64.tar.gz` |
 | **arm64** | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
+
+Every GitHub Release also includes the architecture-neutral `mirrorrelay-<version>-source-with-vendor.tar.gz`, containing the tracked source tree plus a generated Go `vendor/` directory for offline and reproducible source builds.
 
 Standard file layout:
 ```text

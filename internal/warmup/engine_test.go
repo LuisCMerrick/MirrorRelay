@@ -1,10 +1,13 @@
 package warmup
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +70,18 @@ func (m *mockStore) UpdateWarmupJobProgress(ctx context.Context, id int64, statu
 	j.LastRunAt = lastRun
 	j.NextRunAt = nextRun
 	m.jobs[id] = j
+	return nil
+}
+
+func (m *mockStore) UpdateWarmupJobSchedule(ctx context.Context, id int64, nextRun string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	job, ok := m.jobs[id]
+	if !ok {
+		return ErrWarmupJobNotFound
+	}
+	job.NextRunAt = nextRun
+	m.jobs[id] = job
 	return nil
 }
 
@@ -142,16 +157,73 @@ func TestWarmupEngine(t *testing.T) {
 }
 
 func TestCronMatching(t *testing.T) {
-	now := time.Now().UTC()
-	if !shouldRunCron("@hourly", "", now) {
-		t.Fatalf("expected first run with empty lastRun to be true")
+	now := time.Date(2026, 8, 21, 10, 2, 30, 0, time.UTC)
+	tests := []struct {
+		expression string
+		want       time.Time
+	}{
+		{"@hourly", time.Date(2026, 8, 21, 11, 0, 0, 0, time.UTC)},
+		{"@daily", time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)},
+		{"*/5 * * * *", time.Date(2026, 8, 21, 10, 5, 0, 0, time.UTC)},
+		{"30 3 * * *", time.Date(2026, 8, 22, 3, 30, 0, 0, time.UTC)},
+		{"@every 45m", now.Add(45 * time.Minute)},
 	}
-	oneHourAgo := now.Add(-65 * time.Minute).Format(time.RFC3339)
-	if !shouldRunCron("@hourly", oneHourAgo, now) {
-		t.Fatalf("expected run after 65 minutes to be true")
+	for _, test := range tests {
+		next, err := NextRunAt(test.expression, now)
+		if err != nil {
+			t.Fatalf("NextRunAt(%q): %v", test.expression, err)
+		}
+		if !next.Equal(test.want) {
+			t.Fatalf("NextRunAt(%q) = %s, want %s", test.expression, next, test.want)
+		}
 	}
-	fiveMinsAgo := now.Add(-5 * time.Minute).Format(time.RFC3339)
-	if shouldRunCron("@hourly", fiveMinsAgo, now) {
-		t.Fatalf("expected run after 5 minutes to be false")
+	for _, invalid := range []string{"nonsense", "* * *", "61 * * * *", "@every 0s", "0 0 31 2 *"} {
+		if err := ValidateSchedule(invalid); err == nil {
+			t.Fatalf("expected invalid schedule %q to be rejected", invalid)
+		}
+	}
+}
+
+func TestAPTMetadataDerivedURLUsesTCPFrontendPort(t *testing.T) {
+	var requested []string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requested = append(requested, r.URL.Path)
+		mu.Unlock()
+		if strings.HasSuffix(r.URL.Path, "Packages.gz") {
+			w.Header().Set("Content-Type", "application/gzip")
+			gz := gzip.NewWriter(w)
+			_, _ = gz.Write([]byte("Package: demo\nFilename: pool/main/d/demo/demo_1_amd64.deb\n"))
+			_ = gz.Close()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Server.UnixSocketEnabled = false
+	cfg.Server.LocalPort = port
+	cfg.Warmup.MetadataDepth = 1
+	engine := NewEngine(cfg, nil, nil)
+	repository := model.Mirror{Type: "apt", PublicPath: "/debian"}
+	urls := engine.expandTargetURLs(context.Background(), repository, []string{"/dists/bookworm/main/binary-amd64/Packages.gz"})
+	want := server.URL + "/debian/pool/main/d/demo/demo_1_amd64.deb"
+	if !slices.Contains(urls, want) {
+		t.Fatalf("derived URLs do not contain TCP frontend URL %q: %v", want, urls)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requested) == 0 {
+		t.Fatal("metadata endpoint was not requested")
 	}
 }

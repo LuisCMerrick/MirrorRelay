@@ -4,12 +4,15 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/LuisCMerrick/MirrorRelay/internal/appearance"
 	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
 	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
@@ -57,7 +60,7 @@ type Store interface {
 	GetClusterNodeByURL(context.Context, string) (model.ClusterNode, error)
 	CreateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
 	UpdateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
-	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, string, time.Time) error
+	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, int64, string, time.Time) error
 	DeleteClusterNode(context.Context, int64) error
 	SetClusterNodeEnabled(context.Context, int64, bool) error
 	ClusterSetting(context.Context, string) (string, bool, error)
@@ -68,6 +71,7 @@ type Store interface {
 	UpdateWarmupJob(context.Context, model.WarmupJob) (model.WarmupJob, error)
 	DeleteWarmupJob(context.Context, int64) error
 	UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error
+	UpdateWarmupJobSchedule(context.Context, int64, string) error
 }
 
 type Server struct {
@@ -88,6 +92,7 @@ type Server struct {
 	loginLimiter   *auth.LoginLimiter
 	adminCIDRs     security.CIDRList
 	webhook        *webhook.Dispatcher
+	appearance     *appearance.Store
 	web            fs.FS
 	build          buildinfo.Info
 	started        time.Time
@@ -129,6 +134,7 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		upstreamNginx: upstreamNginx,
 		adminCIDRs:    cidrs,
 		webhook:       webhook.New(cfg.Webhook),
+		appearance:    appearance.New(cfg.UIEnhancement),
 		web:           web,
 		build:         build,
 		started:       time.Now(),
@@ -136,11 +142,20 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 	if store != nil {
 		srv.warmupEngine = warmup.NewEngine(cfg, store, &auditRecorderAdapter{server: srv})
 	}
-	if cfg.Distributed.Enabled || cfg.Distributed.Role != "standalone" {
+	if cfg.Distributed.Enabled {
 		srv.clusterRouter = cluster.NewRouter(cfg)
 		srv.clusterMetrics = cluster.NewMetrics()
 		srv.clusterChecker = cluster.NewChecker(cfg, store, srv.clusterRouter, srv.clusterMetrics, &auditRecorderAdapter{server: srv})
-		srv.clusterSync = cluster.NewSyncManager(cfg, store, srv.clusterRouter, srv.clusterChecker, &auditRecorderAdapter{server: srv})
+		if cfg.Distributed.Role == "coordinator" {
+			repositories := []model.Mirror(nil)
+			if registry != nil {
+				repositories = registry.List()
+			}
+			if err := srv.clusterChecker.SetClusterFingerprint(context.Background(), cluster.CanonicalFingerprint(repositories)); err != nil {
+				return nil, fmt.Errorf("persist Coordinator cluster fingerprint: %w", err)
+			}
+		}
+		srv.clusterSync = cluster.NewSyncManager(cfg, store)
 		if store != nil {
 			if nodes, err := store.ListClusterNodes(context.Background()); err == nil {
 				srv.clusterRouter.SetNodes(nodes)
@@ -148,6 +163,19 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		}
 	}
 	return srv, nil
+}
+
+func (s *Server) SetAppearanceStore(store *appearance.Store) {
+	if store != nil {
+		s.appearance = store
+	}
+}
+
+func (s *Server) appearanceConfig() model.UIEnhancementConfig {
+	if s.appearance != nil {
+		return s.appearance.Load()
+	}
+	return s.cfg.UIEnhancement
 }
 
 func (s *Server) StartWarmup(ctx context.Context) {
@@ -169,7 +197,7 @@ func (s *Server) SetCluster(router *cluster.Router, checker *cluster.Checker, me
 }
 
 func (s *Server) StartCluster(ctx context.Context) {
-	if s.clusterChecker != nil && s.cfg.Distributed.Role == "coordinator" {
+	if s.cfg.Distributed.Enabled && s.clusterChecker != nil && s.cfg.Distributed.Role == "coordinator" {
 		s.clusterChecker.Start(ctx)
 	}
 }
@@ -179,11 +207,23 @@ func (s *Server) publishActiveRouting() error {
 	if !available {
 		return errors.New("active routing snapshot is unavailable")
 	}
-	s.registry.Replace(repositories)
+	s.PublishActiveRepositories(repositories)
 	return nil
 }
 
+func (s *Server) PublishActiveRepositories(repositories []model.Mirror) {
+	s.registry.Replace(repositories)
+	if s.cfg.Distributed.Enabled && s.clusterChecker != nil && s.cfg.Distributed.Role == "coordinator" {
+		if err := s.clusterChecker.SetClusterFingerprint(context.Background(), cluster.CanonicalFingerprint(repositories)); err != nil {
+			slog.Error("persist Coordinator cluster fingerprint", "error", err)
+		}
+	}
+}
+
 func (s *Server) Handler(proxy http.Handler) http.Handler {
+	if s.appearance == nil {
+		s.appearance = appearance.New(s.cfg.UIEnhancement)
+	}
 	adminMux := http.NewServeMux()
 	adminMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	adminMux.Handle("/metrics", s.adminAccess(http.HandlerFunc(s.metrics)))
@@ -193,6 +233,10 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 	adminHost := strings.ToLower(strings.TrimSuffix(s.cfg.Admin.Host, "."))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == cluster.SyncApplyPath || r.URL.Path == cluster.SyncPurgePath {
+			s.clusterSyncReceiver(w, r)
+			return
+		}
 		reqHost := requestHostname(r.Host)
 		if adminHost != "" {
 			if reqHost == adminHost {

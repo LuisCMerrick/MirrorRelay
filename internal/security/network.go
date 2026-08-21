@@ -176,6 +176,81 @@ func ValidateResolvedURL(ctx context.Context, rawURL string, allowHTTP, allowPri
 	return nil
 }
 
+// ParseOriginURL validates and canonicalizes an HTTP(S) origin. Cluster node
+// addresses deliberately do not accept credentials, path prefixes, queries or
+// fragments so protocol endpoints can be resolved without string
+// concatenation or ambiguous URL semantics.
+func ParseOriginURL(rawURL string, allowHTTP bool) (*url.URL, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	u, err := url.Parse(rawURL)
+	if err != nil || !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" {
+		return nil, errors.New("invalid origin URL")
+	}
+	if u.Scheme != "https" && !(allowHTTP && u.Scheme == "http") {
+		return nil, errors.New("origin protocol is not allowed")
+	}
+	if u.User != nil {
+		return nil, errors.New("origin credentials are not allowed")
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, errors.New("origin query and fragment are not allowed")
+	}
+	if escaped := u.EscapedPath(); escaped != "" && escaped != "/" {
+		return nil, errors.New("origin path prefix is not allowed")
+	}
+	if port := u.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return nil, errors.New("origin port is invalid")
+		}
+	}
+	u.Path = ""
+	u.RawPath = ""
+	return u, nil
+}
+
+// ResolveOriginEndpoint resolves an absolute protocol path against a validated
+// origin. The returned URL never inherits a user-supplied path, query or
+// fragment from the origin.
+func ResolveOriginEndpoint(rawOrigin, endpoint string, allowHTTP bool) (string, error) {
+	origin, err := ParseOriginURL(rawOrigin, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(endpoint, "/") {
+		return "", errors.New("origin endpoint must be an absolute path")
+	}
+	reference := &url.URL{Path: endpoint}
+	return origin.ResolveReference(reference).String(), nil
+}
+
+// ValidateOutboundURLSyntax applies the structural portion of the outbound
+// request policy without performing DNS resolution. It is suitable for strict
+// configuration loading; callers must still use ValidateResolvedURL and a
+// SafeDialer immediately before sending a request.
+func ValidateOutboundURLSyntax(rawURL string, allowHTTP bool) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || !u.IsAbs() || u.Opaque != "" || u.Hostname() == "" {
+		return errors.New("invalid outbound URL")
+	}
+	if u.Scheme != "https" && !(allowHTTP && u.Scheme == "http") {
+		return errors.New("outbound protocol is not allowed")
+	}
+	if u.User != nil {
+		return errors.New("outbound credentials are not allowed")
+	}
+	if u.Fragment != "" {
+		return errors.New("outbound URL fragment is not allowed")
+	}
+	if port := u.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return errors.New("outbound port is invalid")
+		}
+	}
+	return nil
+}
+
 // SafeDialer resolves on every new connection and validates every returned IP
 // before dialing it. That closes the DNS-rebinding gap left by save-time checks.
 type SafeDialer struct {

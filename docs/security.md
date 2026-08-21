@@ -91,15 +91,18 @@ MirrorRelay includes built-in supply chain poisoning and dependency confusion de
 MirrorRelay supports a three-tier permission model:
 - **`admin` (Administrator)**: Full operational control, user management, system settings override, service restart, and webhook test execution.
 - **`operator` (Operator)**: Repository configuration CRUD, cache purge, health check triggering, and Nginx reload/rollback. Cannot manage user accounts or alter system-level settings.
-- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, logs, mirror details, and health status. All mutating API calls are denied with HTTP `403 Forbidden`.
+- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, logs, redacted mirror details, and health status. Static authentication/cookie/token headers and credential-bearing token URLs are removed from viewer responses. Effective, per-repository and custom Managed Upstream Nginx configurations require `admin` or `operator`. All mutating API calls are denied with HTTP `403 Forbidden`.
 
 ---
 
 ## 8. Webhook Security & Alerting
 
 Enterprise notifications are delivered with HMAC-SHA256 signatures:
-- Supports DingTalk, Feishu, WeCom, Slack, and generic JSON webhooks.
+- One Webhook destination is active at a time. MirrorRelay auto-detects DingTalk, Feishu/Lark, WeCom and Slack hosts and uses their platform payloads; other hosts receive generic JSON.
 - Headers include `X-MirrorRelay-Signature: sha256=<hex_digest>` and `X-MirrorRelay-Event: <event_name>` for payload authenticity verification.
+- HTTPS is required by default. Plaintext HTTP and private/loopback/link-local targets require separate explicit `webhook.allow_http` and `webhook.allow_private` settings.
+- The configured target and every redirect hop are resolved and filtered before connection. The safe dialer rejects DNS rebinding to a blocked address, TLS hostname verification stays enabled, and at most five redirect hops are accepted.
+- Webhook tests can use the running destination or one temporary destination validated under the same policy. A temporary destination does not inherit the running signing secret. Invalid JSON stops immediately without sending a notification. Non-admin settings responses include neither `webhook.secret` nor the credential-bearing webhook URL.
 
 ---
 

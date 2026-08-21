@@ -30,6 +30,7 @@ type WebSettings struct {
 	Shutdown      WebShutdownSettings       `json:"shutdown"`
 	UpstreamNginx WebUpstreamNginxSettings  `json:"upstream_nginx"`
 	UIEnhancement model.UIEnhancementConfig `json:"ui_enhancement"`
+	Webhook       *WebWebhookSettings       `json:"webhook,omitempty"`
 	Warmup        model.WarmupConfig        `json:"warmup"`
 }
 
@@ -144,6 +145,16 @@ type WebUpstreamNginxSettings struct {
 	StopOnMirrorRelayExit bool   `json:"stop_on_mirrorrelay_exit"`
 }
 
+type WebWebhookSettings struct {
+	Enabled      bool     `json:"enabled"`
+	URL          string   `json:"url"`
+	Secret       string   `json:"secret,omitempty"`
+	Events       []string `json:"events"`
+	Timeout      string   `json:"timeout"`
+	AllowHTTP    bool     `json:"allow_http"`
+	AllowPrivate bool     `json:"allow_private"`
+}
+
 func WebSettingsFrom(c Config) WebSettings {
 	return WebSettings{
 		Server:      WebServerSettings{UnixSocketEnabled: c.Server.UnixSocketEnabled, LocalPort: c.Server.LocalPort},
@@ -176,7 +187,10 @@ func WebSettingsFrom(c Config) WebSettings {
 			WorkerProcesses: c.UpstreamNginx.WorkerProcesses, WorkerUser: c.UpstreamNginx.WorkerUser,
 			WorkerConnections: c.UpstreamNginx.WorkerConnections, StopOnMirrorRelayExit: c.UpstreamNginx.StopOnMirrorRelayExit},
 		UIEnhancement: c.UIEnhancement,
-		Warmup:        c.Warmup,
+		Webhook: &WebWebhookSettings{Enabled: c.Webhook.Enabled, URL: c.Webhook.URL, Secret: c.Webhook.Secret,
+			Events: append([]string{}, c.Webhook.Events...), Timeout: c.Webhook.Timeout.String(),
+			AllowHTTP: c.Webhook.AllowHTTP, AllowPrivate: c.Webhook.AllowPrivate},
+		Warmup: c.Warmup,
 	}
 }
 
@@ -242,6 +256,16 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 			return base, fmt.Errorf("%s must be a valid positive duration", value.name)
 		}
 		*value.target = parsed
+	}
+	if w.Webhook != nil {
+		candidate.Webhook.Enabled, candidate.Webhook.URL, candidate.Webhook.Secret = w.Webhook.Enabled, w.Webhook.URL, w.Webhook.Secret
+		candidate.Webhook.Events = append([]string{}, w.Webhook.Events...)
+		candidate.Webhook.AllowHTTP, candidate.Webhook.AllowPrivate = w.Webhook.AllowHTTP, w.Webhook.AllowPrivate
+		parsed, err := time.ParseDuration(w.Webhook.Timeout)
+		if err != nil || parsed <= 0 {
+			return base, errors.New("webhook.timeout must be a valid positive duration")
+		}
+		candidate.Webhook.Timeout = parsed
 	}
 	if err := candidate.NormalizeRuntime(); err != nil {
 		return base, err

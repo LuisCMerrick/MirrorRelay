@@ -51,8 +51,8 @@ export function renderAreaChart({
     const y = padding.top + chartH - ratio * chartH;
     const val = (minVal + ratio * (maxVal - minVal));
     const label = val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : val >= 1000 ? `${(val / 1000).toFixed(1)}k` : Math.round(val);
-    return `<line x1="${padding.left}" y1="${y}" x2="${w - padding.right}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3,3" />
-            <text x="${padding.left - 8}" y="${y + 4}" fill="#64748b" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">${label}</text>`;
+    return `<line x1="${padding.left}" y1="${y}" x2="${w - padding.right}" y2="${y}" stroke="var(--chart-grid)" stroke-dasharray="3,3" />
+            <text x="${padding.left - 8}" y="${y + 4}" fill="var(--chart-label)" font-size="10" text-anchor="end" font-family="ui-monospace, monospace">${label}</text>`;
   }).join('');
 
   // X labels (first, middle, last)
@@ -62,11 +62,11 @@ export function renderAreaChart({
   if (points.length > 1) xLabelsToShow.push(points[points.length - 1]);
 
   const xLabelsSvg = xLabelsToShow.map(p => {
-    return `<text x="${p.x}" y="${h - 8}" fill="#64748b" font-size="10" text-anchor="middle" font-family="ui-monospace, monospace">${esc(p.label)}</text>`;
+    return `<text x="${p.x}" y="${h - 8}" fill="var(--chart-label)" font-size="10" text-anchor="middle" font-family="ui-monospace, monospace">${esc(p.label)}</text>`;
   }).join('');
 
   const circles = points.map(p => {
-    return `<circle class="chart-point" cx="${p.x}" cy="${p.y}" r="3.5" fill="${color}" stroke="#0f172a" stroke-width="2">
+    return `<circle class="chart-point" cx="${p.x}" cy="${p.y}" r="3.5" fill="${color}" stroke="var(--chart-point-stroke)" stroke-width="2">
       <title>${esc(p.label)}: ${esc(p.val)} ${esc(unit)}</title>
     </circle>`;
   }).join('');
@@ -141,8 +141,8 @@ export function renderDonutChart({
     <div class="donut-wrap">
       <svg width="${size}" height="${size}" viewBox="0 0 ${size}" ${size}" class="donut-svg">
         ${paths}
-        <text x="${cx}" y="${cy - 3}" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="700" font-family="ui-monospace, monospace">${total}</text>
-        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="#64748b" font-size="9" text-transform="uppercase">Total</text>
+        <text x="${cx}" y="${cy - 3}" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="700" font-family="ui-monospace, monospace">${total}</text>
+        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--chart-label)" font-size="9" text-transform="uppercase">Total</text>
       </svg>
       <div class="donut-legend">${legend}</div>
     </div>

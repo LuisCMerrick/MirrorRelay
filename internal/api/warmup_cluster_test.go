@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
@@ -13,6 +14,7 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/database"
 	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/upstreamnginx"
 )
 
 func TestWarmupAPI_CRUD(t *testing.T) {
@@ -72,8 +74,23 @@ func TestWarmupAPI_CRUD(t *testing.T) {
 
 	var created model.WarmupJob
 	_ = json.NewDecoder(w.Body).Decode(&created)
-	if created.ID <= 0 || created.Name != "Debian Core Warmup" {
+	if created.ID <= 0 || created.Name != "Debian Core Warmup" || created.NextRunAt == "" {
 		t.Fatalf("unexpected created job: %+v", created)
+	}
+
+	invalidPayload := map[string]any{
+		"mirror_id": mir.ID, "name": "Invalid schedule", "cron_expression": "not a cron",
+		"url_patterns": []string{"/debian/dists/bookworm/Release"}, "enabled": true,
+	}
+	invalidBody, _ := json.Marshal(invalidPayload)
+	invalidRequest := httptest.NewRequest(http.MethodPost, "/admin/api/v1/warmup/jobs", bytes.NewReader(invalidBody))
+	invalidRequest.Header.Set("X-CSRF-Token", session.CSRFToken)
+	invalidRequest.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	invalidRequest.RemoteAddr = "127.0.0.1:12345"
+	invalidRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(invalidRecorder, invalidRequest)
+	if invalidRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid cron expression was accepted: status=%d body=%s", invalidRecorder.Code, invalidRecorder.Body.String())
 	}
 
 	// 2. List Warmup Jobs
@@ -121,9 +138,14 @@ func TestClusterSyncAPI(t *testing.T) {
 	cfg.Distributed.Role = "coordinator"
 	cfg.Distributed.Token = "secret-token"
 	cfg.Security.AdminCIDRs = []string{"127.0.0.1/32"}
+	cfg.UpstreamNginx.Mode = "disabled"
 	registry := mirror.NewRegistry(store)
+	controller := upstreamnginx.NewController(cfg, store)
+	if err := controller.Start(context.Background()); err != nil {
+		t.Fatalf("start disabled controller: %v", err)
+	}
 
-	srv, err := New(cfg, cfg, store, registry, nil, nil, nil, nil, nil, buildinfo.Info{})
+	srv, err := New(cfg, cfg, store, registry, nil, nil, nil, controller, nil, buildinfo.Info{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -155,5 +177,19 @@ func TestClusterSyncAPI(t *testing.T) {
 	handler.ServeHTTP(wSync, reqSync)
 	if wSync.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for cluster sync, got %d: %s", wSync.Code, wSync.Body.String())
+	}
+	entries, err := store.ListAudit(context.Background(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundFailedAggregate := false
+	for _, entry := range entries {
+		if entry.Action == "broadcast_cluster_sync" && !entry.Succeeded && strings.Contains(entry.Detail, "succeeded=0 failed=0") {
+			foundFailedAggregate = true
+			break
+		}
+	}
+	if !foundFailedAggregate {
+		t.Fatalf("zero-target cluster sync was audited as successful or duplicated: %+v", entries)
 	}
 }

@@ -6,39 +6,36 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 // Dispatcher manages sending event notifications to external webhook endpoints.
 type Dispatcher struct {
-	mu     sync.RWMutex
-	cfg    model.WebhookConfig
-	client *http.Client
-	queue  chan model.WebhookPayload
-	stop   chan struct{}
-	wg     sync.WaitGroup
+	mu    sync.RWMutex
+	cfg   model.WebhookConfig
+	queue chan model.WebhookPayload
+	stop  chan struct{}
+	wg    sync.WaitGroup
 }
 
 // New creates and starts a new Webhook Dispatcher.
 func New(cfg model.WebhookConfig) *Dispatcher {
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
 	d := &Dispatcher{
-		cfg: cfg,
-		client: &http.Client{
-			Timeout: timeout,
-		},
+		cfg:   cfg,
 		queue: make(chan model.WebhookPayload, 256),
 		stop:  make(chan struct{}),
 	}
@@ -52,11 +49,6 @@ func (d *Dispatcher) UpdateConfig(cfg model.WebhookConfig) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.cfg = cfg
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	d.client.Timeout = timeout
 }
 
 // Stop stops the background worker.
@@ -105,6 +97,15 @@ func (d *Dispatcher) SendSync(ctx context.Context, payload model.WebhookPayload)
 	return d.postPayload(ctx, cfg, payload)
 }
 
+// SendSyncWithConfig sends a test notification with an explicitly validated
+// temporary configuration without mutating the dispatcher's live settings.
+func (d *Dispatcher) SendSyncWithConfig(ctx context.Context, cfg model.WebhookConfig, payload model.WebhookPayload) error {
+	if cfg.URL == "" {
+		return fmt.Errorf("webhook URL is empty")
+	}
+	return d.postPayload(ctx, cfg, payload)
+}
+
 func (d *Dispatcher) isEventEnabled(cfg model.WebhookConfig, event string) bool {
 	if len(cfg.Events) == 0 {
 		return true
@@ -130,9 +131,9 @@ func (d *Dispatcher) worker() {
 			if !cfg.Enabled || cfg.URL == "" {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout(cfg))
 			if err := d.postPayload(ctx, cfg, payload); err != nil {
-				slog.Warn("failed to deliver webhook", "url", cfg.URL, "event", payload.Event, "error", err)
+				slog.Warn("failed to deliver webhook", "event", payload.Event, "error", err)
 			}
 			cancel()
 		}
@@ -140,6 +141,12 @@ func (d *Dispatcher) worker() {
 }
 
 func (d *Dispatcher) postPayload(ctx context.Context, cfg model.WebhookConfig, payload model.WebhookPayload) error {
+	if err := security.ValidateOutboundURLSyntax(cfg.URL, cfg.AllowHTTP); err != nil {
+		return fmt.Errorf("validate webhook URL: %w", err)
+	}
+	if err := security.ValidateResolvedURL(ctx, cfg.URL, cfg.AllowHTTP, cfg.AllowPrivate, net.DefaultResolver); err != nil {
+		return fmt.Errorf("validate webhook URL: %w", err)
+	}
 	body, contentType := formatPayload(cfg.URL, payload)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
@@ -157,7 +164,7 @@ func (d *Dispatcher) postPayload(ctx context.Context, cfg model.WebhookConfig, p
 		req.Header.Set("X-MirrorRelay-Signature", "sha256="+signature)
 	}
 
-	resp, err := d.client.Do(req)
+	resp, err := secureWebhookClient(cfg).Do(req)
 	if err != nil {
 		return fmt.Errorf("send webhook: %w", err)
 	}
@@ -169,10 +176,47 @@ func (d *Dispatcher) postPayload(ctx context.Context, cfg model.WebhookConfig, p
 	return nil
 }
 
+func webhookTimeout(cfg model.WebhookConfig) time.Duration {
+	if cfg.Timeout > 0 {
+		return cfg.Timeout
+	}
+	return 5 * time.Second
+}
+
+func secureWebhookClient(cfg model.WebhookConfig) *http.Client {
+	timeout := webhookTimeout(cfg)
+	dialer := security.NewSafeDialer(timeout, timeout, cfg.AllowPrivate)
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+		DisableKeepAlives:     true,
+		MaxIdleConns:          8,
+		MaxIdleConnsPerHost:   2,
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(request *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("webhook redirect limit exceeded")
+			}
+			if err := security.ValidateOutboundURLSyntax(request.URL.String(), cfg.AllowHTTP); err != nil {
+				return err
+			}
+			return security.ValidateResolvedURL(request.Context(), request.URL.String(), cfg.AllowHTTP, cfg.AllowPrivate, net.DefaultResolver)
+		},
+	}
+}
+
 func formatPayload(targetURL string, payload model.WebhookPayload) ([]byte, string) {
-	lowerURL := strings.ToLower(targetURL)
+	hostname := ""
+	if parsed, err := url.Parse(targetURL); err == nil {
+		hostname = strings.ToLower(parsed.Hostname())
+	}
 	switch {
-	case strings.Contains(lowerURL, "oapi.dingtalk.com"):
+	case hostname == "oapi.dingtalk.com":
 		// DingTalk bot markdown format
 		text := fmt.Sprintf("### %s\n\n%s\n\n> Event: `%s` | Time: %s",
 			payload.Title, payload.Message, payload.Event, payload.Timestamp.Format(time.RFC3339))
@@ -186,7 +230,7 @@ func formatPayload(targetURL string, payload model.WebhookPayload) ([]byte, stri
 		b, _ := json.Marshal(msg)
 		return b, "application/json"
 
-	case strings.Contains(lowerURL, "open.feishu.cn"):
+	case hostname == "open.feishu.cn":
 		// Feishu / Lark bot post format
 		content := [][]map[string]string{
 			{{"tag": "text", "text": payload.Message + "\n"}},
@@ -206,7 +250,7 @@ func formatPayload(targetURL string, payload model.WebhookPayload) ([]byte, stri
 		b, _ := json.Marshal(msg)
 		return b, "application/json"
 
-	case strings.Contains(lowerURL, "qyapi.weixin.qq.com"):
+	case hostname == "qyapi.weixin.qq.com":
 		// Enterprise WeChat / WeCom markdown format
 		text := fmt.Sprintf("### %s\n%s\n> **Event**: <font color=\"info\">%s</font>\n> **Time**: %s",
 			payload.Title, payload.Message, payload.Event, payload.Timestamp.Format(time.RFC3339))
@@ -219,7 +263,7 @@ func formatPayload(targetURL string, payload model.WebhookPayload) ([]byte, stri
 		b, _ := json.Marshal(msg)
 		return b, "application/json"
 
-	case strings.Contains(lowerURL, "hooks.slack.com"):
+	case hostname == "hooks.slack.com":
 		// Slack webhook format
 		msg := map[string]any{
 			"text": fmt.Sprintf("*%s*\n%s\n`Event: %s`", payload.Title, payload.Message, payload.Event),

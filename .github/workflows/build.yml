@@ -154,9 +154,47 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  source:
+    name: Package vendored source
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Create and verify vendored source archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.source_date_epoch }}
+        run: |
+          set -euo pipefail
+          go mod download
+          ./scripts/package-vendored-source.sh "${VERSION}" dist/source
+          archive="dist/source/mirrorrelay-${VERSION}-source-with-vendor.tar.gz"
+          root="mirrorrelay-${VERSION}-source"
+          tar -tzf "${archive}" | grep -Fx "${root}/vendor/modules.txt"
+          temporary_directory="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary_directory}"' EXIT
+          tar -xzf "${archive}" -C "${temporary_directory}"
+          (cd "${temporary_directory}/${root}" && go list -mod=vendor ./... >/dev/null)
+
+      - name: Upload vendored source
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-source
+          path: dist/source/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
   release-bundle:
     name: Assemble release bundle
-    needs: [metadata, package]
+    needs: [metadata, package, source]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -180,6 +218,7 @@ jobs:
             "mirrorrelay-${VERSION}.aarch64.rpm"
             "mirrorrelay-${VERSION}-linux-amd64.tar.gz"
             "mirrorrelay-${VERSION}-linux-arm64.tar.gz"
+            "mirrorrelay-${VERSION}-source-with-vendor.tar.gz"
           )
           install -d dist/final
           for artifact in "${expected[@]}"; do
@@ -216,6 +255,7 @@ jobs:
             echo "- Version: \`${VERSION}\`"
             echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
             echo "- Formats: DEB, RPM, tar.gz"
+            echo "- Vendored source: \`mirrorrelay-${VERSION}-source-with-vendor.tar.gz\`"
             echo "- Container images: none"
           } >> "${GITHUB_STEP_SUMMARY}"
 

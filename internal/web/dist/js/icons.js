@@ -67,6 +67,8 @@ export function icon(name, size = 16, className = '') {
     case 'play':
     case 'test':
       return `<svg ${attrs}><polygon points="6 3 20 12 6 21 6 3"/></svg>`;
+    case 'send':
+      return `<svg ${attrs}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>`;
     case 'plus':
     case 'add':
       return `<svg ${attrs}><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>`;

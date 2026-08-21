@@ -41,11 +41,13 @@ func TestWebhookDispatchAndHMACSignature(t *testing.T) {
 
 	secret := "test-secret-key"
 	d := New(model.WebhookConfig{
-		Enabled: true,
-		URL:     server.URL,
-		Secret:  secret,
-		Events:  []string{"upstream_status", "security_alert"},
-		Timeout: 2 * time.Second,
+		Enabled:      true,
+		URL:          server.URL,
+		Secret:       secret,
+		Events:       []string{"upstream_status", "security_alert"},
+		Timeout:      2 * time.Second,
+		AllowHTTP:    true,
+		AllowPrivate: true,
 	})
 	defer d.Stop()
 
@@ -126,6 +128,13 @@ func TestWebhookPlatformFormatting(t *testing.T) {
 	if err := json.Unmarshal(slackBytes, &slackMap); err != nil || slackMap["text"] == nil {
 		t.Fatalf("slack format error: %v, map=%v", err, slackMap)
 	}
+
+	// Provider names embedded in an unrelated hostname must remain generic.
+	genericBytes, _ := formatPayload("https://hooks.slack.com.example.test/services/xxx", payload)
+	var genericMap map[string]any
+	if err := json.Unmarshal(genericBytes, &genericMap); err != nil || genericMap["event"] != payload.Event || genericMap["text"] != nil {
+		t.Fatalf("deceptive hostname should use generic format: %v, map=%v", err, genericMap)
+	}
 }
 
 func TestWebhookSendSync(t *testing.T) {
@@ -135,9 +144,11 @@ func TestWebhookSendSync(t *testing.T) {
 	defer server.Close()
 
 	d := New(model.WebhookConfig{
-		Enabled: true,
-		URL:     server.URL,
-		Timeout: 2 * time.Second,
+		Enabled:      true,
+		URL:          server.URL,
+		Timeout:      2 * time.Second,
+		AllowHTTP:    true,
+		AllowPrivate: true,
 	})
 	defer d.Stop()
 
@@ -149,5 +160,20 @@ func TestWebhookSendSync(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("SendSync failed: %v", err)
+	}
+}
+
+func TestWebhookBlocksPrivateDestinationByDefault(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	dispatcher := New(model.WebhookConfig{Enabled: true, URL: server.URL, AllowHTTP: true, Timeout: time.Second})
+	defer dispatcher.Stop()
+	err := dispatcher.SendSync(context.Background(), model.WebhookPayload{Event: "test", Timestamp: time.Now()})
+	if err == nil || requests != 0 {
+		t.Fatalf("private webhook destination was not blocked before dialing: err=%v requests=%d", err, requests)
 	}
 }

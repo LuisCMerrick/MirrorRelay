@@ -22,7 +22,7 @@ func IsConflict(err error) bool {
 func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
 func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes ORDER BY priority ASC, id ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes ORDER BY priority ASC, id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, erro
 		var enabled int
 		var capsJSON string
 		var lastCheckStr, createdStr, updatedStr string
-		if err := rows.Scan(&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr); err != nil {
 			return nil, err
 		}
 		n.Enabled = enabled != 0
@@ -55,8 +55,8 @@ func (s *Store) GetClusterNode(ctx context.Context, id int64) (model.ClusterNode
 	var enabled int
 	var capsJSON string
 	var lastCheckStr, createdStr, updatedStr string
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE id=?`, id).Scan(
-		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE id=?`, id).Scan(
+		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
 	if err != nil {
 		return n, err
 	}
@@ -77,8 +77,8 @@ func (s *Store) GetClusterNodeByURL(ctx context.Context, rawURL string) (model.C
 	var enabled int
 	var capsJSON string
 	var lastCheckStr, createdStr, updatedStr string
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE url=?`, rawURL).Scan(
-		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE url=?`, rawURL).Scan(
+		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
 	if err != nil {
 		return n, err
 	}
@@ -114,8 +114,8 @@ func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (
 	if node.Enabled {
 		enabledInt = 1
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,last_check,last_error,created_at,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, string(capsBytes), "", node.LastError, nowStr, nowStr)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, string(capsBytes), node.LatencyMS, "", node.LastError, nowStr, nowStr)
 	if err != nil {
 		return node, err
 	}
@@ -151,15 +151,15 @@ func (s *Store) UpdateClusterNode(ctx context.Context, node model.ClusterNode) (
 	return node, nil
 }
 
-func (s *Store) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, lastError string, lastCheck time.Time) error {
+func (s *Store) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, latencyMS int64, lastError string, lastCheck time.Time) error {
 	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
 	var checkStr string
 	if !lastCheck.IsZero() {
 		checkStr = lastCheck.UTC().Format(time.RFC3339Nano)
 	}
 	capsBytes, _ := json.Marshal(caps)
-	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET health_status=?,config_status=?,config_fingerprint=?,version=?,protocol_version=?,capabilities=?,last_error=?,last_check=?,updated_at=? WHERE id=?`,
-		healthStatus, configStatus, fingerprint, version, protoVer, string(capsBytes), lastError, checkStr, nowStr, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET health_status=?,config_status=?,config_fingerprint=?,version=?,protocol_version=?,capabilities=?,latency_ms=?,last_error=?,last_check=?,updated_at=? WHERE id=?`,
+		healthStatus, configStatus, fingerprint, version, protoVer, string(capsBytes), latencyMS, lastError, checkStr, nowStr, id)
 	return err
 }
 

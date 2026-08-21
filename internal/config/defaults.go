@@ -137,9 +137,10 @@ func Default() Config {
 			StopOnMirrorRelayExit:  true,
 		},
 		Distributed: DistributedConfig{
-			Enabled: false,
-			Role:    "standalone",
-			Token:   "",
+			Enabled:   false,
+			Role:      "standalone",
+			Token:     "",
+			AllowHTTP: false,
 			Node: DistributedNodeConfig{
 				Name:          "",
 				PublicBaseURL: "",

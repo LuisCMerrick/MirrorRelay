@@ -27,6 +27,7 @@ type Store interface {
 	GetWarmupJob(context.Context, int64) (model.WarmupJob, error)
 	Mirror(context.Context, int64) (model.Mirror, error)
 	UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error
+	UpdateWarmupJobSchedule(context.Context, int64, string) error
 }
 
 type AuditRecorder interface {
@@ -205,39 +206,34 @@ func (e *Engine) checkAndRunScheduledJobs(ctx context.Context) {
 			continue
 		}
 
-		if shouldRunCron(job.CronExpression, job.LastRunAt, now) {
+		nextRun, err := scheduledRunTime(job, now)
+		if err != nil {
+			slog.Warn("invalid persisted warmup schedule", "job_id", job.ID, "schedule", job.CronExpression, "error", err)
+			continue
+		}
+		if job.NextRunAt == "" && !nextRun.IsZero() {
+			_ = e.store.UpdateWarmupJobSchedule(ctx, job.ID, nextRun.Format(time.RFC3339))
+		}
+		if !nextRun.IsZero() && !now.Before(nextRun) {
 			_ = e.RunJob(ctx, job.ID)
 		}
 	}
 }
 
-func shouldRunCron(expr, lastRunStr string, now time.Time) bool {
-	// Simple intervals: @hourly, @daily, @every 1h, or cron format
-	if lastRunStr != "" {
-		lastRun, err := time.Parse(time.RFC3339, lastRunStr)
-		if err == nil {
-			switch strings.TrimSpace(strings.ToLower(expr)) {
-			case "@hourly", "0 * * * *":
-				if now.Sub(lastRun) < 55*time.Minute {
-					return false
-				}
-			case "@daily", "0 0 * * *", "0 2 * * *":
-				if now.Sub(lastRun) < 23*time.Hour {
-					return false
-				}
-			default:
-				if strings.HasPrefix(expr, "@every ") {
-					durStr := strings.TrimPrefix(expr, "@every ")
-					if d, err := time.ParseDuration(durStr); err == nil && d > 0 {
-						if now.Sub(lastRun) < d {
-							return false
-						}
-					}
-				}
-			}
+func scheduledRunTime(job model.WarmupJob, now time.Time) (time.Time, error) {
+	if job.NextRunAt != "" {
+		return time.Parse(time.RFC3339, job.NextRunAt)
+	}
+	reference := job.CreatedAt
+	if job.LastRunAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, job.LastRunAt); err == nil {
+			reference = parsed
 		}
 	}
-	return true
+	if reference.IsZero() {
+		reference = now
+	}
+	return NextRunAt(job.CronExpression, reference)
 }
 
 func (e *Engine) executeJob(ctx context.Context, jobID int64) {
@@ -249,7 +245,8 @@ func (e *Engine) executeJob(ctx context.Context, jobID int64) {
 
 	mirror, err := e.store.Mirror(ctx, job.MirrorID)
 	if err != nil {
-		_ = e.store.UpdateWarmupJobProgress(ctx, jobID, "failed", 0, 0, 0, 0, "Mirror not found: "+err.Error(), time.Now().UTC().Format(time.RFC3339), "")
+		now := time.Now().UTC()
+		_ = e.store.UpdateWarmupJobProgress(ctx, jobID, "failed", 0, 0, 0, 0, "Mirror not found: "+err.Error(), now.Format(time.RFC3339), nextRunString(job.CronExpression, now))
 		return
 	}
 
@@ -264,7 +261,7 @@ func (e *Engine) executeJob(ctx context.Context, jobID int64) {
 	targetURLs := e.expandTargetURLs(ctx, mirror, job.URLPatterns)
 	total := len(targetURLs)
 	if total == 0 {
-		_ = e.store.UpdateWarmupJobProgress(ctx, jobID, "completed", 0, 0, 0, 0, "No target URLs to warm up", nowStr, "")
+		_ = e.store.UpdateWarmupJobProgress(ctx, jobID, "completed", 0, 0, 0, 0, "No target URLs to warm up", nowStr, nextRunString(job.CronExpression, time.Now().UTC()))
 		return
 	}
 
@@ -316,17 +313,14 @@ func (e *Engine) executeJob(ctx context.Context, jobID int64) {
 		finalStatus = "failed"
 	}
 
-	_ = e.store.UpdateWarmupJobProgress(ctx, jobID, finalStatus, total, int(completedCount), int(failedCount), totalDownloadedBytes, lastErrStr, nowStr, "")
+	_ = e.store.UpdateWarmupJobProgress(ctx, jobID, finalStatus, total, int(completedCount), int(failedCount), totalDownloadedBytes, lastErrStr, nowStr, nextRunString(job.CronExpression, time.Now().UTC()))
 	if e.audit != nil {
 		e.audit.Record("system", "warmup", fmt.Sprintf("warmup_job:%d", jobID), fmt.Sprintf("Warmed %d/%d items (%d bytes)", completedCount, total, totalDownloadedBytes), finalStatus == "completed")
 	}
 }
 
 func (e *Engine) expandTargetURLs(ctx context.Context, mirror model.Mirror, patterns []string) []string {
-	baseURL := "http://127.0.0.1"
-	if e.cfg.Server.LocalPort > 0 {
-		baseURL = fmt.Sprintf("http://127.0.0.1:%d", e.cfg.Server.LocalPort)
-	}
+	baseURL := e.frontendBaseURL()
 	basePath := strings.TrimRight(mirror.PublicPath, "/")
 
 	var urls []string
@@ -410,7 +404,7 @@ func (e *Engine) extractPackagesFromMetadata(ctx context.Context, metadataURL st
 			if strings.HasPrefix(line, "Filename: ") {
 				fn := strings.TrimSpace(strings.TrimPrefix(line, "Filename: "))
 				if fn != "" {
-					u := fmt.Sprintf("http://127.0.0.1%s/%s", strings.TrimRight(mirror.PublicPath, "/"), strings.TrimLeft(fn, "/"))
+					u := fmt.Sprintf("%s%s/%s", e.frontendBaseURL(), strings.TrimRight(mirror.PublicPath, "/"), strings.TrimLeft(fn, "/"))
 					results = append(results, u)
 					if len(results) >= 50 {
 						break
@@ -441,6 +435,21 @@ func (e *Engine) extractPackagesFromMetadata(ctx context.Context, metadataURL st
 	}
 
 	return results
+}
+
+func (e *Engine) frontendBaseURL() string {
+	if e.cfg.Server.LocalPort > 0 {
+		return fmt.Sprintf("http://127.0.0.1:%d", e.cfg.Server.LocalPort)
+	}
+	return "http://127.0.0.1"
+}
+
+func nextRunString(expression string, after time.Time) string {
+	next, err := NextRunAt(expression, after)
+	if err != nil || next.IsZero() {
+		return ""
+	}
+	return next.UTC().Format(time.RFC3339)
 }
 
 func (e *Engine) fetchAndWarm(ctx context.Context, targetURL string) (int64, error) {

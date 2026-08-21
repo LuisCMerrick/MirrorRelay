@@ -263,13 +263,13 @@ func TestClusterNodeAndSettingStore(t *testing.T) {
 
 	// 4. Update status
 	now := time.Now()
-	err = store.UpdateClusterNodeStatus(ctx, created1.ID, "healthy", "match", "sha256:abcd", "0.0.1", 1, []string{"apt", "rpm", "pypi"}, "", now)
+	err = store.UpdateClusterNodeStatus(ctx, created1.ID, "healthy", "match", "sha256:abcd", "0.0.1", 1, []string{"apt", "rpm", "pypi"}, 37, "", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got1, err := store.GetClusterNode(ctx, created1.ID)
-	if err != nil || got1.HealthStatus != "healthy" || got1.ConfigStatus != "match" || got1.ConfigFingerprint != "sha256:abcd" {
+	if err != nil || got1.HealthStatus != "healthy" || got1.ConfigStatus != "match" || got1.ConfigFingerprint != "sha256:abcd" || got1.LatencyMS != 37 {
 		t.Fatalf("unexpected node after status update: %+v", got1)
 	}
 

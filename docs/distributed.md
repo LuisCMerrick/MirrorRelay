@@ -86,6 +86,7 @@ distributed:
   enabled: true
   role: coordinator           # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
+  allow_http: false           # HTTPS is required unless explicitly enabled
   node:
     name: "coord-01"
     public_base_url: "https://repo-hub.example.com"
@@ -132,6 +133,7 @@ distributed:
   enabled: true
   role: edge                  # standalone, coordinator, edge
   token: "secret-shared-cluster-token-32bytes"
+  allow_http: false
   node:
     name: "Edge US East"
     public_base_url: "https://edge-us.example.com"
@@ -143,8 +145,8 @@ distributed:
 
 ## 5. Security & Isolation
 
-- **Mutual Cluster Authentication**: Communications between Coordinator and Edge nodes (`/api/v1/cluster/manifest`, `/api/v1/cluster/health`) require a shared cryptographically secure cluster token verified in constant time.
-- **SSRF Safety**: Node health probes are strictly validated against private IP restrictions when `allow_private_upstream` is disabled.
+- **Cluster Authentication**: Probe, sync and purge endpoints require a shared cryptographically secure cluster token verified in constant time. Sync receivers are outside browser Session/CSRF handling but accept only `POST`, the Edge role and that cluster token; request bodies are bounded and strictly decoded.
+- **SSRF Safety**: A node URL is an origin only: credentials, path prefixes, query strings and fragments are rejected. HTTPS is required by default. Plaintext HTTP needs `distributed.allow_http: true`, while private/loopback/link-local targets separately require `security.allow_private_upstream: true`. Health checks, configuration sync and cache purge all enforce the same policy before sending the token, use policy-filtered addresses, preserve TLS hostname verification and do not follow redirects.
 - **Cache Independence**: Each Edge node maintains isolated, content-addressed disk storage, eliminating cross-node cache contamination.
 
 ---
@@ -153,11 +155,13 @@ distributed:
 
 MirrorRelay provides automated one-click and scheduled synchronization between the Coordinator and Edge nodes:
 
-1. **Manifest Push & Pull Synchronization**:
-   - The Coordinator calculates canonical configuration fingerprints across all active repositories.
-   - Using the Web UI ("Sync all nodes") or REST API (`POST /admin/api/v1/cluster/sync`), the Coordinator broadcasts the latest repository manifest to all edge nodes simultaneously.
+1. **Complete Active Configuration Synchronization**:
+   - The Coordinator calculates the canonical fingerprint from its own Active repository snapshot and never adopts an Edge fingerprint as authority.
+   - Using the Web UI ("Sync all nodes") or REST API (`POST /admin/api/v1/cluster/sync`), the Coordinator concurrently sends the complete Active repositories and custom configuration snapshot to every enabled Edge at `POST /api/v1/cluster/sync/apply`.
+   - Each Edge verifies the protocol, generation, payload fingerprint, capabilities, repositories and route conflicts before applying the snapshot through the normal Managed Upstream Nginx candidate validation, atomic publication and graceful reload path. A validation or reload failure keeps the previous Active configuration.
+   - HTTP 200 alone is not success: the Coordinator requires a strict `applied` JSON acknowledgement with the exact fingerprint, protocol, generation and capabilities before persisting the Edge as synchronized.
 2. **Distributed Cache Invalidation Broadcast**:
-   - Cache invalidation operations on the Coordinator (`DELETE /cache` or targeted precision purge) automatically broadcast invalidation events across all active edge nodes (`POST /cluster/sync/purge`), ensuring instantaneous cluster-wide cache consistency.
+   - Global, repository and object invalidation on the Coordinator first advances the local generation, then broadcasts the same scope to every enabled Edge at `POST /api/v1/cluster/sync/purge`.
+   - Every Edge acknowledgement is checked. API responses and one aggregate audit event report targets, successes and per-node failures, including partial failure, while local invalidation remains effective.
 3. **Drift Detection & Automatic Alerting**:
    - Health probes continually compare edge fingerprints against the cluster authority. Any drift triggers a `config_change` webhook notification and highlights the affected node in the Web UI.
-

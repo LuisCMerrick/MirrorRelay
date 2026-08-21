@@ -107,6 +107,7 @@ distributed:
   enabled: false
   role: standalone
   token: ""
+  allow_http: false
   node:
     name: "node-01"
     public_base_url: "https://mirror.example.com"
@@ -122,3 +123,11 @@ distributed:
     healthy_threshold: 2
     unhealthy_threshold: 3
   nodes: []
+webhook:
+  enabled: false
+  url: ""
+  secret: ""
+  events: [upstream_status, cache_threshold, config_change, security_alert]
+  timeout: 5s
+  allow_http: false
+  allow_private: false

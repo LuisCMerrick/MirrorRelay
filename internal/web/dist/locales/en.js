@@ -679,7 +679,7 @@ export default {
         ]
     },
     {
-        "title": "Webhook & Alerting channels",
+        "title": "Webhook & Alerting — single destination",
         "fields": [
             {
                 "path": "webhook.enabled",
@@ -688,7 +688,7 @@ export default {
             },
             {
                 "path": "webhook.url",
-                "label": "Webhook endpoint URL (DingTalk, Feishu, WeCom, Slack, Generic)",
+                "label": "Single Webhook destination URL (provider format is auto-detected)",
                 "type": "text"
             },
             {
@@ -697,9 +697,24 @@ export default {
                 "type": "text"
             },
             {
+                "path": "webhook.events",
+                "label": "Enabled event names (one per line)",
+                "type": "list"
+            },
+            {
                 "path": "webhook.timeout",
                 "label": "Request timeout",
                 "type": "text"
+            },
+            {
+                "path": "webhook.allow_http",
+                "label": "Allow plaintext HTTP for this webhook",
+                "type": "boolean"
+            },
+            {
+                "path": "webhook.allow_private",
+                "label": "Allow private or local addresses for this webhook",
+                "type": "boolean"
             }
         ]
     },
@@ -1057,10 +1072,39 @@ export default {
     "Allowed packages (Whitelist)": "Allowed packages (Whitelist)",
     "All permitted": "All permitted",
     "rules": "rules",
-    "Webhook Alerting & Test Notification": "Webhook Alerting & Test Notification",
-    "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.": "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.",
-    "Target Webhook URL (leave empty to use saved settings)": "Target Webhook URL (leave empty to use saved settings)",
-    "Send Test Notification": "Send Test Notification",
-    "Test webhook notification delivered successfully!": "Test webhook notification delivered successfully!"
+    "Theme": "Theme",
+    "Light theme": "Light theme",
+    "Dark theme": "Dark theme",
+    "Auto theme (follow system)": "Auto theme (follow system)",
+    "Auto (follow system)": "Auto (follow system)",
+    "Light": "Light",
+    "Dark": "Dark",
+    "Instance default for browsers without a saved theme preference.": "Instance default for browsers without a saved theme preference.",
+    "Configure the default administration theme and optional public repository UI enhancements. Browser theme choices are applied immediately and saved locally.": "Configure the default administration theme and optional public repository UI enhancements. Browser theme choices are applied immediately and saved locally.",
+    "Enable public repository UI enhancement": "Enable public repository UI enhancement",
+    "Webhook notification test": "Webhook notification test",
+    "One active destination": "One active destination",
+    "MirrorRelay has one configured Webhook destination at a time. Its payload format is detected from the URL. The platform choices below test one target; they do not add notification channels.": "MirrorRelay has one configured Webhook destination at a time. Its payload format is detected from the URL. The platform choices below test one target; they do not add notification channels.",
+    "Test destination": "Test destination",
+    "Running configuration": "Running configuration",
+    "Uses the single webhook destination in the running process. Saved changes waiting for a restart are not used.": "Uses the single webhook destination in the running process. Saved changes waiting for a restart are not used.",
+    "DingTalk": "DingTalk",
+    "Feishu / Lark": "Feishu / Lark",
+    "WeCom": "WeCom",
+    "Slack": "Slack",
+    "Custom JSON webhook": "Custom JSON webhook",
+    "Sends the DingTalk Markdown payload format to this one-time target.": "Sends the DingTalk Markdown payload format to this one-time target.",
+    "Sends the Feishu rich-post payload format to this one-time target.": "Sends the Feishu rich-post payload format to this one-time target.",
+    "Sends the WeCom Markdown payload format to this one-time target.": "Sends the WeCom Markdown payload format to this one-time target.",
+    "Sends the Slack webhook payload format to this one-time target.": "Sends the Slack webhook payload format to this one-time target.",
+    "Hosts not recognized as a built-in provider receive the standard MirrorRelay JSON payload.": "Hosts not recognized as a built-in provider receive the standard MirrorRelay JSON payload.",
+    "One-time Webhook URL": "One-time Webhook URL",
+    "Optional HMAC signing secret": "Optional HMAC signing secret",
+    "Used only for this test in the X-MirrorRelay-Signature header; platform access tokens remain part of the Webhook URL.": "Used only for this test in the X-MirrorRelay-Signature header; platform access tokens remain part of the Webhook URL.",
+    "Send test notification": "Send test notification",
+    "Test Webhook notification delivered successfully.": "Test Webhook notification delivered successfully.",
+    "Enter a valid absolute Webhook URL.": "Enter a valid absolute Webhook URL.",
+    "Webhook URLs must use HTTP or HTTPS.": "Webhook URLs must use HTTP or HTTPS.",
+    "The selected provider requires a URL on %s.": "The selected provider requires a URL on %s."
 }
 };

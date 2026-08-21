@@ -27,6 +27,7 @@ type Store interface {
 	AddConfigVersion(context.Context, model.ConfigVersion, int) (model.ConfigVersion, error)
 	ListConfigVersions(context.Context, int) ([]model.ConfigVersion, error)
 	ConfigVersion(context.Context, int64) (model.ConfigVersion, error)
+	ActiveConfigVersion(context.Context) (model.ConfigVersion, error)
 	SetActiveConfigVersion(context.Context, int64) error
 	SetConfigState(context.Context, []int64, string, string) error
 }
@@ -60,17 +61,18 @@ type Controller struct {
 	generator *Generator
 	runner    commandRunner
 
-	mu        sync.RWMutex
-	applyMu   sync.Mutex
-	commandMu sync.Mutex
-	versionMu sync.Mutex
-	status    Status
-	failures  []time.Time
-	stop      chan struct{}
-	childPID  int
-	active    []model.Mirror
-	activeSet bool
-	publisher func([]model.Mirror)
+	mu           sync.RWMutex
+	applyMu      sync.Mutex
+	commandMu    sync.Mutex
+	versionMu    sync.Mutex
+	status       Status
+	failures     []time.Time
+	stop         chan struct{}
+	childPID     int
+	active       []model.Mirror
+	activeCustom []model.CustomConfig
+	activeSet    bool
+	publisher    func([]model.Mirror)
 }
 
 type configurationSnapshot struct {
@@ -176,7 +178,7 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 		return model.ConfigVersion{}, err
 	}
 	versionRecord := model.ConfigVersion{
-		Active:            true,
+		Active:            false,
 		ConfigurationHash: generated.Hash,
 		Configuration:     generated.Effective,
 		Snapshot:          string(snapshotBytes),
@@ -189,8 +191,8 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 	if err != nil {
 		return model.ConfigVersion{}, err
 	}
+	previousTarget := ""
 	if c.Enabled() {
-		previousTarget := ""
 		if currentTarget, readErr := os.Readlink(filepath.Join(c.cfg.UpstreamNginx.Prefix, "current")); readErr == nil {
 			previousTarget = currentTarget
 		}
@@ -204,6 +206,13 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 			return model.ConfigVersion{}, activateErr
 		}
 	}
+	if err := c.store.SetActiveConfigVersion(ctx, activeVersion.Version); err != nil {
+		if c.Enabled() {
+			_ = c.restorePublishedConfiguration(previousTarget)
+		}
+		return model.ConfigVersion{}, fmt.Errorf("record active configuration version: %w", err)
+	}
+	activeVersion.Active = true
 	if stateErr := c.store.SetConfigState(ctx, desiredIDs, "active", ""); stateErr != nil {
 		slog.Warn("record active repository state", "error", stateErr)
 	}
@@ -214,8 +223,39 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 	c.status.LastReloadResult = "success"
 	c.status.LastError = ""
 	c.mu.Unlock()
-	c.setActiveRepositories(repositories)
+	c.setActiveConfiguration(repositories, custom)
 	return activeVersion, nil
+}
+
+// ApplyConfiguration validates a complete candidate before changing desired
+// state, then reconciles it under the same controller lock. If publication or
+// reload fails, the previous desired configuration is restored and the prior
+// active configuration remains published.
+func (c *Controller) ApplyConfiguration(ctx context.Context, repositories []model.Mirror, custom []model.CustomConfig, operator, description string) (model.ConfigVersion, error) {
+	c.applyMu.Lock()
+	defer c.applyMu.Unlock()
+	if _, _, err := c.ValidateWithCustom(ctx, repositories, custom); err != nil {
+		return model.ConfigVersion{}, err
+	}
+	previousRepositories, err := c.store.ListMirrors(ctx)
+	if err != nil {
+		return model.ConfigVersion{}, err
+	}
+	previousCustom, err := c.store.ListCustomConfigs(ctx)
+	if err != nil {
+		return model.ConfigVersion{}, err
+	}
+	if err := c.store.ReplaceConfiguration(ctx, repositories, custom); err != nil {
+		return model.ConfigVersion{}, err
+	}
+	version, err := c.reconcileLocked(ctx, operator, description)
+	if err == nil {
+		return version, nil
+	}
+	if restoreErr := c.store.ReplaceConfiguration(ctx, previousRepositories, previousCustom); restoreErr != nil {
+		return model.ConfigVersion{}, errors.Join(err, fmt.Errorf("restore previous desired configuration: %w", restoreErr))
+	}
+	return model.ConfigVersion{}, err
 }
 
 func (c *Controller) Rollback(ctx context.Context, version int64, operator string) (model.ConfigVersion, error) {
@@ -262,6 +302,15 @@ func (c *Controller) History(ctx context.Context) ([]model.ConfigVersion, error)
 
 func (c *Controller) Start(ctx context.Context) error {
 	if !c.Enabled() {
+		repositories, err := c.store.ListMirrors(ctx)
+		if err != nil {
+			return err
+		}
+		custom, err := c.store.ListCustomConfigs(ctx)
+		if err != nil {
+			return err
+		}
+		c.setActiveConfiguration(repositories, custom)
 		return nil
 	}
 	if err := c.ensureRuntime(); err != nil {
@@ -286,6 +335,12 @@ func (c *Controller) ActiveRepositories() ([]model.Mirror, bool) {
 	return cloneRepositories(c.active), c.activeSet
 }
 
+func (c *Controller) ActiveConfiguration() ([]model.Mirror, []model.CustomConfig, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cloneRepositories(c.active), cloneCustomConfigs(c.activeCustom), c.activeSet
+}
+
 func (c *Controller) SetActivePublisher(publisher func([]model.Mirror)) {
 	c.mu.Lock()
 	c.publisher = publisher
@@ -297,10 +352,12 @@ func (c *Controller) SetActivePublisher(publisher func([]model.Mirror)) {
 	}
 }
 
-func (c *Controller) setActiveRepositories(repositories []model.Mirror) {
+func (c *Controller) setActiveConfiguration(repositories []model.Mirror, custom []model.CustomConfig) {
 	active := cloneRepositories(repositories)
+	activeCustom := cloneCustomConfigs(custom)
 	c.mu.Lock()
 	c.active = active
+	c.activeCustom = activeCustom
 	c.activeSet = true
 	publisher := c.publisher
 	c.mu.Unlock()
@@ -310,19 +367,9 @@ func (c *Controller) setActiveRepositories(repositories []model.Mirror) {
 }
 
 func (c *Controller) recoverLastActive(ctx context.Context, desiredError error) error {
-	versions, err := c.store.ListConfigVersions(ctx, c.cfg.UpstreamNginx.HistoryLimit)
+	active, err := c.store.ActiveConfigVersion(ctx)
 	if err != nil {
-		return err
-	}
-	var active model.ConfigVersion
-	for _, version := range versions {
-		if version.Active {
-			active = version
-			break
-		}
-	}
-	if active.Version == 0 {
-		return errors.New("no active configuration snapshot is available")
+		return fmt.Errorf("load active configuration snapshot: %w", err)
 	}
 	snapshot, err := decodeConfigurationSnapshot(active.Snapshot)
 	if err != nil {
@@ -351,7 +398,7 @@ func (c *Controller) recoverLastActive(ctx context.Context, desiredError error) 
 	c.status.LastReloadResult = "desired reconcile failed; restored last active configuration"
 	c.status.LastError = desiredError.Error()
 	c.mu.Unlock()
-	c.setActiveRepositories(snapshot.Repositories)
+	c.setActiveConfiguration(snapshot.Repositories, snapshot.Custom)
 	return nil
 }
 
@@ -366,14 +413,11 @@ func (c *Controller) Status() Status {
 }
 
 func (c *Controller) EffectiveConfig(ctx context.Context) (string, error) {
-	values, err := c.store.ListConfigVersions(ctx, 1)
+	value, err := c.store.ActiveConfigVersion(ctx)
 	if err != nil {
 		return "", err
 	}
-	if len(values) == 0 {
-		return "", errors.New("no active configuration")
-	}
-	return values[0].Configuration, nil
+	return value.Configuration, nil
 }
 
 func (c *Controller) writeVersion(g Generated) (string, error) {
@@ -497,5 +541,14 @@ func cloneRepositories(values []model.Mirror) []model.Mirror {
 		}
 		cloned[index] = repository
 	}
+	return cloned
+}
+
+func cloneCustomConfigs(values []model.CustomConfig) []model.CustomConfig {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]model.CustomConfig, len(values))
+	copy(cloned, values)
 	return cloned
 }

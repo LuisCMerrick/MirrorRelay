@@ -6,6 +6,7 @@ import { applyLanguage, currentLanguage, onLanguageChange } from './i18n.js';
 import { onRestartCompleted, triggerRestart } from './restart.js';
 import { initRouter, renderCurrentPage, updatePageHeading } from './router.js';
 import { state } from './state.js';
+import { applyInstanceTheme, initThemeControls, refreshThemeControls } from './theme.js';
 import { loadDashboard } from './pages/dashboard.js';
 import { loadMirrors } from './pages/mirrors.js';
 import { initMirrorForm } from './pages/mirrorForm.js';
@@ -27,6 +28,10 @@ async function boot() {
   state.csrf = session.csrf_token;
   state.signedIn = true;
   $('#user-name').textContent = session.username;
+  try {
+    const appearance = await api('/appearance');
+    applyInstanceTheme(appearance.theme);
+  } catch (_) {}
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   try {
@@ -40,6 +45,7 @@ async function boot() {
 // Retranslate the page heading and reload visible data after a language
 // switch without a full page reload.
 onLanguageChange(() => {
+  refreshThemeControls();
   updatePageHeading();
   if (!state.signedIn) return;
   void (async () => {
@@ -73,6 +79,7 @@ $('#restart-header')?.addEventListener('click', triggerRestart);
 $('#restart-sidebar')?.addEventListener('click', triggerRestart);
 
 initRouter();
+initThemeControls();
 initMirrorForm();
 initMirrorDetail();
 initCustom();

@@ -4,7 +4,6 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -104,11 +103,12 @@ func (s *Server) createClusterNode(w http.ResponseWriter, r *http.Request, sessi
 		writeError(w, http.StatusBadRequest, "node name, url, and region are required")
 		return
 	}
-	u, err := url.Parse(in.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		writeError(w, http.StatusBadRequest, "invalid node url")
+	canonicalURL, err := cluster.ValidateNodeURL(r.Context(), s.cfg, in.URL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid node url: "+err.Error())
 		return
 	}
+	in.URL = canonicalURL
 	if in.Priority <= 0 {
 		in.Priority = 100
 	}
@@ -172,6 +172,12 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 		if strings.TrimSpace(in.URL) == "" {
 			in.URL = node.URL
 		}
+		canonicalURL, err := cluster.ValidateNodeURL(r.Context(), s.cfg, in.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid node url: "+err.Error())
+			return
+		}
+		in.URL = canonicalURL
 		if strings.TrimSpace(in.Region) == "" {
 			in.Region = node.Region
 		}
@@ -228,13 +234,17 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 			writeError(w, http.StatusBadRequest, "cluster sync is not initialized")
 			return
 		}
-		var gen int64 = 1
-		if s.cache != nil {
-			gen = s.cache.GlobalGeneration()
+		payload, err := s.clusterSyncPayload()
+		if err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
 		}
-		manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
-		res := s.clusterSync.SyncNode(r.Context(), node, manifest)
-		_ = s.audit(r, session.Username, "sync_cluster_node", "cluster_node", node.Name, res.Success)
+		res := s.clusterSync.SyncNode(r.Context(), node, payload)
+		detail := node.Name
+		if res.Error != "" {
+			detail += ": " + res.Error
+		}
+		_ = s.audit(r, session.Username, "sync_cluster_node", "cluster_node", detail, res.Success)
 		writeJSON(w, http.StatusOK, res)
 		return
 	}
@@ -261,21 +271,60 @@ func (s *Server) syncAllClusterNodes(w http.ResponseWriter, r *http.Request, ses
 		writeError(w, http.StatusBadRequest, "cluster sync is not initialized")
 		return
 	}
-	var gen int64 = 1
-	if s.cache != nil {
-		gen = s.cache.GlobalGeneration()
+	payload, err := s.clusterSyncPayload()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
 	}
-	manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
-	results := s.clusterSync.BroadcastSync(r.Context(), manifest)
-	_ = s.audit(r, session.Username, "broadcast_cluster_sync", "cluster", fmt.Sprintf("synced %d nodes", len(results)), true)
+	results := s.clusterSync.BroadcastSync(r.Context(), payload)
+	succeeded := 0
+	failures := make([]string, 0)
+	for _, result := range results {
+		if result.Success {
+			succeeded++
+		} else {
+			failures = append(failures, fmt.Sprintf("node %d (%s): %s", result.NodeID, result.NodeURL, result.Error))
+		}
+	}
+	ok := len(results) > 0 && len(failures) == 0
+	detail := fmt.Sprintf("succeeded=%d failed=%d", succeeded, len(failures))
+	if len(failures) > 0 {
+		detail += "; " + strings.Join(failures, "; ")
+	}
+	_ = s.audit(r, session.Username, "broadcast_cluster_sync", "cluster", detail, ok)
 	writeJSON(w, http.StatusOK, results)
 }
 
 func (s *Server) resetClusterFingerprint(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	if s.clusterChecker != nil {
-		_ = s.clusterChecker.SetClusterFingerprint(r.Context(), "")
-		_ = s.clusterChecker.CheckAll(r.Context())
+		fingerprint := cluster.CanonicalFingerprint(s.registry.List())
+		if err := s.clusterChecker.SetClusterFingerprint(r.Context(), fingerprint); err != nil {
+			_ = s.audit(r, session.Username, "reset_cluster_fingerprint", "cluster", err.Error(), false)
+			writeInternal(w, err)
+			return
+		}
+		if err := s.clusterChecker.CheckAll(r.Context()); err != nil {
+			_ = s.audit(r, session.Username, "reset_cluster_fingerprint", "cluster", err.Error(), false)
+			writeInternal(w, err)
+			return
+		}
 	}
 	_ = s.audit(r, session.Username, "reset_cluster_fingerprint", "cluster", "", true)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) clusterSyncPayload() (model.ClusterSyncRequest, error) {
+	if s.upstreamNginx == nil {
+		return model.ClusterSyncRequest{}, fmt.Errorf("Managed Upstream Nginx is not initialized")
+	}
+	repositories, custom, available := s.upstreamNginx.ActiveConfiguration()
+	if !available {
+		return model.ClusterSyncRequest{}, fmt.Errorf("active configuration snapshot is unavailable")
+	}
+	generation := s.upstreamNginx.Status().CurrentConfigVersion
+	if generation <= 0 {
+		generation = 1
+	}
+	manifest := cluster.GenerateManifest(s.cfg, repositories, s.build, generation)
+	return model.ClusterSyncRequest{Manifest: manifest, Repositories: repositories, CustomConfigs: custom}, nil
 }

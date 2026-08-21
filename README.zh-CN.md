@@ -106,10 +106,10 @@ go run ./cmd/mirrorrelay -dev
 1. **安装软件包**：
    ```bash
    # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.2_amd64.deb
+   sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
 
    # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.2.x86_64.rpm
+   sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
    ```
 2. **设置初始管理员密码并启用服务**：
    ```bash
@@ -191,6 +191,8 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 |---|---|---|---|
 | **amd64** | `mirrorrelay_<version>_amd64.deb` | `mirrorrelay-<version>.x86_64.rpm` | `mirrorrelay-<version>-linux-amd64.tar.gz` |
 | **arm64** | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
+
+每个 GitHub Release 还会提供与架构无关的 `mirrorrelay-<version>-source-with-vendor.tar.gz`，其中包含 Git 跟踪的源码树以及生成的 Go `vendor/` 目录，便于离线和可复现的源码构建。
 
 标准文件系统布局：
 ```text

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/accesslog"
+	"github.com/LuisCMerrick/MirrorRelay/internal/appearance"
 	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
 	"github.com/LuisCMerrick/MirrorRelay/internal/limit"
@@ -72,6 +73,7 @@ type Engine struct {
 	validators  *metadataValidators
 	compressors gzipPool
 	adminCIDRs  security.CIDRList
+	appearance  *appearance.Store
 
 	tokenMu      sync.RWMutex
 	tokenTargets map[int64]*url.URL
@@ -95,6 +97,7 @@ func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyM
 		bufferPool:   newBufferPool(cfg.Performance.StreamBufferSize),
 		validators:   newMetadataValidators(cfg.Metadata.ValidatorEntries),
 		adminCIDRs:   adminCIDRs,
+		appearance:   appearance.New(cfg.UIEnhancement),
 		tokenTargets: make(map[int64]*url.URL),
 	}
 	transport.engine = engine
@@ -107,6 +110,17 @@ func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyM
 		FlushInterval:  100 * time.Millisecond,
 	}
 	return engine
+}
+
+func (e *Engine) AppearanceStore() *appearance.Store {
+	return e.appearance
+}
+
+func (e *Engine) appearanceConfig() model.UIEnhancementConfig {
+	if e.appearance != nil {
+		return e.appearance.Load()
+	}
+	return e.cfg.UIEnhancement
 }
 
 func (e *Engine) CloseIdleConnections() {

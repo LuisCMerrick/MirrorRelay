@@ -28,6 +28,8 @@
   /* Accent - Cyber Cyan & Sky */
   --primary: #38bdf8;
   --primary-hover: #0284c7;
+  --primary-gradient-end: #0284c7;
+  --primary-button-text: #020617;
   --primary-glow: rgba(56, 189, 248, 0.18);
   --primary-surface: rgba(56, 189, 248, 0.1);
 
@@ -49,6 +51,24 @@
   --accent-purple: #a855f7;
   --accent-purple-surface: rgba(168, 85, 247, 0.12);
 
+  /* Theme-aware component surfaces */
+  --sidebar-bg: linear-gradient(180deg, #090d18 0%, #060911 100%);
+  --sidebar-foot-bg: rgba(11, 15, 25, 0.95);
+  --topology-bg: linear-gradient(180deg, #0d1527 0%, #080c14 100%);
+  --table-row-hover: rgba(30, 41, 59, 0.45);
+  --dialog-backdrop: rgba(4, 7, 14, 0.82);
+  --dialog-edge-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
+  --login-bg: radial-gradient(circle at 50% 30%, #152038 0%, #060911 75%);
+  --login-card-bg: rgba(15, 23, 42, 0.9);
+  --code-text: #e2e8f0;
+  --notice-danger-bg: rgba(244, 63, 94, 0.14);
+  --notice-danger-text: #ffe4e6;
+  --link-hover: #7dd3fc;
+  --danger-link-hover: #ff6b81;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-label: #64748b;
+  --chart-point-stroke: #0f172a;
+
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -66,6 +86,68 @@
   --shadow-lg: 0 16px 32px -6px rgba(0, 0, 0, 0.6), 0 6px 12px -3px rgba(0, 0, 0, 0.4);
   --shadow-glow-cyan: 0 0 24px rgba(56, 189, 248, 0.2);
   --shadow-glow-emerald: 0 0 24px rgba(16, 185, 129, 0.2);
+}
+
+:root[data-theme="light"] {
+  --bg-canvas: #f8fafc;
+  --bg-body: #f4f7fb;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f5f9;
+  --bg-surface-hover: #e8eef6;
+  --bg-dark: #f8fafc;
+  --bg-glass: rgba(255, 255, 255, 0.9);
+
+  --border-subtle: rgba(15, 23, 42, 0.09);
+  --border-color: #d7e0eb;
+  --border-highlight: #94a3b8;
+  --border-primary: rgba(3, 105, 161, 0.38);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+
+  --primary: #0369a1;
+  --primary-hover: #075985;
+  --primary-gradient-end: #075985;
+  --primary-button-text: #ffffff;
+  --primary-glow: rgba(3, 105, 161, 0.16);
+  --primary-surface: rgba(3, 105, 161, 0.1);
+
+  --success: #047857;
+  --success-hover: #065f46;
+  --success-glow: rgba(4, 120, 87, 0.15);
+  --success-surface: rgba(4, 120, 87, 0.1);
+  --warning: #b45309;
+  --warning-glow: rgba(180, 83, 9, 0.14);
+  --warning-surface: rgba(180, 83, 9, 0.1);
+  --danger: #be123c;
+  --danger-hover: #9f1239;
+  --danger-glow: rgba(190, 18, 60, 0.14);
+  --danger-surface: rgba(190, 18, 60, 0.09);
+  --accent-purple: #7e22ce;
+  --accent-purple-surface: rgba(126, 34, 206, 0.1);
+
+  --sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  --sidebar-foot-bg: rgba(248, 250, 252, 0.96);
+  --topology-bg: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  --table-row-hover: rgba(226, 232, 240, 0.62);
+  --dialog-backdrop: rgba(15, 23, 42, 0.45);
+  --dialog-edge-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  --login-bg: radial-gradient(circle at 50% 25%, #dbeafe 0%, #f8fafc 70%);
+  --login-card-bg: rgba(255, 255, 255, 0.94);
+  --code-text: #1e293b;
+  --notice-danger-bg: #fff1f2;
+  --notice-danger-text: #9f1239;
+  --link-hover: #075985;
+  --danger-link-hover: #9f1239;
+  --chart-grid: rgba(15, 23, 42, 0.11);
+  --chart-label: #475569;
+  --chart-point-stroke: #ffffff;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 20px -8px rgba(15, 23, 42, 0.22), 0 2px 5px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 22px 48px -14px rgba(15, 23, 42, 0.25), 0 8px 18px -10px rgba(15, 23, 42, 0.16);
 }
 
 /* ==========================================================================
@@ -132,7 +214,7 @@ html, body {
 
 aside {
   width: 260px;
-  background: linear-gradient(180deg, #090d18 0%, #060911 100%);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -251,7 +333,7 @@ aside nav button.active .nav-icon {
 .sidebar-foot {
   padding: 14px 16px;
   border-top: 1px solid var(--border-subtle);
-  background: rgba(11, 15, 25, 0.95);
+  background: var(--sidebar-foot-bg);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -361,6 +443,39 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Explicit light / dark / automatic theme selector. */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+
+.theme-switch button {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.theme-switch button:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+.theme-switch button.active {
+  background: var(--primary);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Integrated Header Language Switch */
@@ -485,10 +600,16 @@ button:disabled {
   transform: none;
 }
 
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 button.btn-primary,
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, #0284c7 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-gradient-end) 100%);
+  color: var(--primary-button-text);
   border: none;
 }
 
@@ -571,7 +692,7 @@ button.text-button {
 
 button.text-button:hover {
   text-decoration: underline;
-  color: #7dd3fc;
+  color: var(--link-hover);
 }
 
 button.text-button strong {
@@ -600,7 +721,7 @@ button.link.danger {
 }
 
 button.link.danger:hover {
-  color: #ff6b81;
+  color: var(--danger-link-hover);
 }
 
 button.icon {
@@ -665,8 +786,8 @@ button.icon-btn:hover {
 
 .notice.error {
   border-color: var(--danger);
-  background: rgba(244, 63, 94, 0.14);
-  color: #ffe4e6;
+  background: var(--notice-danger-bg);
+  color: var(--notice-danger-text);
 }
 
 .page > .notice {
@@ -844,7 +965,7 @@ button.icon-btn:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: linear-gradient(180deg, #0d1527 0%, #080c14 100%);
+  background: var(--topology-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 22px 24px;
@@ -1258,7 +1379,7 @@ tr:last-child td {
 }
 
 tr:hover td {
-  background: rgba(30, 41, 59, 0.45);
+  background: var(--table-row-hover);
 }
 
 /* Table Row Actions */
@@ -1382,6 +1503,35 @@ a.button-link:hover {
   letter-spacing: 0.2px;
 }
 
+.field-help {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.info-callout {
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  background: var(--primary-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+
+.info-callout strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.panel .info-callout p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 input, select, textarea {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
@@ -1397,6 +1547,12 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
 }
 
 input[type="checkbox"] {
@@ -1469,6 +1625,22 @@ form.panel footer {
   flex-wrap: wrap;
 }
 
+#webhook-test-form footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+#webhook-test-form footer .error {
+  width: 100%;
+  margin: 0;
+}
+
 /* ==========================================================================
    Dialogs & Modals
    ========================================================================== */
@@ -1479,7 +1651,7 @@ dialog {
   border-radius: var(--radius-xl);
   color: var(--text-primary);
   padding: 0;
-  box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 0, 0, 0.7);
+  box-shadow: var(--shadow-lg), var(--dialog-edge-shadow);
   margin: auto;
   max-width: 90vw;
   max-height: 90vh;
@@ -1488,7 +1660,7 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(4, 7, 14, 0.82);
+  background: var(--dialog-backdrop);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -1809,7 +1981,7 @@ pre, .config-preview {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 16px;
-  color: #e2e8f0;
+  color: var(--code-text);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
@@ -1838,7 +2010,7 @@ code {
   justify-content: center;
   min-height: 100vh;
   width: 100%;
-  background: radial-gradient(circle at 50% 30%, #152038 0%, #060911 75%);
+  background: var(--login-bg);
   padding: 20px;
   position: relative;
 }
@@ -1846,7 +2018,7 @@ code {
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--login-card-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-highlight);
@@ -1902,12 +2074,18 @@ code {
   margin-top: 8px;
 }
 
-/* Floating language switch on login */
-#login-lang {
+/* Floating theme and language controls on login */
+.login-controls {
   position: absolute;
   top: 20px;
   right: 24px;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#login-lang {
   display: flex;
   background: var(--bg-surface);
   border: 1px solid var(--border-highlight);

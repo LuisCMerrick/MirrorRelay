@@ -6,7 +6,7 @@ MirrorRelay's local test suite covers routing isolation, Desired/Active publicat
 
 ## Release checks
 
-Run from the repository root. The hosted release builds and validates complete amd64 and arm64 DEB, RPM and tar.gz packages. The local commands below cross-build both Go binaries and validate the checked-in amd64 Managed Upstream Nginx fixture:
+Run from the repository root. The hosted release builds and validates complete amd64 and arm64 DEB, RPM and tar.gz packages, plus an architecture-neutral source archive containing `vendor/`. The local commands below cross-build both Go binaries and validate the checked-in amd64 Managed Upstream Nginx fixture:
 
 ```sh
 go mod verify
@@ -26,7 +26,12 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
+make vendor-source VERSION=0.0.15 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.15-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.15-source/vendor/modules.txt'
 ```
+
+The vendored source archive is generated from the exact Git commit being released, then `go mod vendor` is run inside that exported tree. The hosted workflow extracts the result and runs `go list -mod=vendor ./...` before adding it to the GitHub Release and `SHA256SUMS`.
 
 The amd64 artifact must be ELF x86-64 and the arm64 artifact must be ELF AArch64. Neither may have an ELF interpreter or an unexpected runtime shared-library dependency. A release must not contain source-code comments written in Chinese; Chinese UI strings and Chinese documentation are intentional content, not comments.
 

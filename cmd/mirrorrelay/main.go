@@ -36,7 +36,7 @@ import (
 )
 
 var (
-	version        = "0.0.12"
+	version        = "0.0.15"
 	gitCommit      = "unknown"
 	buildTimestamp = "unknown"
 	buildID        = ""
@@ -142,20 +142,20 @@ func run() error {
 	defer accessLogger.Close()
 	checker := health.New(cfg, store, registry)
 	upstreamNginxController := upstreamnginx.NewController(cfg, store)
-	upstreamNginxController.SetActivePublisher(registry.Replace)
 	engine := proxy.New(cfg, registry, cacheManager, metric, accessLogger)
 	defer engine.CloseIdleConnections()
 	control, err := api.New(cfg, fileConfig, store, registry, cacheManager, metric, checker, upstreamNginxController, webassets.FS(), build)
 	if err != nil {
 		return err
 	}
+	control.SetAppearanceStore(engine.AppearanceStore())
+	upstreamNginxController.SetActivePublisher(control.PublishActiveRepositories)
 	handler := control.Handler(engine)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	metric.StartPersistence(ctx)
 	cacheManager.StartReclaimer(ctx)
-	control.StartCluster(ctx)
 	control.StartWarmup(ctx)
 	restartChannel := make(chan struct{}, 1)
 	control.SetRestartTrigger(func() {
@@ -164,7 +164,7 @@ func run() error {
 		default:
 		}
 	})
-	return runProduct(ctx, cancel, cfg, handler, engine, checker, upstreamNginxController, registry, metric, restartChannel)
+	return runProduct(ctx, cancel, cfg, handler, control, engine, checker, upstreamNginxController, registry, metric, restartChannel)
 }
 
 func applyStoredWebSettings(ctx context.Context, store *database.Store, base config.Config) (config.Config, error) {
@@ -218,6 +218,7 @@ func runProduct(
 	cancel context.CancelFunc,
 	cfg config.Config,
 	handler http.Handler,
+	control *api.Server,
 	engine *proxy.Engine,
 	checker *health.Checker,
 	upstreamNginxController *upstreamnginx.Controller,
@@ -244,6 +245,7 @@ func runProduct(
 	} else if err := registry.Reload(ctx); err != nil {
 		return fmt.Errorf("publish active routing configuration: %w", err)
 	}
+	control.StartCluster(ctx)
 	checker.Start(ctx)
 
 	errorChannel := make(chan error, 1)

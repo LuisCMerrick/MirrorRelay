@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 func (c Config) Validate() error {
@@ -173,6 +174,9 @@ func (c Config) Validate() error {
 		return errors.New("distributed.role must be standalone, coordinator or edge")
 	}
 	if c.Distributed.Enabled || c.Distributed.Role != "standalone" {
+		if c.Distributed.Enabled && strings.TrimSpace(c.Distributed.Token) == "" {
+			return errors.New("distributed.token is required when distributed mode is enabled")
+		}
 		if c.Distributed.Routing.Mode != "" && c.Distributed.Routing.Mode != "hybrid" && c.Distributed.Routing.Mode != "cidr" && c.Distributed.Routing.Mode != "geo" && c.Distributed.Routing.Mode != "priority" {
 			return errors.New("distributed.routing.mode must be hybrid, cidr, geo or priority")
 		}
@@ -192,16 +196,14 @@ func (c Config) Validate() error {
 				if strings.TrimSpace(seed.URL) == "" {
 					return errors.New("distributed node seed URL cannot be empty")
 				}
-				u, err := url.Parse(seed.URL)
-				if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-					return fmt.Errorf("invalid distributed node seed URL %q", seed.URL)
+				if _, err := security.ParseOriginURL(seed.URL, c.Distributed.AllowHTTP); err != nil {
+					return fmt.Errorf("invalid distributed node seed URL %q: %w", seed.URL, err)
 				}
 			}
 		}
 		if c.Distributed.Role == "edge" && c.Distributed.Node.PublicBaseURL != "" {
-			u, err := url.Parse(c.Distributed.Node.PublicBaseURL)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-				return fmt.Errorf("invalid distributed node public_base_url %q", c.Distributed.Node.PublicBaseURL)
+			if _, err := security.ParseOriginURL(c.Distributed.Node.PublicBaseURL, c.Distributed.AllowHTTP); err != nil {
+				return fmt.Errorf("invalid distributed node public_base_url %q: %w", c.Distributed.Node.PublicBaseURL, err)
 			}
 		}
 	}
@@ -221,9 +223,8 @@ func ValidateWebhook(w *model.WebhookConfig) error {
 	if w.URL == "" {
 		return errors.New("webhook.url is required when webhook is enabled")
 	}
-	u, err := url.Parse(w.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("invalid webhook url %q", w.URL)
+	if err := security.ValidateOutboundURLSyntax(w.URL, w.AllowHTTP); err != nil {
+		return fmt.Errorf("invalid webhook url %q: %w", w.URL, err)
 	}
 	if w.Timeout <= 0 {
 		w.Timeout = 5 * time.Second

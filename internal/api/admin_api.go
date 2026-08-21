@@ -100,7 +100,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			writeInternal(w, err)
 			return
 		}
-		writeJSON(w, 200, mirrors)
+		writeJSON(w, 200, mirrorsForRole(mirrors, session.Role))
 	case path == "/mirrors" && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin", "operator") {
 			return
@@ -170,7 +170,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			s.triggerRestart()
 		}()
 	case path == "/settings" && r.Method == http.MethodGet:
-		s.webSettings(w, r)
+		s.webSettings(w, r, session)
 	case path == "/settings" && r.Method == http.MethodPut:
 		if !s.requireRole(w, session, "admin") {
 			return
@@ -182,7 +182,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		s.resetWebSettings(w, r, session)
 	case path == "/appearance" && r.Method == http.MethodGet:
-		writeJSON(w, 200, s.cfg.UIEnhancement)
+		writeJSON(w, 200, s.appearanceConfig())
 	case path == "/appearance" && r.Method == http.MethodPut:
 		if !s.requireRole(w, session, "admin") {
 			return
@@ -234,6 +234,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		network, address := s.cfg.FrontendEndpoint()
 		writeJSON(w, 200, map[string]any{"frontend_network": network, "frontend_address": address, "mode": s.cfg.Ingress.Mode, "configuration": generated.Files["external-nginx-integration.conf"]})
 	case path == "/upstream-nginx/config" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		value, err := s.upstreamNginx.EffectiveConfig(r.Context())
 		if err != nil {
 			writeError(w, 404, err.Error())
@@ -288,6 +291,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		s.dispatchAlert("config_change", "Config Rollback", fmt.Sprintf("Configuration rolled back to version %d by %s", version, session.Username), nil)
 		writeJSON(w, 200, v)
 	case path == "/custom-configs" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		values, err := s.store.ListCustomConfigs(r.Context())
 		if err != nil {
 			writeInternal(w, err)
@@ -300,7 +306,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		s.createCustomConfig(w, r, session)
 	case strings.HasPrefix(path, "/custom-configs/"):
-		if r.Method != http.MethodGet && !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin", "operator") {
 			return
 		}
 		s.customConfigAction(w, r, session, strings.TrimPrefix(path, "/custom-configs/"))

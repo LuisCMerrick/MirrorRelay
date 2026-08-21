@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -45,7 +46,7 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 			}
 		}
 
-		if s.cfg.Distributed.Role == "coordinator" {
+		if s.cfg.Distributed.Enabled && s.cfg.Distributed.Role == "coordinator" {
 			if r.URL.Path == "/" && !s.hostRepository(r.Host) {
 				s.repositoryIndex(w, r)
 				return
@@ -79,9 +80,12 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 					if s.clusterMetrics != nil {
 						s.clusterMetrics.IncRedirect(node.Name, node.Region)
 					}
-					dest := strings.TrimRight(node.URL, "/") + r.URL.Path
-					if r.URL.RawQuery != "" {
-						dest += "?" + r.URL.RawQuery
+					dest, err := edgeRedirectLocation(node.URL, r.URL, s.cfg.Distributed.AllowHTTP)
+					if err != nil {
+						writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+							"error": "invalid_edge_url", "message": "The selected edge node URL is invalid",
+						})
+						return
 					}
 					http.Redirect(w, r, dest, http.StatusTemporaryRedirect)
 					return
@@ -95,6 +99,18 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 		}
 		s.repositoryIndex(w, r)
 	})
+}
+
+func edgeRedirectLocation(rawOrigin string, requestURL *url.URL, allowHTTP bool) (string, error) {
+	origin, err := security.ParseOriginURL(rawOrigin, allowHTTP)
+	if err != nil {
+		return "", err
+	}
+	origin.Path = requestURL.Path
+	origin.RawPath = requestURL.EscapedPath()
+	origin.RawQuery = requestURL.RawQuery
+	origin.ForceQuery = requestURL.ForceQuery
+	return origin.String(), nil
 }
 
 func (s *Server) hostRepository(requestHost string) bool {
@@ -114,11 +130,12 @@ func (s *Server) hostRepository(requestHost string) bool {
 }
 
 func (s *Server) serveCustomCSS(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.UIEnhancement.Enabled || !s.cfg.UIEnhancement.CustomCSS.Enabled || s.cfg.UIEnhancement.CustomCSS.File == "" {
+	appearance := s.appearanceConfig()
+	if !appearance.Enabled || !appearance.CustomCSS.Enabled || appearance.CustomCSS.File == "" {
 		http.NotFound(w, r)
 		return
 	}
-	content, err := os.ReadFile(s.cfg.UIEnhancement.CustomCSS.File)
+	content, err := os.ReadFile(appearance.CustomCSS.File)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -143,6 +160,7 @@ func (s *Server) serveUIIcon(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) helpOverview(w http.ResponseWriter, r *http.Request) {
+	appearance := s.appearanceConfig()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	publicBase := s.cfg.HTTP.PublicBaseURL
@@ -157,12 +175,13 @@ func (s *Server) helpOverview(w http.ResponseWriter, r *http.Request) {
 	if s.registry != nil {
 		repoList = s.registry.List()
 	}
-	htmlContent := help.RenderOverviewHTML(repoList, publicBase, s.cfg.UIEnhancement.Branding, s.cfg.UIEnhancement.Theme)
+	htmlContent := help.RenderOverviewHTML(repoList, publicBase, appearance.Branding, appearance.Theme)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(htmlContent))
 }
 
 func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath string) {
+	appearance := s.appearanceConfig()
 	slug := strings.Trim(slugPath, "/")
 	if slug == "" {
 		s.helpOverview(w, r)
@@ -190,7 +209,7 @@ func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath str
 		publicBase = scheme + "://" + r.Host
 	}
 
-	res, err := help.Render(repo, publicBase, variant, format, s.cfg.UIEnhancement.Branding.Title)
+	res, err := help.Render(repo, publicBase, variant, format, appearance.Branding.Title)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -198,12 +217,13 @@ func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath str
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	htmlContent := help.RenderDetailHTML(res, s.cfg.UIEnhancement.Branding, s.cfg.UIEnhancement.Theme, safeUI)
+	htmlContent := help.RenderDetailHTML(res, appearance.Branding, appearance.Theme, safeUI)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(htmlContent))
 }
 
 func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
+	appearance := s.appearanceConfig()
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -220,11 +240,11 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(repositories, func(i, j int) bool {
 		return strings.ToLower(repositories[i].Name) < strings.ToLower(repositories[j].Name)
 	})
-	siteTitle := s.cfg.UIEnhancement.Branding.Title
+	siteTitle := appearance.Branding.Title
 	if siteTitle == "" {
 		siteTitle = "MirrorRelay"
 	}
-	themeAttr := s.cfg.UIEnhancement.Theme
+	themeAttr := appearance.Theme
 	if themeAttr == "" {
 		themeAttr = "system"
 	}

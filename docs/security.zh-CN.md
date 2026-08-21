@@ -91,15 +91,18 @@ MirrorRelay 内置企业级供应链投毒与依赖混淆（Dependency Confusion
 MirrorRelay 支持三级权限隔离体系：
 - **`admin`（超级管理员）**：拥有全系统控制权，包括用户增删、系统级设置覆写、服务平滑重启及 Webhook 联通性测试。
 - **`operator`（运维管理员）**：具备仓库配置管理（CRUD）、缓存精确刷新、健康检查触发及 Nginx 平滑重载/回滚权限，不可修改系统用户或核心底层配置。
-- **`viewer`（只读审计员）**：仅具备监控大盘、日志、仓库详情与健康状态的只读查看权限，一切写操作均被拒绝（HTTP 403）。
+- **`viewer`（只读审计员）**：仅具备监控大盘、日志、已脱敏仓库详情与健康状态的只读查看权限。静态认证/Cookie/Token Header 及含凭据的 Token URL 不会出现在 Viewer 响应中；Effective、逐仓库及自定义 Managed Upstream Nginx 配置仅允许 `admin` 或 `operator` 读取。一切写操作均被拒绝（HTTP 403）。
 
 ---
 
 ## 8. Webhook 告警通知与 HMAC-SHA256 签名
 
-企业级事件通知支持多种通知通道与防篡改验签：
-- 支持钉钉（Markdown 卡片）、飞书（富文本消息）、企业微信（Markdown）、Slack 及标准通用 JSON Webhook。
+企业级事件通知支持平台消息格式适配与防篡改验签：
+- 同一时间只启用一个 Webhook 目标。MirrorRelay 会自动识别钉钉、飞书/Lark、企业微信和 Slack 主机并使用对应平台格式，其他主机使用通用 JSON。
 - 每次通知均携带 `X-MirrorRelay-Signature: sha256=<hex>` 签名与 `X-MirrorRelay-Event: <event>` 请求头，供接收端验证消息完整性与来源真实性。
+- 默认强制 HTTPS。明文 HTTP 与私网/环回/链路本地目标分别需要显式启用 `webhook.allow_http` 和 `webhook.allow_private`。
+- 配置目标及每次重定向都会在连接前解析并过滤。安全 Dialer 会拒绝 DNS 重绑定到受限地址，TLS 主机名验证始终开启，最多接受五次重定向。
+- Webhook 测试可使用当前运行中目标，也可使用一个按相同策略校验的临时目标；临时目标不会继承运行中签名密钥。非法 JSON 会立即终止且不会发送通知。非管理员设置响应绝不会包含 `webhook.secret` 或可能携带凭据的 Webhook URL。
 
 ---
 

@@ -96,6 +96,13 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	settings.UpstreamNginx.WorkerUser = ""
 	settings.UpstreamNginx.WorkerConnections = 2048
 	settings.UpstreamNginx.StopOnMirrorRelayExit = true
+	settings.Webhook.Enabled = true
+	settings.Webhook.URL = "http://127.0.0.1/hooks"
+	settings.Webhook.Secret = "webhook-secret"
+	settings.Webhook.Events = []string{"config_change", "security_alert"}
+	settings.Webhook.Timeout = "9s"
+	settings.Webhook.AllowHTTP = true
+	settings.Webhook.AllowPrivate = true
 
 	applied, err := settings.Apply(base)
 	if err != nil {
@@ -106,6 +113,9 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	}
 	if applied.Cache.MaxSizeBytes != 64<<30 || applied.Cache.Inactive != 48*time.Hour || applied.HTTP.PublicBaseURL != "https://mirror.example.com" {
 		t.Fatalf("Web settings were not applied: %+v", applied)
+	}
+	if applied.Webhook.URL != settings.Webhook.URL || applied.Webhook.Secret != settings.Webhook.Secret || applied.Webhook.Timeout != 9*time.Second || !applied.Webhook.AllowHTTP || !applied.Webhook.AllowPrivate {
+		t.Fatalf("Webhook Web settings were not applied: %+v", applied.Webhook)
 	}
 	if got := WebSettingsFrom(applied); !reflect.DeepEqual(got, settings) {
 		t.Fatalf("Web settings did not round trip through Config:\n got: %#v\nwant: %#v", got, settings)
@@ -158,6 +168,58 @@ func TestWebSettingsRejectUnknownFieldsAndInvalidValues(t *testing.T) {
 	settings.Security.AdminCIDRs = []string{"not-a-cidr"}
 	if _, err := settings.Apply(Default()); err == nil {
 		t.Fatal("invalid Web security setting was accepted")
+	}
+	legacy := WebSettingsFrom(Default())
+	legacy.Webhook = nil
+	applied, err := legacy.Apply(Default())
+	if err != nil || applied.Webhook.Timeout != Default().Webhook.Timeout || !reflect.DeepEqual(applied.Webhook.Events, Default().Webhook.Events) {
+		t.Fatalf("legacy settings document did not inherit the new webhook section: webhook=%+v err=%v", applied.Webhook, err)
+	}
+}
+
+func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
+	for _, rawURL := range []string{
+		"http://edge.example.com",
+		"https://user:pass@edge.example.com",
+		"https://edge.example.com/prefix",
+		"https://edge.example.com?token=secret",
+		"https://edge.example.com#fragment",
+	} {
+		candidate := Default()
+		candidate.Distributed.Enabled = true
+		candidate.Distributed.Role = "coordinator"
+		candidate.Distributed.Token = "cluster-secret"
+		candidate.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: rawURL, Enabled: true}}
+		if err := candidate.Validate(); err == nil {
+			t.Fatalf("invalid cluster origin %q was accepted", rawURL)
+		}
+	}
+
+	httpCluster := Default()
+	httpCluster.Distributed.Enabled = true
+	httpCluster.Distributed.Role = "coordinator"
+	httpCluster.Distributed.Token = "cluster-secret"
+	httpCluster.Distributed.AllowHTTP = true
+	httpCluster.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: "http://edge.example.com:8080", Enabled: true}}
+	if err := httpCluster.Validate(); err != nil {
+		t.Fatalf("explicitly allowed HTTP cluster origin was rejected: %v", err)
+	}
+
+	missingToken := httpCluster
+	missingToken.Distributed.Token = ""
+	if err := missingToken.Validate(); err == nil {
+		t.Fatal("enabled distributed mode accepted an empty cluster token")
+	}
+
+	webhook := Default()
+	webhook.Webhook.Enabled = true
+	webhook.Webhook.URL = "http://hooks.example.com/notify"
+	if err := webhook.Validate(); err == nil {
+		t.Fatal("webhook HTTP URL was accepted without its independent opt-in")
+	}
+	webhook.Webhook.AllowHTTP = true
+	if err := webhook.Validate(); err != nil {
+		t.Fatalf("explicitly allowed HTTP webhook URL was rejected: %v", err)
 	}
 }
 

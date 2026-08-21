@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/database"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/warmup"
 )
 
 func (s *Server) listWarmupJobs(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +47,17 @@ func (s *Server) createWarmupJob(w http.ResponseWriter, r *http.Request, session
 	if len(job.URLPatterns) == 0 {
 		writeError(w, 400, "at least one URL pattern is required")
 		return
+	}
+	if err := warmup.ValidateSchedule(job.CronExpression); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+		return
+	}
+	job.NextRunAt = ""
+	if next, err := warmup.NextRunAt(job.CronExpression, time.Now().UTC()); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+		return
+	} else if !next.IsZero() {
+		job.NextRunAt = next.UTC().Format(time.RFC3339)
 	}
 
 	created, err := s.store.CreateWarmupJob(r.Context(), job)
@@ -94,6 +107,17 @@ func (s *Server) warmupJobAction(w http.ResponseWriter, r *http.Request, session
 			if job.Name == "" {
 				writeError(w, 400, "name is required")
 				return
+			}
+			if err := warmup.ValidateSchedule(job.CronExpression); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+				return
+			}
+			job.NextRunAt = ""
+			if next, err := warmup.NextRunAt(job.CronExpression, time.Now().UTC()); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+				return
+			} else if !next.IsZero() {
+				job.NextRunAt = next.UTC().Format(time.RFC3339)
 			}
 			updated, err := s.store.UpdateWarmupJob(r.Context(), job)
 			if errors.Is(err, database.ErrWarmupJobNotFound) {

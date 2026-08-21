@@ -25,7 +25,7 @@ documented environment variables -> saved Web UI operational values -> YAML
 
 Saving or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the change. Repository Desired/Active changes use a separate immediate validation and activation path.
 
-The Web UI covers endpoint enablement and loopback ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown and Managed Upstream Nginx lifecycle values. YAML remains authoritative for bootstrap and trust-boundary locations:
+The Web UI covers endpoint enablement and loopback ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for bootstrap and trust-boundary locations:
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -137,6 +137,22 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | `warmup.retry_count` | Maximum retry attempts per failed item (default `2`) |
 | `warmup.metadata_depth` | Metadata package extraction depth (default `1` = extract packages from APT/RPM/PyPI metadata) |
 
+Warm-up jobs accept either a five-field numeric cron expression evaluated in UTC or one of `@hourly`, `@daily`, and `@every <duration>` (minimum interval `30s`). Numeric fields support `*`, lists, ranges and steps. MirrorRelay validates expressions on create/update, persists the calculated `next_run_at`, and never runs an invalid or unknown expression as a fallback. Metadata-discovered package URLs reuse the configured frontend endpoint, including `server.local_port` when Unix sockets are disabled.
+
+## Webhook delivery
+
+| Key | Description |
+|---|---|
+| `webhook.enabled` | Enable asynchronous event delivery |
+| `webhook.url` | Single active destination URL; HTTPS is required by default and the provider payload format is auto-detected from the host |
+| `webhook.secret` | Optional HMAC-SHA256 signing secret; the secret and target URL are hidden from non-admin settings responses |
+| `webhook.events` | Event names to deliver; an empty list enables every event |
+| `webhook.timeout` | Request, TLS handshake and response-header timeout |
+| `webhook.allow_http` | Independent explicit opt-in for plaintext HTTP; default `false` |
+| `webhook.allow_private` | Independent explicit opt-in for private, loopback and link-local destinations; default `false` |
+
+MirrorRelay delivers each event to one configured Webhook destination; DingTalk, Feishu/Lark, WeCom and Slack hosts receive their platform-specific payload, while other hosts receive standard MirrorRelay JSON. Webhook targets and every redirect hop are syntax-checked, DNS-resolved and filtered immediately before connection. The connection uses only policy-approved addresses while retaining TLS hostname verification. Tests can use the running destination or one validated temporary URL/secret. A temporary URL never inherits the running destination's secret, and malformed test input has no delivery side effect.
+
 ## Security and limits
 
 | Key | Description |
@@ -174,7 +190,7 @@ MirrorRelay provides optional appearance customization, color themes, directory 
 
 | Key | Description |
 |---|---|
-| `ui_enhancement.enabled` | Global UI enhancement switch (default `false`). When `false`, zero styling or rewriting interference occurs. |
+| `ui_enhancement.enabled` | Public repository UI enhancement switch (default `false`). When `false`, upstream directory responses are not restyled or rewritten. The administration theme selector remains available. |
 | `ui_enhancement.theme` | Theme mode: `system` (default), `light`, or `dark` |
 | `ui_enhancement.accent_color` | Accent color hex code (e.g. `#2563eb`) |
 | `ui_enhancement.branding.title` | Custom instance title / site name (default `MirrorRelay`) |
@@ -185,6 +201,8 @@ MirrorRelay provides optional appearance customization, color themes, directory 
 | `ui_enhancement.custom_css.enabled` | Enable custom CSS stylesheet injection |
 | `ui_enhancement.custom_css.file` | Path to custom CSS file (served via `GET /ui/custom.css`) |
 | `ui_enhancement.repository_browser.enabled` | Enable modern responsive directory listing browser (default `true` when UI enhancement is active) |
+
+The administration UI also exposes a browser-local Light / Dark / Auto selector on the login page and in the header. Auto follows `prefers-color-scheme`; a saved browser preference overrides the instance default until changed locally.
 
 > **Safe Mode**: Append `?safe-ui=1` to any directory or help URL to bypass all UI enhancement styling and JavaScript, falling back directly to raw upstream HTML.
 
@@ -218,7 +236,8 @@ Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed U
 |---|---|
 | `distributed.enabled` | Global distributed mode switch |
 | `distributed.role` | Node role: `standalone` (default), `coordinator`, or `edge` |
-| `distributed.token` | Shared cluster authentication token for probe APIs (`/api/v1/cluster/manifest`, `/api/v1/cluster/health`) |
+| `distributed.token` | Required shared token for probe, configuration-sync and cache-purge APIs |
+| `distributed.allow_http` | Independent explicit opt-in for plaintext cluster-node origins; default `false` |
 | `distributed.node.name` | Unique edge node identifier |
 | `distributed.node.public_base_url` | Base URL used by coordinator when redirecting clients to this edge |
 | `distributed.node.region` | Node region identifier for geolocation and CIDR routing |
@@ -235,6 +254,6 @@ Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed U
 ### Distributed Invariants
 
 - **Data plane isolation**: The Coordinator never fetches upstream or edge packages; it returns `HTTP 307 Temporary Redirect` preserving the original request path and query string.
-- **Config consistency**: All edge nodes must share a matching logical configuration fingerprint (`sha256:...`). Nodes with configuration drift are automatically marked `mismatch` and excluded from routing.
+- **Config consistency**: The Coordinator derives the authoritative fingerprint only from its local Active repository snapshot. Edge reports are compared with that value and can never establish it. Nodes with drift are marked `mismatch` and excluded from routing.
+- **Safe control plane**: Cluster origins must be absolute origins without credentials, path, query or fragment. HTTPS is the default; `distributed.allow_http` and the global private-address policy are separate explicit decisions.
 - **Container registries**: Distributed routing is explicitly disabled for Docker and OCI registries (returns HTTP 501).
-

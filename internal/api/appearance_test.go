@@ -82,8 +82,9 @@ func TestAppearanceAPIAndSafeMode(t *testing.T) {
 	if recPut.Code != http.StatusOK {
 		t.Fatalf("expected 200 PUT appearance, got %d: %s", recPut.Code, recPut.Body.String())
 	}
-	if server.cfg.UIEnhancement.Theme != "dark" || server.cfg.UIEnhancement.Branding.Title != "MyMirror" {
-		t.Fatalf("server config not updated: %+v", server.cfg.UIEnhancement)
+	activeAppearance := server.appearanceConfig()
+	if activeAppearance.Theme != "dark" || activeAppearance.Branding.Title != "MyMirror" {
+		t.Fatalf("server appearance snapshot not updated: %+v", activeAppearance)
 	}
 
 	// 4. POST /admin/api/v1/appearance/reset
@@ -95,8 +96,8 @@ func TestAppearanceAPIAndSafeMode(t *testing.T) {
 	if recReset.Code != http.StatusOK {
 		t.Fatalf("expected 200 POST appearance reset, got %d: %s", recReset.Code, recReset.Body.String())
 	}
-	if server.cfg.UIEnhancement.Enabled != false {
-		t.Fatalf("expected reset to disabled, got: %+v", server.cfg.UIEnhancement)
+	if activeAppearance = server.appearanceConfig(); activeAppearance.Enabled {
+		t.Fatalf("expected reset to disabled, got: %+v", activeAppearance)
 	}
 }
 

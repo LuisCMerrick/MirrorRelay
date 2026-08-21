@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+## v0.0.15
+- **Distributed control-plane correctness and security**:
+  - Added authenticated Edge receivers for complete Active configuration snapshots and global/repository/object cache invalidation, with bounded strict JSON, atomic Managed Upstream Nginx activation, verified acknowledgements and accurate partial-failure audit records.
+  - Made the Coordinator's local Active fingerprint authoritative, preserved protocol/capability metadata after sync, required HTTPS for cluster origins by default, and applied uniform URL/SSRF policy before any cluster token is sent.
+  - Preserved percent-encoded request paths across Coordinator-to-Edge redirects.
+- **Outbound and credential hardening**:
+  - Added DNS/IP/redirect SSRF enforcement for webhooks with independent HTTP/private-address opt-ins, and fixed temporary webhook test overrides and malformed-input side effects.
+  - Clarified that Webhook delivery has one active destination, split test targets by platform, and prevented temporary URLs from inheriting the running destination's signing secret.
+  - Redacted repository static credentials from Viewer responses and restricted generated/effective Managed Upstream Nginx configuration to Admin and Operator roles.
+- **Web UI themes**:
+  - Added persistent Light, Dark and Auto controls to the login page and administration header; Auto follows the operating-system preference and the light palette uses theme-aware semantic colors throughout controls, charts and dialogs.
+- **Runtime and scheduler correctness**:
+  - Published appearance updates through a shared atomic snapshot, preserved TCP frontend ports in metadata-derived warm-up URLs, and replaced permissive pseudo-cron matching with validated schedules and persisted next-run times.
+- **Release source archive**:
+  - Added a reproducible `mirrorrelay-<version>-source-with-vendor.tar.gz` GitHub Release asset and included it in `SHA256SUMS`.
+
 ## v0.0.12
 - **Settings State Discrepancy & False Restart Prompt Resolution**:
   - Eliminated false "Saved values differ from the running process; restart MirrorRelay" warnings on the settings page by normalizing dynamic appearance configs (`UIEnhancement`), `nil` vs empty slice representations (`AdminCIDRs`), and duration string formatting across comparison routines.

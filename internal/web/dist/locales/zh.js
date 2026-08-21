@@ -679,7 +679,7 @@ export default {
         ]
     },
     {
-        "title": "Webhook 自动化告警通知",
+        "title": "Webhook 告警通知（单一目标）",
         "fields": [
             {
                 "path": "webhook.enabled",
@@ -688,7 +688,7 @@ export default {
             },
             {
                 "path": "webhook.url",
-                "label": "Webhook 端点 URL (钉钉、飞书、企微、Slack、通用 JSON)",
+                "label": "单个 Webhook 目标 URL（按主机名自动识别平台格式）",
                 "type": "text"
             },
             {
@@ -697,9 +697,24 @@ export default {
                 "type": "text"
             },
             {
+                "path": "webhook.events",
+                "label": "启用的事件名称（每行一个）",
+                "type": "list"
+            },
+            {
                 "path": "webhook.timeout",
                 "label": "请求超时时间",
                 "type": "text"
+            },
+            {
+                "path": "webhook.allow_http",
+                "label": "允许此 Webhook 使用明文 HTTP",
+                "type": "boolean"
+            },
+            {
+                "path": "webhook.allow_private",
+                "label": "允许此 Webhook 访问私网或本机地址",
+                "type": "boolean"
             }
         ]
     },
@@ -1092,10 +1107,39 @@ export default {
     "Allowed packages (Whitelist)": "包名白名单",
     "All permitted": "允许全部",
     "rules": "条规则",
-    "Webhook Alerting & Test Notification": "Webhook 告警与通知测试",
-    "Send a test event notification to verify your configured DingTalk, Feishu, WeCom, Slack or custom webhook endpoint.": "发送测试事件通知，验证钉钉、飞书、企业微信、Slack 或自定义 Webhook 接收端点。",
-    "Target Webhook URL (leave empty to use saved settings)": "目标 Webhook 地址（留空则使用已保存配置）",
-    "Send Test Notification": "发送测试通知",
-    "Test webhook notification delivered successfully!": "测试 Webhook 通知发送成功！"
+    "Theme": "主题",
+    "Light theme": "亮色主题",
+    "Dark theme": "暗色主题",
+    "Auto theme (follow system)": "自动主题（跟随系统）",
+    "Auto (follow system)": "自动（跟随系统）",
+    "Light": "亮色",
+    "Dark": "暗色",
+    "Instance default for browsers without a saved theme preference.": "作为尚未保存本地主题偏好的浏览器默认值。",
+    "Configure the default administration theme and optional public repository UI enhancements. Browser theme choices are applied immediately and saved locally.": "配置管理界面默认主题及可选的公开仓库界面增强；浏览器主题选择会立即生效并保存在本地。",
+    "Enable public repository UI enhancement": "启用公开仓库界面增强",
+    "Webhook notification test": "Webhook 通知测试",
+    "One active destination": "仅一个生效目标",
+    "MirrorRelay has one configured Webhook destination at a time. Its payload format is detected from the URL. The platform choices below test one target; they do not add notification channels.": "MirrorRelay 同一时间只配置一个 Webhook 目标，并根据 URL 自动识别消息格式。下方平台选项只测试一个目标，不会新增通知渠道。",
+    "Test destination": "测试目标",
+    "Running configuration": "当前运行中配置",
+    "Uses the single webhook destination in the running process. Saved changes waiting for a restart are not used.": "使用当前进程中生效的单个 Webhook 目标；已保存但等待重启的改动不会用于本次测试。",
+    "DingTalk": "钉钉",
+    "Feishu / Lark": "飞书 / Lark",
+    "WeCom": "企业微信",
+    "Slack": "Slack",
+    "Custom JSON webhook": "自定义 JSON Webhook",
+    "Sends the DingTalk Markdown payload format to this one-time target.": "向这个一次性目标发送钉钉 Markdown 格式消息。",
+    "Sends the Feishu rich-post payload format to this one-time target.": "向这个一次性目标发送飞书富文本格式消息。",
+    "Sends the WeCom Markdown payload format to this one-time target.": "向这个一次性目标发送企业微信 Markdown 格式消息。",
+    "Sends the Slack webhook payload format to this one-time target.": "向这个一次性目标发送 Slack Webhook 格式消息。",
+    "Hosts not recognized as a built-in provider receive the standard MirrorRelay JSON payload.": "未识别为内置平台的主机将收到标准 MirrorRelay JSON 消息。",
+    "One-time Webhook URL": "一次性 Webhook URL",
+    "Optional HMAC signing secret": "可选 HMAC 签名密钥",
+    "Used only for this test in the X-MirrorRelay-Signature header; platform access tokens remain part of the Webhook URL.": "仅用于本次测试的 X-MirrorRelay-Signature 请求头；平台访问令牌仍应包含在 Webhook URL 中。",
+    "Send test notification": "发送测试通知",
+    "Test Webhook notification delivered successfully.": "测试 Webhook 通知发送成功。",
+    "Enter a valid absolute Webhook URL.": "请输入有效的绝对 Webhook URL。",
+    "Webhook URLs must use HTTP or HTTPS.": "Webhook URL 必须使用 HTTP 或 HTTPS。",
+    "The selected provider requires a URL on %s.": "所选平台要求使用 %s 域名的 URL。"
 }
 };

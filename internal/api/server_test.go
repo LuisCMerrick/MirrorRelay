@@ -91,6 +91,8 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	}
 	defer store.Close()
 	cfg := config.Default()
+	cfg.Webhook.URL = "https://hooks.example.test/services/token-in-path?access_token=viewer-must-not-see-url"
+	cfg.Webhook.Secret = "viewer-must-not-see-this"
 	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
 	settings := config.WebSettingsFrom(cfg)
 	settings.Server.UnixSocketEnabled = false
@@ -111,9 +113,17 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	}
 
 	getRecorder := httptest.NewRecorder()
-	server.webSettings(getRecorder, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil))
+	server.webSettings(getRecorder, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil), auth.Session{Role: "admin"})
 	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"source":"web_ui"`) {
 		t.Fatalf("settings read: status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+	if !strings.Contains(getRecorder.Body.String(), cfg.Webhook.Secret) {
+		t.Fatalf("admin settings response unexpectedly redacted webhook secret: %s", getRecorder.Body.String())
+	}
+	viewerRecorder := httptest.NewRecorder()
+	server.webSettings(viewerRecorder, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil), auth.Session{Role: "viewer"})
+	if viewerRecorder.Code != http.StatusOK || strings.Contains(viewerRecorder.Body.String(), cfg.Webhook.Secret) || strings.Contains(viewerRecorder.Body.String(), "viewer-must-not-see-url") || strings.Contains(viewerRecorder.Body.String(), "token-in-path") {
+		t.Fatalf("viewer settings leaked webhook credentials: status=%d body=%s", viewerRecorder.Code, viewerRecorder.Body.String())
 	}
 
 	resetRecorder := httptest.NewRecorder()
@@ -147,7 +157,7 @@ func TestWebSettingsResetReportsRestartAfterAppliedOverride(t *testing.T) {
 	}
 
 	before := httptest.NewRecorder()
-	server.webSettings(before, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil))
+	server.webSettings(before, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil), auth.Session{Role: "admin"})
 	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), `"source":"web_ui"`) || strings.Contains(before.Body.String(), `"restart_required":true`) {
 		t.Fatalf("applied override state: status=%d body=%s", before.Code, before.Body.String())
 	}
@@ -159,7 +169,7 @@ func TestWebSettingsResetReportsRestartAfterAppliedOverride(t *testing.T) {
 	}
 
 	after := httptest.NewRecorder()
-	server.webSettings(after, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil))
+	server.webSettings(after, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil), auth.Session{Role: "admin"})
 	if after.Code != http.StatusOK || !strings.Contains(after.Body.String(), `"source":"configuration_file"`) || !strings.Contains(after.Body.String(), `"restart_required":true`) {
 		t.Fatalf("pending YAML restart state: status=%d body=%s", after.Code, after.Body.String())
 	}

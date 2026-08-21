@@ -15,10 +15,12 @@ import (
 const ClusterProtocolVersion = 1
 
 type canonicalMirror struct {
+	Name               string              `json:"name"`
 	Slug               string              `json:"slug"`
 	Type               string              `json:"type"`
 	Enabled            bool                `json:"enabled"`
 	Description        string              `json:"description"`
+	PublicMode         string              `json:"public_mode"`
 	PublicPath         string              `json:"public_path"`
 	ProxyMode          string              `json:"proxy_mode"`
 	CacheEnabled       bool                `json:"cache_enabled"`
@@ -61,6 +63,9 @@ type canonicalMirror struct {
 	InsecureTLS        bool                `json:"insecure_skip_verify"`
 	BandwidthLimitBPS  int64               `json:"bandwidth_limit_bps"`
 	MaxConcurrency     int                 `json:"max_concurrency"`
+	BlockedPackages    []string            `json:"blocked_packages"`
+	AllowedPackages    []string            `json:"allowed_packages"`
+	Help               model.HelpConfig    `json:"help"`
 	Upstreams          []canonicalUpstream `json:"upstreams"`
 }
 
@@ -90,6 +95,11 @@ func CanonicalFingerprint(repositories []model.Mirror) string {
 			headerAdd[k] = v
 		}
 
+		blockedPackages := append([]string(nil), m.BlockedPackages...)
+		sort.Strings(blockedPackages)
+		allowedPackages := append([]string(nil), m.AllowedPackages...)
+		sort.Strings(allowedPackages)
+
 		upstreams := make([]canonicalUpstream, 0, len(m.Upstreams))
 		for _, u := range m.Upstreams {
 			upstreams = append(upstreams, canonicalUpstream{
@@ -108,10 +118,12 @@ func CanonicalFingerprint(repositories []model.Mirror) string {
 		})
 
 		cm := canonicalMirror{
+			Name:               m.Name,
 			Slug:               strings.ToLower(strings.TrimSpace(m.Slug)),
 			Type:               strings.ToLower(strings.TrimSpace(m.Type)),
 			Enabled:            m.Enabled,
 			Description:        m.Description,
+			PublicMode:         m.PublicMode,
 			PublicPath:         strings.Trim(m.PublicPath, "/"),
 			ProxyMode:          m.ProxyMode,
 			CacheEnabled:       m.CacheEnabled,
@@ -154,6 +166,9 @@ func CanonicalFingerprint(repositories []model.Mirror) string {
 			InsecureTLS:        m.InsecureTLS,
 			BandwidthLimitBPS:  m.BandwidthLimitBPS,
 			MaxConcurrency:     m.MaxConcurrency,
+			BlockedPackages:    blockedPackages,
+			AllowedPackages:    allowedPackages,
+			Help:               m.Help,
 			Upstreams:          upstreams,
 		}
 		canonical = append(canonical, cm)
