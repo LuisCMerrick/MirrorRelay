@@ -2,7 +2,9 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -21,22 +23,61 @@ import (
 
 const auxiliaryUpstreamPrefix = "/_mirrorrelay/upstream/"
 
+const auxiliaryURLVersion = "v1"
+
 var browsableURLAttributes = map[string]bool{
 	"action": true, "background": true, "cite": true, "formaction": true,
 	"href": true, "poster": true, "src": true,
 }
 
-func parseAuxiliaryUpstreamRoute(value string) (int64, string, error) {
+type auxiliaryUpstreamRoute struct {
+	repositoryID int64
+	upstreamID   int64
+	signature    []byte
+	target       *url.URL
+}
+
+func parseAuxiliaryUpstreamRoute(value, rawQuery string) (auxiliaryUpstreamRoute, error) {
 	remaining := strings.TrimPrefix(value, auxiliaryUpstreamPrefix)
-	idText, resourcePath, found := strings.Cut(remaining, "/")
-	if !found || idText == "" {
-		return 0, "", errors.New("invalid upstream auxiliary resource route")
+	parts := strings.Split(remaining, "/")
+	if len(parts) != 4 {
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource route")
 	}
-	repositoryID, err := strconv.ParseInt(idText, 10, 64)
+	repositoryID, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || repositoryID <= 0 {
-		return 0, "", errors.New("invalid upstream auxiliary resource repository id")
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource repository id")
 	}
-	return repositoryID, "/" + resourcePath, nil
+	upstreamID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || upstreamID <= 0 {
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource upstream id")
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(signature) != sha256.Size {
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource signature")
+	}
+	escapedPath, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil || len(escapedPath) == 0 || escapedPath[0] != '/' {
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource target")
+	}
+	target, err := url.ParseRequestURI(string(escapedPath))
+	if err != nil || target.IsAbs() || target.Host != "" || target.User != nil || target.Fragment != "" ||
+		containsEncodedPathSeparator(target.EscapedPath()) || unsafeRepositoryPath(target.Path) {
+		return auxiliaryUpstreamRoute{}, errors.New("invalid upstream auxiliary resource target")
+	}
+	target.RawQuery = rawQuery
+	return auxiliaryUpstreamRoute{repositoryID: repositoryID, upstreamID: upstreamID, signature: signature, target: target}, nil
+}
+
+func auxiliaryURLSignature(key []byte, repository model.Mirror, upstream model.Upstream, target *url.URL) []byte {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(auxiliaryURLVersion + "\x00" + strconv.FormatInt(repository.ID, 10) + "\x00" +
+		strconv.FormatInt(upstream.ID, 10) + "\x00" + strings.TrimSpace(upstream.URL) + "\x00" + strings.TrimSpace(upstream.Host) + "\x00" +
+		strings.TrimSpace(repository.HostRewrite) + "\x00" + target.EscapedPath() + "\x00" + target.RawQuery))
+	return mac.Sum(nil)
+}
+
+func verifyAuxiliaryURLSignature(key []byte, repository model.Mirror, upstream model.Upstream, route auxiliaryUpstreamRoute) bool {
+	return len(key) >= 32 && hmac.Equal(route.signature, auxiliaryURLSignature(key, repository, upstream, route.target))
 }
 
 func (e *Engine) auxiliaryRouteAllowed(repository model.Mirror, authority string) bool {
@@ -70,7 +111,8 @@ func shouldRewriteHTMLBody(response *http.Response) bool {
 }
 
 func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, upstream model.Upstream, pageURL *url.URL,
-	cfg config.MetadataConfig, uiEnhancement model.UIEnhancementConfig, acceptsGzip bool, compressors *gzipPool) (metadataValidator, bool, error) {
+	cfg config.MetadataConfig, uiEnhancement model.UIEnhancementConfig, acceptsGzip bool, compressors *gzipPool,
+	auxiliarySigningKey []byte) (metadataValidator, bool, error) {
 	if encoding := strings.TrimSpace(response.Header.Get("Content-Encoding")); encoding != "" && !strings.EqualFold(encoding, "identity") {
 		return metadataValidator{}, false, &unexpectedHTMLEncodingError{encoding: encoding}
 	}
@@ -104,7 +146,7 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 	}
 
 	if !changed && repository.HTMLRewriteEnabled {
-		rewritten, changed, err = rewriteHTMLDocument(source, repository, upstream, pageURL)
+		rewritten, changed, err = rewriteHTMLDocument(source, repository, upstream, pageURL, auxiliarySigningKey)
 		if err != nil {
 			return metadataValidator{}, false, err
 		}
@@ -150,7 +192,7 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 	return metadataValidator{ETag: etag}, true, nil
 }
 
-func rewriteHTMLDocument(source []byte, repository model.Mirror, upstream model.Upstream, pageURL *url.URL) ([]byte, bool, error) {
+func rewriteHTMLDocument(source []byte, repository model.Mirror, upstream model.Upstream, pageURL *url.URL, auxiliarySigningKey []byte) ([]byte, bool, error) {
 	repositoryBase, err := effectiveRepositoryBaseURL(repository, upstream)
 	if err != nil || pageURL == nil || !sameOrigin(repositoryBase, pageURL) {
 		return source, false, nil
@@ -180,7 +222,7 @@ func rewriteHTMLDocument(source []byte, repository model.Mirror, upstream model.
 			attribute := &token.Attr[index]
 			name := strings.ToLower(attribute.Key)
 			if name == "srcset" {
-				if rewritten, ok := rewriteSrcset(attribute.Val, resolverBase, repository, repositoryBase); ok {
+				if rewritten, ok := rewriteSrcset(attribute.Val, resolverBase, repository, upstream, repositoryBase, auxiliarySigningKey); ok {
 					attribute.Val = rewritten
 					tokenChanged = true
 				}
@@ -199,7 +241,7 @@ func rewriteHTMLDocument(source []byte, repository model.Mirror, upstream model.
 			if resolved == nil {
 				continue
 			}
-			if rewritten, ok := mapBrowsableURL(repository, repositoryBase, resolved); ok {
+			if rewritten, ok := mapBrowsableURL(repository, upstream, repositoryBase, resolved, auxiliarySigningKey); ok {
 				attribute.Val = rewritten
 				tokenChanged = true
 			}
@@ -251,7 +293,7 @@ func resolveBrowsableURL(raw string, base *url.URL) *url.URL {
 	return target
 }
 
-func mapBrowsableURL(repository model.Mirror, repositoryBase, target *url.URL) (string, bool) {
+func mapBrowsableURL(repository model.Mirror, upstream model.Upstream, repositoryBase, target *url.URL, auxiliarySigningKey []byte) (string, bool) {
 	if repository.ID <= 0 || !sameOrigin(repositoryBase, target) || containsEncodedPathSeparator(target.EscapedPath()) {
 		return "", false
 	}
@@ -263,8 +305,14 @@ func mapBrowsableURL(repository model.Mirror, repositoryBase, target *url.URL) (
 			mappedRawPath = publicRepositoryResourceRawPath(repository, rawRelative)
 		}
 	} else {
-		mappedPath = strings.TrimRight(auxiliaryUpstreamPrefix, "/") + "/" + strconv.FormatInt(repository.ID, 10) + ensureLeadingSlash(target.Path)
-		mappedRawPath = strings.TrimRight(auxiliaryUpstreamPrefix, "/") + "/" + strconv.FormatInt(repository.ID, 10) + ensureLeadingSlash(target.EscapedPath())
+		if upstream.ID <= 0 || len(auxiliarySigningKey) < 32 {
+			return "", false
+		}
+		signature := base64.RawURLEncoding.EncodeToString(auxiliaryURLSignature(auxiliarySigningKey, repository, upstream, target))
+		encodedPath := base64.RawURLEncoding.EncodeToString([]byte(target.EscapedPath()))
+		mappedPath = strings.TrimRight(auxiliaryUpstreamPrefix, "/") + "/" + strconv.FormatInt(repository.ID, 10) + "/" +
+			strconv.FormatInt(upstream.ID, 10) + "/" + signature + "/" + encodedPath
+		mappedRawPath = ""
 	}
 	mapped := &url.URL{Path: mappedPath, RawPath: mappedRawPath, RawQuery: target.RawQuery, ForceQuery: target.ForceQuery, Fragment: target.Fragment}
 	return mapped.String(), true
@@ -322,31 +370,100 @@ func publicRepositoryResourceRawPath(repository model.Mirror, relative string) s
 	return strings.TrimRight(root, "/") + ensureLeadingSlash(relative)
 }
 
-func rewriteSrcset(value string, base *url.URL, repository model.Mirror, repositoryBase *url.URL) (string, bool) {
-	if strings.Contains(strings.ToLower(value), "data:") {
-		return value, false
-	}
-	parts := strings.Split(value, ",")
+func rewriteSrcset(value string, base *url.URL, repository model.Mirror, upstream model.Upstream, repositoryBase *url.URL,
+	auxiliarySigningKey []byte) (string, bool) {
+	parts := parseSrcsetCandidates(value)
 	changed := false
-	for index, part := range parts {
-		fields := strings.Fields(strings.TrimSpace(part))
-		if len(fields) == 0 {
+	for index := range parts {
+		if strings.HasPrefix(strings.ToLower(parts[index].url), "data:") {
 			continue
 		}
-		resolved := resolveBrowsableURL(fields[0], base)
+		resolved := resolveBrowsableURL(parts[index].url, base)
 		if resolved == nil {
 			continue
 		}
-		if rewritten, ok := mapBrowsableURL(repository, repositoryBase, resolved); ok {
-			fields[0] = rewritten
-			parts[index] = strings.Join(fields, " ")
+		if rewritten, ok := mapBrowsableURL(repository, upstream, repositoryBase, resolved, auxiliarySigningKey); ok {
+			parts[index].url = rewritten
 			changed = true
 		}
 	}
 	if !changed {
 		return value, false
 	}
-	return strings.Join(parts, ", "), true
+	rendered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		candidate := part.url
+		if part.descriptor != "" {
+			candidate += " " + part.descriptor
+		}
+		rendered = append(rendered, candidate)
+	}
+	return strings.Join(rendered, ", "), true
+}
+
+type srcsetCandidate struct {
+	url        string
+	descriptor string
+}
+
+func parseSrcsetCandidates(value string) []srcsetCandidate {
+	isSpace := func(value byte) bool {
+		return value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\f'
+	}
+	var candidates []srcsetCandidate
+	for index := 0; index < len(value); {
+		for index < len(value) && (isSpace(value[index]) || value[index] == ',') {
+			index++
+		}
+		if index >= len(value) {
+			break
+		}
+		start := index
+		// The URL token is delimited by ASCII whitespace, not by every comma:
+		// data URLs contain an internal comma. Trailing commas terminate a
+		// descriptor-less candidate and are removed below, matching the HTML
+		// srcset parsing algorithm.
+		for index < len(value) && !isSpace(value[index]) {
+			index++
+		}
+		candidateURL := value[start:index]
+		trailingCommas := 0
+		for strings.HasSuffix(candidateURL, ",") {
+			candidateURL = strings.TrimSuffix(candidateURL, ",")
+			trailingCommas++
+		}
+		candidateURL = strings.TrimSpace(candidateURL)
+		if candidateURL == "" {
+			continue
+		}
+		if trailingCommas > 0 {
+			candidates = append(candidates, srcsetCandidate{url: candidateURL})
+			continue
+		}
+		for index < len(value) && isSpace(value[index]) {
+			index++
+		}
+		descriptorStart := index
+		parentheses := 0
+		for index < len(value) {
+			if value[index] == '(' {
+				parentheses++
+			} else if value[index] == ')' && parentheses > 0 {
+				parentheses--
+			} else if value[index] == ',' && parentheses == 0 {
+				break
+			}
+			index++
+		}
+		descriptor := strings.TrimSpace(value[descriptorStart:index])
+		if candidateURL != "" {
+			candidates = append(candidates, srcsetCandidate{url: candidateURL, descriptor: descriptor})
+		}
+		if index < len(value) {
+			index++
+		}
+	}
+	return candidates
 }
 
 type htmlRewriteTooLargeError struct{ limit int64 }

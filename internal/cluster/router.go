@@ -72,7 +72,9 @@ func (r *Router) SetNodes(nodes []model.ClusterNode) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	copied := make([]model.ClusterNode, len(nodes))
-	copy(copied, nodes)
+	for index := range nodes {
+		copied[index] = cloneClusterNode(nodes[index])
+	}
 	r.nodes = copied
 }
 
@@ -80,8 +82,25 @@ func (r *Router) Nodes() []model.ClusterNode {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	copied := make([]model.ClusterNode, len(r.nodes))
-	copy(copied, r.nodes)
+	for index := range r.nodes {
+		copied[index] = cloneClusterNode(r.nodes[index])
+	}
 	return copied
+}
+
+func cloneClusterNode(node model.ClusterNode) model.ClusterNode {
+	// Routing snapshots never need the write credential. Keep it only in the
+	// Coordinator's persistent control-plane record used by SyncManager.
+	node.MutationToken = ""
+	node.Capabilities = append([]string(nil), node.Capabilities...)
+	if node.RepositoryHealth != nil {
+		repositoryHealth := make(map[string]bool, len(node.RepositoryHealth))
+		for slug, healthy := range node.RepositoryHealth {
+			repositoryHealth[slug] = healthy
+		}
+		node.RepositoryHealth = repositoryHealth
+	}
+	return node
 }
 
 func (r *Router) SelectNode(clientIP string, repository model.Mirror, clusterFingerprint string) (*model.ClusterNode, error) {
@@ -99,16 +118,20 @@ func (r *Router) SelectNode(clientIP string, repository model.Mirror, clusterFin
 		if !n.Enabled {
 			continue
 		}
-		if n.HealthStatus != "healthy" {
+		if n.HealthStatus != "healthy" && n.HealthStatus != "degraded" {
 			continue
 		}
-		if n.ProtocolVersion > 0 && n.ProtocolVersion != ClusterProtocolVersion {
+		if n.ProtocolVersion != ClusterProtocolVersion {
 			continue
 		}
-		if clusterFingerprint != "" && n.ConfigFingerprint != "" && n.ConfigFingerprint != clusterFingerprint {
+		if clusterFingerprint == "" || n.ConfigFingerprint != clusterFingerprint {
 			continue
 		}
-		if n.ConfigStatus == "mismatch" || n.ConfigStatus == "drifted" || n.ConfigStatus == "version_incompatible" {
+		if n.ConfigStatus != "match" {
+			continue
+		}
+		repositoryHealthy, reported := n.RepositoryHealth[strings.ToLower(strings.TrimSpace(repository.Slug))]
+		if !reported || !repositoryHealthy {
 			continue
 		}
 		if len(n.Capabilities) > 0 && repoType != "" {

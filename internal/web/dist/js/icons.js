@@ -4,7 +4,7 @@
 export function icon(name, size = 16, className = '') {
   const s = size;
   const cls = className ? ` class="icon-svg ${className}"` : ' class="icon-svg"';
-  const attrs = `width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"${cls}`;
+  const attrs = `width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"${cls}`;
 
   switch (name) {
     case 'dashboard':

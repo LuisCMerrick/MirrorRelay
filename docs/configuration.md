@@ -4,12 +4,19 @@
 
 MirrorRelay reads YAML from `/etc/mirrorrelay/config.yaml` by default. Start from [`configs/config.example.yaml`](../configs/config.example.yaml). Duration values use Go duration syntax such as `15s`, `5m` and `720h`. Byte values are integers.
 
-Environment variables override only the documented bootstrap/runtime values:
+Environment variables override only the documented deployment/runtime values:
 
 | Variable | Meaning |
 |---|---|
-| `MIRRORRELAY_ADMIN_USERNAME` | Initial administrator name when the database has no users |
-| `MIRRORRELAY_ADMIN_PASSWORD` | Initial administrator password; required on the first production start |
+| `MIRRORRELAY_ADMIN_HOST` | Dedicated administration hostname |
+| `MIRRORRELAY_DISTRIBUTED_ENABLED` | Boolean distributed-mode override |
+| `MIRRORRELAY_DISTRIBUTED_ROLE` | `standalone`, `coordinator`, or `edge`; Coordinator/Edge also enable distributed mode |
+| `MIRRORRELAY_DISTRIBUTED_TOKEN` | Shared read-only cluster probe credential |
+| `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN` | This Edge's unique sync/purge credential |
+| `MIRRORRELAY_COORDINATOR_ID` | Coordinator identity trusted by this Edge |
+| `MIRRORRELAY_NODE_NAME` | Distributed node identifier |
+| `MIRRORRELAY_NODE_PUBLIC_BASE_URL` | Edge public redirect base URL |
+| `MIRRORRELAY_NODE_REGION` | Distributed node region |
 | `GOGC` | Go runtime GC target; takes precedence over YAML |
 | `GOMEMLIMIT` | Go runtime soft memory limit; takes precedence over YAML |
 
@@ -25,7 +32,7 @@ documented environment variables -> saved Web UI operational values -> YAML
 
 Saving or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the change. Repository Desired/Active changes use a separate immediate validation and activation path.
 
-The Web UI covers endpoint enablement and loopback ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for bootstrap and trust-boundary locations:
+The Web UI covers endpoint enablement and loopback ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for trust-boundary locations:
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -49,7 +56,7 @@ Use **Reset to YAML after restart** to delete the stored override. Invalid store
 | `server.local_port` | `9081` | Loopback port used only when the frontend Unix socket is explicitly disabled |
 | `upstream_nginx.upstream_unix_socket_enabled` | `true` | Use a Unix socket from Go to Managed Upstream Nginx |
 | `upstream_nginx.upstream_socket` | `/run/mirrorrelay/upstream.sock` | Managed Upstream Nginx socket path |
-| `upstream_nginx.upstream_socket_mode` | `0600` | Socket mode (`0600` or `0660`) |
+| `upstream_nginx.upstream_socket_mode` | `0660` | Required socket mode |
 | `upstream_nginx.upstream_local_port` | `9082` | Loopback port used only when the upstream Unix socket is explicitly disabled |
 
 TCP fallback endpoints always bind `127.0.0.1`. If both sockets are disabled, the two local ports must differ. There is no implicit fallback from a failed Unix socket to TCP. Loopback TCP does not provide Unix filesystem ownership/mode isolation, so use it only when local-process trust is acceptable.
@@ -218,7 +225,7 @@ MirrorRelay supports built-in and customized interactive client configuration do
 
 The Web UI and repository API expose profile/version, routing mode, multiple upstreams, strip/add prefixes, Host and request-header changes, connect/read/send timeouts, cache class TTLs, authenticated caching, metadata rewrite hosts/buffer limits, the per-repository `html_rewrite_enabled` switch, health policy, concurrency/bandwidth limits, access policy, client help documentation settings (`help.enabled`, `help.template`, `help.title`, `help.summary`), Registry auth/token/blob policy and the HTTP/private permission switches. Repository validation rejects root/system/administration/`/_mirrorrelay/` path conflicts, duplicate or overlapping repository paths, duplicate public hosts and a host-mode repository that claims the configured shared host.
 
-`html_rewrite_enabled` defaults to `false`. When enabled for a browsable repository response, MirrorRelay resolves same-origin HTML URLs against the selected upstream page. URLs below the effective upstream base (including `add_prefix`) return to the public repository namespace (including `strip_prefix`); other paths on the same origin use `/_mirrorrelay/upstream/<repository-id>/`. The auxiliary scope never authorizes another origin and uses the repository's normal upstream group and policy. It does expand the reachable path surface on that origin, so treat the switch as an explicit publication decision. The generated shared-ingress snippet contains the required auxiliary location for path-mode repositories.
+`html_rewrite_enabled` defaults to `false`. When enabled for a browsable repository response, MirrorRelay resolves same-origin HTML URLs against the selected upstream page. URLs below the effective upstream base (including `add_prefix`) return to the public repository namespace (including `strip_prefix`). Other same-origin paths receive an opaque `/_mirrorrelay/upstream/<repository-id>/<upstream-id>/<signature>/<target>` URL. The HMAC covers the repository, exact selected upstream/Host policy, escaped target path, and query, so clients cannot substitute another upstream, root path, or query. Only targets emitted by MirrorRelay are accepted; cross-origin URLs remain unchanged. The request still uses the repository's access policy, pinned address, TLS verification, cache policy, and limits through Managed Upstream Nginx. The generated shared-ingress snippet contains the required auxiliary location for path-mode repositories.
 
 Authenticated caching must be enabled only for content whose cache identity is public and does not vary by authorization. By default, requests carrying `Authorization` or `Cookie` bypass cache, and a configured static credential header disables cache. Nginx also does not cache responses with `Set-Cookie` unless that built-in protection is deliberately overridden; MirrorRelay's normal custom configuration cannot override it.
 
@@ -236,9 +243,11 @@ Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed U
 |---|---|
 | `distributed.enabled` | Global distributed mode switch |
 | `distributed.role` | Node role: `standalone` (default), `coordinator`, or `edge` |
-| `distributed.token` | Required shared token for probe, configuration-sync and cache-purge APIs |
+| `distributed.token` | Required shared read-only credential for manifest and health probes |
+| `distributed.mutation_token` | Edge-only sync/purge credential; must differ from the probe token and every other Edge token |
+| `distributed.coordinator_id` | Coordinator identity accepted by an Edge for protocol v2 mutation envelopes |
 | `distributed.allow_http` | Independent explicit opt-in for plaintext cluster-node origins; default `false` |
-| `distributed.node.name` | Unique edge node identifier |
+| `distributed.node.name` | Unique node identifier; required for Coordinator/Edge roles and included in manifests |
 | `distributed.node.public_base_url` | Base URL used by coordinator when redirecting clients to this edge |
 | `distributed.node.region` | Node region identifier for geolocation and CIDR routing |
 | `distributed.node.country` | ISO 3166-1 alpha-2 country code |
@@ -249,11 +258,12 @@ Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed U
 | `distributed.health_check.timeout` | Coordinator probe request timeout |
 | `distributed.health_check.healthy_threshold` | Consecutive successes required to mark a node healthy |
 | `distributed.health_check.unhealthy_threshold` | Consecutive failures required to mark a node unhealthy |
-| `distributed.nodes` | Initial seed edge nodes for Coordinator bootstrap |
+| `distributed.nodes` | Initial seed Edge nodes for Coordinator bootstrap; every item requires a unique `mutation_token` |
 
 ### Distributed Invariants
 
 - **Data plane isolation**: The Coordinator never fetches upstream or edge packages; it returns `HTTP 307 Temporary Redirect` preserving the original request path and query string.
-- **Config consistency**: The Coordinator derives the authoritative fingerprint only from its local Active repository snapshot. Edge reports are compared with that value and can never establish it. Nodes with drift are marked `mismatch` and excluded from routing.
+- **Config consistency**: The Coordinator derives the authoritative fingerprint from its complete local Active repositories plus custom Managed Upstream Nginx configuration. Edge reports can never establish it. Protocol, Coordinator identity/epoch, configuration generation and fingerprint must match, and the requested repository must be explicitly healthy.
+- **Replay defense**: Edge persists accepted Coordinator identity, epoch, generation and fingerprint. Older generations, conflicts and retired epochs are rejected; sync/purge uses a different per-Edge mutation credential from the shared probe credential.
 - **Safe control plane**: Cluster origins must be absolute origins without credentials, path, query or fragment. HTTPS is the default; `distributed.allow_http` and the global private-address policy are separate explicit decisions.
 - **Container registries**: Distributed routing is explicitly disabled for Docker and OCI registries (returns HTTP 501).

@@ -57,6 +57,9 @@ func TestRenderHelpDebian(t *testing.T) {
 	if !strings.Contains(resDeb822.Content, "Suites: bullseye") {
 		t.Errorf("expected Suites: bullseye in deb822 content")
 	}
+	if !strings.Contains(resDeb822.Content, "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg") {
+		t.Errorf("expected Debian archive keyring in deb822 content")
+	}
 
 	// 3. Render HTML
 	htmlOut := RenderDetailHTML(res, model.BrandingConfig{Title: "My Mirrors"}, "dark", false)
@@ -65,6 +68,62 @@ func TestRenderHelpDebian(t *testing.T) {
 	}
 	if !strings.Contains(htmlOut, "data-theme=\"dark\"") {
 		t.Errorf("expected dark theme attribute")
+	}
+}
+
+func TestRenderHelpAPTFormatsForUbuntuAndDebianSecurity(t *testing.T) {
+	tests := []struct {
+		name             string
+		template         string
+		variant          string
+		wantSuite        string
+		wantComponents   string
+		wantKeyring      string
+		unwantedFragment string
+	}{
+		{
+			name: "Ubuntu", template: "builtin://help/ubuntu.md", variant: "noble",
+			wantSuite:      "noble noble-updates noble-backports noble-security",
+			wantComponents: "main restricted universe multiverse",
+			wantKeyring:    "/usr/share/keyrings/ubuntu-archive-keyring.gpg",
+		},
+		{
+			name: "Debian Security", template: "builtin://help/debian-security.md", variant: "bookworm-security",
+			wantSuite:        "bookworm-security",
+			wantComponents:   "main contrib non-free non-free-firmware",
+			wantKeyring:      "/usr/share/keyrings/debian-archive-keyring.gpg",
+			unwantedFragment: "bookworm-security-security",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := model.Mirror{
+				Name: test.name, Slug: strings.ToLower(strings.ReplaceAll(test.name, " ", "-")), Type: "apt",
+				PublicMode: "path", PublicPath: "/apt/",
+				Help: model.HelpConfig{
+					Enabled: true, Title: test.name, Template: test.template,
+					Variants: []model.HelpVariant{{Key: test.variant, Codename: test.variant, Default: true}},
+					Formats:  []model.HelpFormat{{Key: "sources.list", Default: true}, {Key: "deb822"}},
+				},
+			}
+			for _, format := range []string{"sources.list", "deb822"} {
+				result, err := Render(repo, "https://mirror.example", test.variant, format, "MirrorRelay")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(result.Content, test.wantComponents) || !strings.Contains(result.Content, test.wantKeyring) {
+					t.Fatalf("%s output missing expected APT fields:\n%s", format, result.Content)
+				}
+				for _, suite := range strings.Fields(test.wantSuite) {
+					if !strings.Contains(result.Content, suite) {
+						t.Fatalf("%s output missing suite %q:\n%s", format, suite, result.Content)
+					}
+				}
+				if test.unwantedFragment != "" && strings.Contains(result.Content, test.unwantedFragment) {
+					t.Fatalf("%s output contains invalid suite %q", format, test.unwantedFragment)
+				}
+			}
+		})
 	}
 }
 

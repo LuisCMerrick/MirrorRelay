@@ -19,6 +19,26 @@ export function kv(label, value) {
   return `<div class="kv"><span>${esc(label)}</span><span>${esc(value)}</span></div>`;
 }
 
+export function disclosure(title, content, options = {}) {
+  const iconHtml = options.iconName ? icon(options.iconName, 17) : '';
+  const description = options.description
+    ? `<span class="disclosure-description">${esc(options.description)}</span>`
+    : '';
+  const className = options.className ? ` ${esc(options.className)}` : '';
+  const open = options.open ? ' open' : '';
+  const id = options.id ? ` id="${esc(options.id)}"` : '';
+  return `<details class="disclosure-panel${className}"${id}${open}>
+    <summary>
+      <span class="disclosure-heading">
+        <span class="disclosure-title">${iconHtml}${esc(title)}</span>
+        ${description}
+      </span>
+      <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+    </summary>
+    <div class="disclosure-content">${content}</div>
+  </details>`;
+}
+
 export function showPreview(title, content) {
   $('#preview-title').textContent = title;
   $('#preview-content').innerHTML = content;

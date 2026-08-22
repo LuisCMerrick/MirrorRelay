@@ -23,8 +23,34 @@ func TestLoadDurationsAndDevDefaults(t *testing.T) {
 	if cfg.HTTP.ReadTimeout != 20*time.Second || cfg.Cache.MetadataTTL != 7*time.Minute {
 		t.Fatalf("durations not parsed: %#v", cfg)
 	}
-	if cfg.HTTP.HTTPSListen != "127.0.0.1:8443" || cfg.Admin.Path != "/admin/" || cfg.Admin.InitialPassword != "adminadmin" {
+	if cfg.HTTP.HTTPSListen != "127.0.0.1:8443" || cfg.Admin.Path != "/admin/" {
 		t.Fatalf("development defaults not applied: %#v", cfg)
+	}
+}
+
+func TestLegacyBootstrapCredentialsAreRejectedAsUnknownConfiguration(t *testing.T) {
+	for _, key := range []string{"initial_username", "initial_password"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		data := []byte("admin:\n  " + key + ": legacy-value\n")
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path, false); err == nil {
+			t.Fatalf("legacy admin key %q was accepted", key)
+		}
+	}
+}
+
+func TestValidateRequires0660ForBothUnixSockets(t *testing.T) {
+	for _, mutate := range []func(*Config){
+		func(cfg *Config) { cfg.Server.FrontendSocketModeText = "0600" },
+		func(cfg *Config) { cfg.UpstreamNginx.UpstreamSocketModeText = "0600" },
+	} {
+		cfg := Default()
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("Unix socket mode 0600 was accepted")
+		}
 	}
 }
 
@@ -189,7 +215,8 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 		candidate.Distributed.Enabled = true
 		candidate.Distributed.Role = "coordinator"
 		candidate.Distributed.Token = "cluster-secret"
-		candidate.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: rawURL, Enabled: true}}
+		candidate.Distributed.Node.Name = "coordinator-1"
+		candidate.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: rawURL, MutationToken: "edge-mutation-secret", Enabled: true}}
 		if err := candidate.Validate(); err == nil {
 			t.Fatalf("invalid cluster origin %q was accepted", rawURL)
 		}
@@ -199,16 +226,49 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 	httpCluster.Distributed.Enabled = true
 	httpCluster.Distributed.Role = "coordinator"
 	httpCluster.Distributed.Token = "cluster-secret"
+	httpCluster.Distributed.Node.Name = "coordinator-1"
 	httpCluster.Distributed.AllowHTTP = true
-	httpCluster.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: "http://edge.example.com:8080", Enabled: true}}
+	httpCluster.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: "http://edge.example.com:8080", MutationToken: "edge-mutation-secret", Enabled: true}}
 	if err := httpCluster.Validate(); err != nil {
 		t.Fatalf("explicitly allowed HTTP cluster origin was rejected: %v", err)
+	}
+	duplicateMutation := httpCluster
+	duplicateMutation.Distributed.Nodes = []DistributedNodeSeed{
+		{Name: "edge-a", URL: "http://edge-a.example.com:8080", MutationToken: "edge-mutation-secret", Enabled: true},
+		{Name: "edge-b", URL: "http://edge-b.example.com:8080", MutationToken: "edge-mutation-secret", Enabled: true},
+	}
+	if err := duplicateMutation.Validate(); err == nil {
+		t.Fatal("Coordinator accepted a mutation credential shared by two Edge seeds")
+	}
+	probeAsMutation := httpCluster
+	probeAsMutation.Distributed.Nodes[0].MutationToken = probeAsMutation.Distributed.Token
+	if err := probeAsMutation.Validate(); err == nil {
+		t.Fatal("Coordinator accepted its read-only probe credential as an Edge mutation credential")
 	}
 
 	missingToken := httpCluster
 	missingToken.Distributed.Token = ""
 	if err := missingToken.Validate(); err == nil {
 		t.Fatal("enabled distributed mode accepted an empty cluster token")
+	}
+
+	edge := Default()
+	edge.Distributed.Enabled = true
+	edge.Distributed.Role = "edge"
+	edge.Distributed.Token = "probe-secret"
+	edge.Distributed.MutationToken = "edge-mutation-secret"
+	edge.Distributed.CoordinatorID = "coordinator-1"
+	edge.Distributed.Node.Name = "edge-1"
+	if err := edge.Validate(); err != nil {
+		t.Fatalf("valid split Edge credentials were rejected: %v", err)
+	}
+	edge.Distributed.MutationToken = edge.Distributed.Token
+	if err := edge.Validate(); err == nil {
+		t.Fatal("Edge accepted the probe credential as its mutation credential")
+	}
+	edge.Distributed.MutationToken = ""
+	if err := edge.Validate(); err == nil {
+		t.Fatal("Edge accepted an empty mutation credential")
 	}
 
 	webhook := Default()

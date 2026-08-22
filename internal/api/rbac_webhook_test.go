@@ -121,6 +121,15 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 		t.Fatalf("viewer should be forbidden from creating mirror, got %d", wViewer.Code)
 	}
 
+	viewerNginxTest := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/upstream-nginx/test", nil)
+	viewerNginxTest.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
+	viewerNginxTest.Header.Set("X-CSRF-Token", viewerSession.CSRFToken)
+	viewerNginxRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(viewerNginxRecorder, viewerNginxTest)
+	if viewerNginxRecorder.Code != http.StatusForbidden {
+		t.Fatalf("viewer should be forbidden from invoking Nginx validation, got %d", viewerNginxRecorder.Code)
+	}
+
 	// 2. Operator trying to create user -> 403 Forbidden
 	userReq, _ := json.Marshal(map[string]any{
 		"username": "new_user", "password": "password12345", "role": "viewer",
@@ -132,6 +141,13 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	handler.ServeHTTP(wOperator, rOperator)
 	if wOperator.Code != http.StatusForbidden {
 		t.Fatalf("operator should be forbidden from creating users, got %d", wOperator.Code)
+	}
+	operatorUsers := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/users", nil)
+	operatorUsers.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorUsersRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorUsersRecorder, operatorUsers)
+	if operatorUsersRecorder.Code != http.StatusForbidden {
+		t.Fatalf("operator should be forbidden from listing users, got %d", operatorUsersRecorder.Code)
 	}
 
 	// 3. Admin creating user with role -> 201 Created
@@ -184,7 +200,7 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	secretMirror, err := store.CreateMirror(ctx, model.Mirror{
 		Name: "Credentialed", Slug: "credentialed", Type: "generic", Enabled: true,
 		HeaderAdd:     map[string]string{"Authorization": "Bearer repository-secret", "X-Repo": "header-secret"},
-		TokenUpstream: "https://tokens.example/token?access_token=token-secret",
+		TokenUpstream: "https://tokens.example/token/path-secret/%65ncoded-secret?access_token=token-secret",
 		Upstreams:     []model.Upstream{{URL: "https://packages.example/archive?signature=query-secret", Enabled: true}},
 	})
 	if err != nil {
@@ -194,13 +210,20 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	viewerMirrors.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
 	viewerMirrorsRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(viewerMirrorsRecorder, viewerMirrors)
-	for _, secret := range []string{"repository-secret", "header-secret", "token-secret", "query-secret"} {
+	for _, secret := range []string{"repository-secret", "header-secret", "token-secret", "path-secret", "%65ncoded-secret", "encoded-secret", "query-secret"} {
 		if strings.Contains(viewerMirrorsRecorder.Body.String(), secret) {
 			t.Fatalf("viewer mirror response leaked %q: status=%d body=%s", secret, viewerMirrorsRecorder.Code, viewerMirrorsRecorder.Body.String())
 		}
 	}
 	if viewerMirrorsRecorder.Code != http.StatusOK || !strings.Contains(viewerMirrorsRecorder.Body.String(), redactedValue) {
 		t.Fatalf("viewer mirror response leaked static credentials: status=%d body=%s", viewerMirrorsRecorder.Code, viewerMirrorsRecorder.Body.String())
+	}
+	viewerAccess := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/access", nil)
+	viewerAccess.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
+	viewerAccessRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(viewerAccessRecorder, viewerAccess)
+	if viewerAccessRecorder.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not receive Managed Upstream Nginx access records, got %d", viewerAccessRecorder.Code)
 	}
 	viewerConfig := httptest.NewRequest(http.MethodGet, fmt.Sprintf("https://mirror.example/admin/api/v1/mirrors/%d/config", secretMirror.ID), nil)
 	viewerConfig.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})

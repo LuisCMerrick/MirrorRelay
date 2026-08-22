@@ -33,8 +33,8 @@ export async function loadCustom() {
             <td><code>${esc(value.last_validation_result || '—')}</code></td>
             <td>
               <div class="actions">
-                <button data-action="edit-custom" data-id="${value.id}">${icon('edit', 12)} ${L('Edit')}</button>
-                <button class="danger" data-action="delete-custom" data-id="${value.id}">${icon('trash', 12)} ${L('Delete')}</button>
+                <button class="requires-operator" data-action="edit-custom" data-id="${value.id}">${icon('edit', 12)} ${L('Edit')}</button>
+                <button class="danger requires-operator" data-action="delete-custom" data-id="${value.id}">${icon('trash', 12)} ${L('Delete')}</button>
               </div>
             </td>
           </tr>`).join('')}

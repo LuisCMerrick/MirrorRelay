@@ -2,6 +2,7 @@
 // module that imports this object observes the same values.
 export const state = {
   csrf: '',
+  role: '',
   mirrors: [],
   profiles: [],
   customConfigs: [],

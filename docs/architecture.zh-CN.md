@@ -25,7 +25,7 @@ MirrorRelay 前端 (Go 核心服务)
    └── 上游 Nginx 候选配置生成器与预检器
    │ (Unix Domain Socket /run/mirrorrelay/upstream.sock, 权限 0660)
    ▼
-受管上游 Nginx (专用 Musl 隔离数据平面)
+Managed Upstream Nginx (专用 Musl 隔离数据平面)
    ├── 高吞吐代理缓存 (/var/cache/mirrorrelay)
    ├── 连接池复用与 Keep-Alive 保持
    ├── TLS 主机名与证书链严格校验
@@ -39,18 +39,18 @@ MirrorRelay 前端 (Go 核心服务)
 
 ## 2. 为什么需要两个 Nginx 实例？
 
-MirrorRelay 最具特色的设计之一是**外部共享 Nginx** 与**受管上游 Nginx** 的明确分工：
+MirrorRelay 最具特色的设计之一是 **External Shared Nginx** 与 **Managed Upstream Nginx** 的明确分工：
 
 ### 外部共享 Nginx (入口平面 Ingress Plane)
 - **归属**：归宿主机系统管理员统一管理。
 - **职责**：负责公网 TLS 终结、域名证书管理（如 Let's Encrypt / Certbot）并将请求反向代理到 MirrorRelay 前端 Unix Socket。
 - **隔离性**：MirrorRelay 软件包**绝不**安装、修改、重启或重载外部共享 Nginx，而是生成一份干净、局部的配置集成片段（如 `mirrorrelay.conf`）供管理员自由引用。
 
-### 受管上游 Nginx (数据平面 Data Plane)
+### Managed Upstream Nginx (数据平面 Data Plane)
 - **归属**：由 MirrorRelay 服务进程全生命周期独占管理。
 - **职责**：执行所有发往原始上游的高吞吐 HTTP/HTTPS 流量交互、管理本地磁盘缓存与连接池。
 - **二进制特性**：采用 musl libc、OpenSSL、PCRE2 与 zlib 完全静态编译构建，运行时零动态库依赖（`ldd` 返回无动态依赖）。
-- **安全不变式**：Go 服务本身**绝不**直接向上游软件包服务器建立 HTTP 连接，所有上游流量均由受管上游 Nginx 代理执行。
+- **安全不变式**：Go 服务本身**绝不**直接向上游软件包服务器建立 HTTP 连接，所有上游流量均由 Managed Upstream Nginx 代理执行。
 
 ---
 
@@ -69,7 +69,7 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 ### B. 有界元数据与 HTML 路径重写
 针对响应体内嵌绝对或相对上游链接的仓库类型（如 PyPI Simple HTML 页面或可浏览的目录索引）：
 - Go 仅在严格有界内存限制下缓冲元数据（如限制最大 10 MB）。
-- 动态重写页面链接，使其重定向回 MirrorRelay 公开路由或受管上游路由（`/_mirrorrelay/upstream/<id>/`）。
+- 动态重写页面链接，使其返回 MirrorRelay 公开路由，或使用与实际所选上游、路径及 Query 绑定的 HMAC Scope 路由（`/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>`）。
 - 大体积二进制包（如 `.deb`、`.rpm`、`.whl`、Docker 分层 Blob 等）采用固定大小流式传输，绝不进入 Go 堆内存。
 
 ### C. Token Broker 与重定向代理

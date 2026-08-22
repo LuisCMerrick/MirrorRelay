@@ -28,7 +28,7 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
                                           ▼               ▼
           ┌──────────────────────────────────┐ ┌──────────────────────────────────┐
           │        Edge 节点 1 (华东)        │ │        Edge 节点 2 (华南)        │
-          │  - 自主受管上游 Nginx 数据平面   │ │  - 自主受管上游 Nginx 数据平面   │
+          │  - Managed Upstream Nginx 数据面 │ │  - Managed Upstream Nginx 数据面 │
           │  - 本地独立磁盘高速缓存          │ │  - 本地独立磁盘高速缓存          │
           │  - 客户端直接拉取与回源          │ │  - 客户端直接拉取与回源          │
           └────────────────┬─────────────────┘ └────────────────┬─────────────────┘
@@ -53,7 +53,7 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
 - **角色定位**：区域高速缓存加速与拉取节点。
 - **核心职责**：
   - 承接来自 Coordinator 重定向的客户端数据流量，就近提供高速下载服务。
-  - 维护独立的受管上游 Nginx 磁盘缓存空间。
+  - 维护独立的 Managed Upstream Nginx 磁盘缓存空间。
   - 定期向 Coordinator 暴露健康探针指标与配置指纹。
   - 在与 Coordinator 发生网络抖动或临时离线时，仍可基于本地缓存自主对外提供服务。
 
@@ -68,7 +68,7 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
 - `priority`：严格选取优先级数值最小的节点（例如优先级 1 优于优先级 100）。
 
 节点候选过滤流程：
-1. **健康度与指纹一致性过滤**：探针未通过（`health_status != "healthy"`）或配置指纹不一致的异常节点会被自动剔除。
+1. **健康度与一致性过滤**：健康节点可服务其健康仓库；degraded 节点只能服务明确报告为健康的仓库。缺失、unknown 或 unhealthy 的仓库状态一律不可路由；Protocol、Coordinator 身份/Epoch、Active 配置 Generation 与指纹也必须全部匹配。
 2. **能力支持检测**：校验边缘节点是否声明支持当前请求的仓库类型。
 3. **权重分流**：同优先级多个候选节点根据各节点的 `weight` 权重比例平滑分流。
 
@@ -84,7 +84,7 @@ MirrorRelay 原生支持分布式集群部署能力，允许构建由中心 Coor
 distributed:
   enabled: true
   role: coordinator           # standalone, coordinator, edge
-  token: "secret-shared-cluster-token-32bytes"
+  token: "read-only-probe-token-at-least-32bytes"
   allow_http: false           # 除非显式开启，否则强制 HTTPS
   node:
     name: "coord-01"
@@ -111,6 +111,7 @@ distributed:
   nodes:
     - name: "Edge Shanghai"
       url: "https://edge-sh.example.com"
+      mutation_token: "unique-edge-sh-mutation-token-32bytes"
       region: "cn-east"
       country: "CN"
       priority: 100
@@ -118,6 +119,7 @@ distributed:
       enabled: true
     - name: "Edge Guangzhou"
       url: "https://edge-gz.example.com"
+      mutation_token: "unique-edge-gz-mutation-token-32bytes"
       region: "cn-south"
       country: "CN"
       priority: 100
@@ -131,7 +133,9 @@ distributed:
 distributed:
   enabled: true
   role: edge                  # standalone, coordinator, edge
-  token: "secret-shared-cluster-token-32bytes"
+  token: "read-only-probe-token-at-least-32bytes"
+  mutation_token: "unique-edge-sh-mutation-token-32bytes"
+  coordinator_id: "coord-01"
   allow_http: false
   node:
     name: "Edge Shanghai"
@@ -144,9 +148,12 @@ distributed:
 
 ## 5. 安全与隔离规范
 
-- **集群通信鉴权**：探针、同步与淘汰端点都要求共享的高强度集群 Token，并使用常量时间比较。同步接收端位于浏览器 Session/CSRF 流程之外，但只接受 `POST`、Edge 角色及该集群 Token；请求体有大小上限并采用严格 JSON 解码。
+- **集群凭据分权**：`distributed.token` 是 Manifest/Health 共用的只读探测凭据。每个 Edge 必须使用不同的 `mutation_token` 执行同步与 Purge；它不得等于探测凭据，也不得被其他 Edge 复用。Coordinator 的 Seed/节点记录保存与该 Edge 匹配的凭据，API 永不回显，Web UI 编辑时保持空白。凭据比较采用常量时间实现。
+- **Coordinator 绑定与防重放**：每个 Edge 都要配置 `coordinator_id`。Protocol v2 的同步/Purge Envelope 将该身份绑定到持久化的随机 Coordinator Epoch。Edge 在激活前持久化已接受的最高 Generation 与指纹；旧 Generation、同 Generation 不同指纹及已退役 Epoch 会被拒绝，完全相同且已生效的 Payload 可幂等重试。
 - **SSRF 安全**：节点 URL 只能是 Origin，不允许凭据、路径前缀、查询或片段。默认强制 HTTPS；明文 HTTP 必须显式设置 `distributed.allow_http: true`，私网/环回/链路本地目标还必须独立设置 `security.allow_private_upstream: true`。健康检查、配置同步及缓存淘汰在发送 Token 前都执行同一策略，连接只使用策略允许的地址，保留 TLS 主机名验证，并禁止重定向。
 - **缓存数据物理隔离**：各边缘节点缓存独立落盘，互不污染。
+
+Protocol v2 有意不兼容 Protocol v1。升级后重新启用路由前，需为 Coordinator 和每个 Edge 配置独立 `distributed.node.name`，为每条 Coordinator Node Seed/记录加入独立 `mutation_token`，并在各 Edge 配置匹配的 `mutation_token` 与 `coordinator_id`。完成 v2 同步且后续探针确认目标仓库健康前，节点不会参与路由。
 
 ---
 
@@ -155,12 +162,12 @@ distributed:
 MirrorRelay 提供了一键式及自动化的多节点边缘配置分发与缓存广播机制：
 
 1. **完整 Active 配置同步**：
-   - Coordinator 仅从本机 Active 仓库快照计算权威标准指纹，绝不会把 Edge 指纹采纳为集群权威。
+   - Coordinator 从完整的 Active 仓库与自定义 Managed Upstream Nginx 配置快照计算权威指纹，绝不会把 Edge 指纹采纳为集群权威。数据库本地 ID/时间戳被排除，仓库关联使用稳定 Slug，自定义内容统一换行符。
    - 通过 Web UI 上的「同步全部节点」按钮或 REST API（`POST /admin/api/v1/cluster/sync`），Coordinator 向每个启用的 Edge 的 `POST /api/v1/cluster/sync/apply` 并发发送完整 Active 仓库与自定义配置快照。
-   - Edge 先验证协议、Generation、Payload 指纹、Capabilities、仓库与路由冲突，再进入正常的 Managed Upstream Nginx Candidate 校验、原子发布与 Graceful Reload 流程。校验或 Reload 失败时保留先前 Active 配置。
+   - Edge 先验证 Protocol、Coordinator 身份/Epoch、单调递增 Generation、Payload 指纹、Capabilities、仓库与路由冲突，再进入正常的 Managed Upstream Nginx Candidate 校验、原子发布与 Graceful Reload 流程。校验或 Reload 失败时保留先前 Active 配置。
    - HTTP 200 本身不代表成功；Coordinator 只接受严格 JSON 中明确的 `applied` 状态以及完全匹配的指纹、协议、Generation 与 Capabilities，之后才把 Edge 记录为已同步。
 2. **分布式缓存淘汰广播 (Distributed Cache Purge)**：
    - Coordinator 上的全局、仓库及对象淘汰会先推进本地 Generation，再向每个启用的 Edge 的 `POST /api/v1/cluster/sync/purge` 广播同一 Scope。
-   - 每个 Edge 回执都会被校验。API 响应与单条汇总审计会记录目标数、成功数及逐节点失败（包括部分失败），而本地淘汰仍然有效。
+   - 每次 Purge 都绑定 Edge 已接受的 Coordinator 身份与 Epoch，每个回执都会被校验。API 响应与单条汇总审计会记录目标数、成功数及逐节点失败（包括部分失败），而本地淘汰仍然有效。
 3. **配置漂移告警与可视化巡检**：
-   - 探针实时比对各边缘节点返回的指纹。一旦发生网络分区或配置漂移，自动触发 `config_change` Webhook 告警并在前端高亮展示。
+   - 有界 Worker Pool 探测 Edge，并验证 Manifest 与 Health 描述同一 Generation/指纹。持久化错误可观测，且不会替换上一次 Durable Routing Snapshot。一旦发生网络分区或配置漂移，自动触发 `config_change` Webhook 告警并在前端高亮展示。

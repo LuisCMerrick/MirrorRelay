@@ -72,6 +72,9 @@ func TestGeneratePinsValidatedConfiguredAndDynamicTargets(t *testing.T) {
 	if strings.Contains(generated.Main, "%!(EXTRA") || !strings.Contains(generated.Main, "max_size=536870912000 min_free=1073741824") || !strings.Contains(generated.Main, "resolver 1.1.1.1 8.8.8.8 valid=300s") {
 		t.Fatalf("main configuration arguments are misaligned:\n%s", generated.Main)
 	}
+	if strings.Contains(generated.Main, `uri="$request_uri"`) || !strings.Contains(generated.Main, `uri="$uri"`) {
+		t.Fatalf("Managed Upstream Nginx access log can persist raw query values:\n%s", generated.Main)
+	}
 	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "proxy_pass http://unix:/run/mm/frontend.sock:") || !strings.Contains(generated.Files["external-nginx-integration.conf"], "X-Mirror-Internal-Upstream-Address") {
 		t.Fatalf("External Shared Nginx integration security snippet missing:\n%s", generated.Files["external-nginx-integration.conf"])
 	}

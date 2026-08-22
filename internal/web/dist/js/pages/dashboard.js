@@ -1,9 +1,9 @@
 // Dashboard page: fleet overview, topology, real-time SVG charts, cache usage and per-repository stats.
 import { api } from '../api.js';
 import { $, esc } from '../dom.js';
-import { card, kv } from '../components.js';
+import { card, disclosure } from '../components.js';
 import { renderAreaChart, renderDonutChart } from '../charts.js';
-import { bytes, duration, number, stateLabel } from '../format.js';
+import { bytes, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 import { activeUpstreamFor, healthFor } from '../repositories.js';
@@ -59,24 +59,24 @@ export async function loadDashboard() {
     <div class="topo-node active">
       <div class="node-icon-wrap">${icon('users', 20)}</div>
       <div class="node-content">
-        <span class="node-title">Clients</span>
+        <span class="node-title">${L('Clients')}</span>
         <span class="node-sub">HTTP / HTTPS</span>
       </div>
-      <span class="node-protocol">Public</span>
+      <span class="node-protocol">${L('Public')}</span>
     </div>
-    <div class="topo-arrow">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <div class="topo-arrow">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
     </div>
     <div class="topo-node active">
       <div class="node-icon-wrap">${icon('network', 20)}</div>
       <div class="node-content">
-        <span class="node-title">External Ingress</span>
-        <span class="node-sub">Shared Nginx</span>
+        <span class="node-title">${L('External Ingress')}</span>
+        <span class="node-sub">${L('Shared Nginx')}</span>
       </div>
-      <span class="node-protocol">Port 80/443</span>
+      <span class="node-protocol">${L('Port 80/443')}</span>
     </div>
     <div class="topo-arrow">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
     </div>
     <div class="topo-node active">
       <div class="node-icon-wrap primary">${icon('layers', 20)}</div>
@@ -87,7 +87,7 @@ export async function loadDashboard() {
       <span class="node-protocol">UNIX Socket</span>
     </div>
     <div class="topo-arrow">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
     </div>
     <div class="topo-node ${isNginxRunning ? 'active' : 'inactive'}">
       <div class="node-icon-wrap ${isNginxRunning ? 'success' : 'danger'}">${icon('server', 20)}</div>
@@ -98,12 +98,12 @@ export async function loadDashboard() {
       <span class="node-protocol">${isNginxRunning ? 'Active' : 'Offline'}</span>
     </div>
     <div class="topo-arrow">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
     </div>
     <div class="topo-node active">
       <div class="node-icon-wrap">${icon('globe', 20)}</div>
       <div class="node-content">
-        <span class="node-title">Upstream Origins</span>
+        <span class="node-title">${L('Upstream Origins')}</span>
         <span class="node-sub">${dashboard.enabled_mirrors || 0} ${L('Repositories')}</span>
       </div>
       <span class="node-protocol">HTTPS / TLS</span>
@@ -159,17 +159,17 @@ export async function loadDashboard() {
     ]
   });
 
-  $('#page-dashboard').innerHTML = topoHTML + `<div class="cards">
-    ${card(L('Repositories / enabled'), `${dashboard.mirrors} / ${dashboard.enabled_mirrors}`, false, 'layers', `${dashboard.healthy_mirrors || 0} healthy`)}
-    ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, dashboard.unhealthy_mirrors === 0, 'activity', dashboard.unhealthy_mirrors === 0 ? 'All systems nominal' : `${dashboard.unhealthy_mirrors} degraded`)}
-    ${card(L('Managed Upstream Nginx'), stateLabel(upstreamNginx.state), isNginxRunning, 'server', `PID ${upstreamNginx.pid || '—'}`)}
-    ${card(L('Active requests'), number(dashboard.stats.active_requests), false, 'zap', 'Current in-flight')}
-    ${card(L('Requests today'), number(today.requests), false, 'trend-up', 'Total requests')}
-    ${card(L('Traffic today'), bytes(today.bytes), false, 'ingress', 'Served today')}
-    ${card(L('Traffic / 24 h'), bytes(last24.bytes), false, 'access', 'Rolling 24 hours')}
-    ${card(L('Traffic / 7 d'), bytes(last7.bytes), false, 'system', 'Rolling 7 days')}
-    ${card(L('Cache hit rate'), `${hitRate.toFixed(1)}%`, hitRate > 50, 'cache', `${number(today.cache_hits)} hits / ${number(today.cache_misses)} misses`)}
+  $('#page-dashboard').innerHTML = `<div class="cards compact-cards">
+    ${card(L('Repositories / enabled'), `${dashboard.mirrors} / ${dashboard.enabled_mirrors}`, false, 'layers', L('%s healthy', dashboard.healthy_mirrors || 0))}
+    ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, dashboard.unhealthy_mirrors === 0, 'activity', dashboard.unhealthy_mirrors === 0 ? L('All systems nominal') : L('%s degraded', dashboard.unhealthy_mirrors))}
+    ${card(L('Requests today'), number(today.requests), false, 'trend-up', L('%s active requests', number(dashboard.stats.active_requests)))}
+    ${card(L('Traffic today'), bytes(today.bytes), false, 'ingress', `${bytes(last24.bytes)} / 24 h · ${bytes(last7.bytes)} / 7 d`)}
+    ${card(L('Cache hit rate'), `${hitRate.toFixed(1)}%`, hitRate > 50, 'cache', L('%s hits / %s misses', number(today.cache_hits), number(today.cache_misses)))}
   </div>
+  ${disclosure(L('Request path'), topoHTML, {
+    iconName: 'network',
+    description: L('Static topology and transport details')
+  })}
   <div class="grid2">
     <div class="panel">
       <h2>${icon('trend-up', 18)} ${L('Performance & Traffic Analytics (24h)')}</h2>
@@ -186,29 +186,14 @@ export async function loadDashboard() {
       </div>
     </div>
   </div>
-  <div class="grid2">
-    <div class="panel">
-      <h2>${icon('cache', 18)} ${L('Cache usage')}</h2>
-      <div class="bar-row">
-        <span>${number(cache.files)} ${L('files')}</span>
-        <div class="bar"><i style="width:${maximum ? Math.min(100, 100 * cache.bytes / maximum) : 0}%"></i></div>
-        <span class="bar-percent">${maximum ? (100 * cache.bytes / maximum).toFixed(1) : '0.0'}%</span>
-      </div>
-      <p class="muted">${bytes(cache.bytes)} / ${bytes(maximum)}</p>
+  <div class="panel">
+    <h2>${icon('cache', 18)} ${L('Cache usage')}</h2>
+    <div class="bar-row">
+      <span>${number(cache.files)} ${L('files')}</span>
+      <div class="bar"><i style="width:${maximum ? Math.min(100, 100 * cache.bytes / maximum) : 0}%"></i></div>
+      <span class="bar-percent">${maximum ? (100 * cache.bytes / maximum).toFixed(1) : '0.0'}%</span>
     </div>
-    <div class="panel">
-      <h2>${icon('server', 18)} ${L('MirrorRelay and Managed Upstream Nginx')}</h2>
-      ${kv(L('Managed Upstream Nginx PID'), upstreamNginx.pid || '—')}
-      ${kv(L('Managed Upstream Nginx version'), upstreamNginx.version || '—')}
-      ${kv(L('Managed Upstream Nginx build ID'), upstreamNginx.build_id || '—')}
-      ${kv(L('Managed Upstream Nginx architecture'), upstreamNginx.architecture || '—')}
-      ${kv(L('Managed Upstream Nginx uptime'), duration(upstreamNginx.uptime_seconds || 0))}
-      ${kv(L('MirrorRelay version'), dashboard.version || '—')}
-      ${kv(L('MirrorRelay build ID'), dashboard.build_id || '—')}
-      ${kv(L('MirrorRelay architecture'), dashboard.architecture || '—')}
-      ${kv(L('Active config'), `v${upstreamNginx.current_config_version || '—'}`)}
-      ${kv(L('MirrorRelay uptime'), duration(dashboard.uptime_seconds))}
-    </div>
+    <p class="muted">${bytes(cache.bytes)} / ${bytes(maximum)}</p>
   </div>
   <div class="panel">
     <h2>${icon('layers', 18)} ${L('Repository statistics today')}</h2>

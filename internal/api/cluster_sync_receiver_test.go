@@ -31,6 +31,9 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 	edgeConfig.Distributed.Enabled = true
 	edgeConfig.Distributed.Role = "edge"
 	edgeConfig.Distributed.Token = "shared-cluster-secret"
+	edgeConfig.Distributed.MutationToken = "edge-only-mutation-secret"
+	edgeConfig.Distributed.CoordinatorID = "coordinator-1"
+	edgeConfig.Distributed.Node.Name = "edge-1"
 	edgeConfig.UpstreamNginx.Mode = "disabled"
 	edgeRegistry := mirror.NewRegistry(edgeStore)
 	edgeCache := cachectl.New(edgeConfig, edgeStore)
@@ -57,6 +60,45 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 	if unauthenticated.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated sync receiver returned %d", unauthenticated.StatusCode)
 	}
+	probeCannotMutate, err := http.NewRequest(http.MethodPost, edgeHTTP.URL+cluster.SyncApplyPath, bytes.NewBufferString("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	probeCannotMutate.Header.Set("Authorization", "Bearer "+edgeConfig.Distributed.Token)
+	probeCannotMutateResponse, err := http.DefaultClient.Do(probeCannotMutate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = probeCannotMutateResponse.Body.Close()
+	if probeCannotMutateResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("read-only probe credential mutated Edge state: status=%d", probeCannotMutateResponse.StatusCode)
+	}
+	mutationCannotProbe, err := http.NewRequest(http.MethodGet, edgeHTTP.URL+"/api/v1/cluster/manifest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutationCannotProbe.Header.Set("X-MirrorRelay-Cluster-Token", edgeConfig.Distributed.MutationToken)
+	mutationCannotProbeResponse, err := http.DefaultClient.Do(mutationCannotProbe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = mutationCannotProbeResponse.Body.Close()
+	if mutationCannotProbeResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Edge mutation credential was accepted as a probe credential: status=%d", mutationCannotProbeResponse.StatusCode)
+	}
+	validProbe, err := http.NewRequest(http.MethodGet, edgeHTTP.URL+"/api/v1/cluster/manifest", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validProbe.Header.Set("X-MirrorRelay-Cluster-Token", edgeConfig.Distributed.Token)
+	validProbeResponse, err := http.DefaultClient.Do(validProbe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = validProbeResponse.Body.Close()
+	if validProbeResponse.StatusCode != http.StatusOK {
+		t.Fatalf("valid probe credential was rejected: status=%d", validProbeResponse.StatusCode)
+	}
 
 	coordinatorStore, err := database.Open(filepath.Join(t.TempDir(), "coordinator.db"))
 	if err != nil {
@@ -67,12 +109,14 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 	coordinatorConfig.Distributed.Enabled = true
 	coordinatorConfig.Distributed.Role = "coordinator"
 	coordinatorConfig.Distributed.Token = edgeConfig.Distributed.Token
+	coordinatorConfig.Distributed.Node.Name = "coordinator-1"
 	coordinatorConfig.Distributed.AllowHTTP = true
 	coordinatorConfig.Security.AllowPrivateUpstream = true
 	coordinatorConfig.Security.AdminCIDRs = []string{"127.0.0.1/32"}
 	coordinatorConfig.UpstreamNginx.Mode = "disabled"
 	node, err := coordinatorStore.CreateClusterNode(ctx, model.ClusterNode{
-		Name: "edge", URL: edgeHTTP.URL, Region: "test", Enabled: true, ProtocolVersion: cluster.ClusterProtocolVersion,
+		Name: "edge", URL: edgeHTTP.URL, MutationToken: edgeConfig.Distributed.MutationToken,
+		Region: "test", Enabled: true, ProtocolVersion: cluster.ClusterProtocolVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +130,16 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 	if err := mirror.NormalizeAndValidate(&repository, false, false); err != nil {
 		t.Fatal(err)
 	}
-	manifest := cluster.GenerateManifest(coordinatorConfig, []model.Mirror{repository}, buildinfo.Info{Version: "test-version"}, 7)
+	coordinatorEpoch, err := cluster.EnsureCoordinatorEpoch(ctx, coordinatorStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := cluster.GenerateManifest(coordinatorConfig, []model.Mirror{repository}, []model.CustomConfig{},
+		buildinfo.Info{Version: "test-version"}, 8, coordinatorConfig.Distributed.Node.Name, coordinatorEpoch)
 	payload := model.ClusterSyncRequest{
 		Manifest: manifest, Repositories: []model.Mirror{repository}, CustomConfigs: []model.CustomConfig{},
 	}
-	manager := cluster.NewSyncManager(coordinatorConfig, coordinatorStore)
+	manager := cluster.NewSyncManager(coordinatorConfig, coordinatorStore, coordinatorEpoch)
 	result := manager.SyncNode(ctx, node, payload)
 	if !result.Success {
 		t.Fatalf("real handler sync failed: %+v", result)
@@ -105,6 +154,29 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 	}
 	if updatedNode.ProtocolVersion != cluster.ClusterProtocolVersion || len(updatedNode.Capabilities) != 1 || updatedNode.Capabilities[0] != "generic" {
 		t.Fatalf("sync response metadata was not persisted correctly: %+v", updatedNode)
+	}
+	stale := payload
+	stale.Manifest.ConfigGeneration = 7
+	if staleResult := manager.SyncNode(ctx, node, stale); staleResult.Success || !strings.Contains(staleResult.Error, "HTTP 409") {
+		t.Fatalf("Edge accepted a stale configuration generation: %+v", staleResult)
+	}
+	if idempotent := manager.SyncNode(ctx, node, payload); !idempotent.Success {
+		t.Fatalf("Edge rejected an idempotent configuration replay: %+v", idempotent)
+	}
+	conflictingRepository := repository
+	conflictingRepository.Description = "different effective configuration"
+	conflicting := model.ClusterSyncRequest{
+		Repositories: []model.Mirror{conflictingRepository}, CustomConfigs: []model.CustomConfig{},
+	}
+	conflicting.Manifest = cluster.GenerateManifest(coordinatorConfig, conflicting.Repositories, conflicting.CustomConfigs,
+		buildinfo.Info{Version: "test-version"}, 8, coordinatorConfig.Distributed.Node.Name, coordinatorEpoch)
+	if conflictResult := manager.SyncNode(ctx, node, conflicting); conflictResult.Success || !strings.Contains(conflictResult.Error, "HTTP 409") {
+		t.Fatalf("Edge accepted conflicting content for an existing generation: %+v", conflictResult)
+	}
+	acceptedState, foundState, err := cluster.LoadEdgeSyncState(ctx, edgeStore)
+	if err != nil || !foundState || acceptedState.Status != "applied" || acceptedState.ConfigGeneration != 8 ||
+		acceptedState.ConfigFingerprint != payload.Manifest.ConfigFingerprint {
+		t.Fatalf("Edge did not persist its accepted generation for restart recovery: state=%+v found=%v err=%v", acceptedState, foundState, err)
 	}
 
 	if err := coordinatorStore.ReplaceConfiguration(ctx, []model.Mirror{repository}, []model.CustomConfig{}); err != nil {
@@ -138,6 +210,15 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	coordinatorHandler := coordinatorServer.Handler(http.NotFoundHandler())
+	listNodesRequest := httptest.NewRequest(http.MethodGet, "https://coordinator.example/admin/api/v1/cluster/nodes", nil)
+	listNodesRequest.RemoteAddr = "127.0.0.1:12345"
+	listNodesRequest.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	listNodesRecorder := httptest.NewRecorder()
+	coordinatorHandler.ServeHTTP(listNodesRecorder, listNodesRequest)
+	if listNodesRecorder.Code != http.StatusOK || strings.Contains(listNodesRecorder.Body.String(), edgeConfig.Distributed.MutationToken) ||
+		!strings.Contains(listNodesRecorder.Body.String(), `"mutation_token_configured":true`) {
+		t.Fatalf("cluster node API did not redact its mutation credential: status=%d body=%s", listNodesRecorder.Code, listNodesRecorder.Body.String())
+	}
 	purges := []struct {
 		method string
 		path   string
@@ -174,6 +255,33 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 		t.Fatalf("rejected cluster node URL changed persistent state: node=%+v err=%v", persistedNode, err)
 	}
 
+	probeCredentialUpdate := httptest.NewRequest(http.MethodPut, fmt.Sprintf("https://coordinator.example/admin/api/v1/cluster/nodes/%d", node.ID),
+		strings.NewReader(fmt.Sprintf(`{"mutation_token":%q}`, coordinatorConfig.Distributed.Token)))
+	probeCredentialUpdate.RemoteAddr = "127.0.0.1:12345"
+	probeCredentialUpdate.Header.Set("X-CSRF-Token", session.CSRFToken)
+	probeCredentialUpdate.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	probeCredentialRecorder := httptest.NewRecorder()
+	coordinatorHandler.ServeHTTP(probeCredentialRecorder, probeCredentialUpdate)
+	if probeCredentialRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("cluster node accepted the probe credential for mutations: status=%d body=%s", probeCredentialRecorder.Code, probeCredentialRecorder.Body.String())
+	}
+	secondNode, err := coordinatorStore.CreateClusterNode(ctx, model.ClusterNode{
+		Name: "second-edge", URL: "http://127.0.0.1:1", MutationToken: "second-edge-mutation-secret", Region: "test", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicateCredentialUpdate := httptest.NewRequest(http.MethodPut, fmt.Sprintf("https://coordinator.example/admin/api/v1/cluster/nodes/%d", node.ID),
+		strings.NewReader(fmt.Sprintf(`{"mutation_token":%q}`, secondNode.MutationToken)))
+	duplicateCredentialUpdate.RemoteAddr = "127.0.0.1:12345"
+	duplicateCredentialUpdate.Header.Set("X-CSRF-Token", session.CSRFToken)
+	duplicateCredentialUpdate.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	duplicateCredentialRecorder := httptest.NewRecorder()
+	coordinatorHandler.ServeHTTP(duplicateCredentialRecorder, duplicateCredentialUpdate)
+	if duplicateCredentialRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("two Edge nodes accepted one mutation credential: status=%d body=%s", duplicateCredentialRecorder.Code, duplicateCredentialRecorder.Body.String())
+	}
+
 	objectID := cachectl.CanonicalObjectID(repository.ID, repository.Upstreams[0].URL, "/archive.tar.gz", "")
 	generations, err := edgeStore.ListCacheGenerations(ctx)
 	if err != nil {
@@ -197,5 +305,20 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 		if !found[scope] {
 			t.Fatalf("edge %s cache generation was not advanced: %+v", scope, generations)
 		}
+	}
+
+	replacementEpoch := strings.Repeat("2", 32)
+	replacementPayload := payload
+	replacementPayload.Manifest = cluster.GenerateManifest(coordinatorConfig, replacementPayload.Repositories,
+		replacementPayload.CustomConfigs, buildinfo.Info{Version: "test-version"}, 1,
+		coordinatorConfig.Distributed.Node.Name, replacementEpoch)
+	replacementManager := cluster.NewSyncManager(coordinatorConfig, coordinatorStore, replacementEpoch)
+	if replacement := replacementManager.SyncNode(ctx, node, replacementPayload); !replacement.Success {
+		t.Fatalf("Edge rejected an authenticated Coordinator epoch transition: %+v", replacement)
+	}
+	retiredEpochReplay := payload
+	retiredEpochReplay.Manifest.ConfigGeneration = 9
+	if replay := manager.SyncNode(ctx, node, retiredEpochReplay); replay.Success || !strings.Contains(replay.Error, "HTTP 409") {
+		t.Fatalf("Edge accepted a retired Coordinator epoch replay: %+v", replay)
 	}
 }

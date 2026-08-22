@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -21,77 +22,68 @@ func IsConflict(err error) bool {
 
 func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
+const clusterNodeColumns = `id,name,url,region,country,priority,weight,enabled,mutation_token,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at`
+
+type rowScanner interface {
+	Scan(...any) error
+}
+
+func scanClusterNode(scanner rowScanner) (model.ClusterNode, error) {
+	var node model.ClusterNode
+	var enabled int
+	var capabilitiesJSON, repositoryHealthJSON string
+	var lastCheck, created, updated string
+	err := scanner.Scan(&node.ID, &node.Name, &node.URL, &node.Region, &node.Country, &node.Priority, &node.Weight,
+		&enabled, &node.MutationToken, &node.HealthStatus, &node.ConfigStatus, &node.ConfigFingerprint,
+		&node.ConfigGeneration, &node.NodeID, &node.CoordinatorID, &node.CoordinatorEpoch, &node.Version,
+		&node.ProtocolVersion, &capabilitiesJSON, &repositoryHealthJSON, &node.LatencyMS, &lastCheck,
+		&node.LastError, &created, &updated)
+	if err != nil {
+		return node, err
+	}
+	node.Enabled = enabled != 0
+	node.MutationTokenConfigured = node.MutationToken != ""
+	if capabilitiesJSON != "" {
+		if err := json.Unmarshal([]byte(capabilitiesJSON), &node.Capabilities); err != nil {
+			return node, fmt.Errorf("decode cluster node capabilities: %w", err)
+		}
+	}
+	if repositoryHealthJSON != "" {
+		if err := json.Unmarshal([]byte(repositoryHealthJSON), &node.RepositoryHealth); err != nil {
+			return node, fmt.Errorf("decode cluster node repository health: %w", err)
+		}
+	}
+	if lastCheck != "" {
+		node.LastCheck = parseTime(lastCheck)
+	}
+	node.CreatedAt = parseTime(created)
+	node.UpdatedAt = parseTime(updated)
+	return node, nil
+}
+
 func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes ORDER BY priority ASC, id ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes ORDER BY priority ASC, id ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var nodes []model.ClusterNode
 	for rows.Next() {
-		var n model.ClusterNode
-		var enabled int
-		var capsJSON string
-		var lastCheckStr, createdStr, updatedStr string
-		if err := rows.Scan(&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr); err != nil {
+		node, err := scanClusterNode(rows)
+		if err != nil {
 			return nil, err
 		}
-		n.Enabled = enabled != 0
-		if capsJSON != "" {
-			_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
-		}
-		if lastCheckStr != "" {
-			n.LastCheck = parseTime(lastCheckStr)
-		}
-		n.CreatedAt = parseTime(createdStr)
-		n.UpdatedAt = parseTime(updatedStr)
-		nodes = append(nodes, n)
+		nodes = append(nodes, node)
 	}
 	return nodes, rows.Err()
 }
 
 func (s *Store) GetClusterNode(ctx context.Context, id int64) (model.ClusterNode, error) {
-	var n model.ClusterNode
-	var enabled int
-	var capsJSON string
-	var lastCheckStr, createdStr, updatedStr string
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE id=?`, id).Scan(
-		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
-	if err != nil {
-		return n, err
-	}
-	n.Enabled = enabled != 0
-	if capsJSON != "" {
-		_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
-	}
-	if lastCheckStr != "" {
-		n.LastCheck = parseTime(lastCheckStr)
-	}
-	n.CreatedAt = parseTime(createdStr)
-	n.UpdatedAt = parseTime(updatedStr)
-	return n, nil
+	return scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE id=?`, id))
 }
 
 func (s *Store) GetClusterNodeByURL(ctx context.Context, rawURL string) (model.ClusterNode, error) {
-	var n model.ClusterNode
-	var enabled int
-	var capsJSON string
-	var lastCheckStr, createdStr, updatedStr string
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at FROM cluster_nodes WHERE url=?`, rawURL).Scan(
-		&n.ID, &n.Name, &n.URL, &n.Region, &n.Country, &n.Priority, &n.Weight, &enabled, &n.HealthStatus, &n.ConfigStatus, &n.ConfigFingerprint, &n.Version, &n.ProtocolVersion, &capsJSON, &n.LatencyMS, &lastCheckStr, &n.LastError, &createdStr, &updatedStr)
-	if err != nil {
-		return n, err
-	}
-	n.Enabled = enabled != 0
-	if capsJSON != "" {
-		_ = json.Unmarshal([]byte(capsJSON), &n.Capabilities)
-	}
-	if lastCheckStr != "" {
-		n.LastCheck = parseTime(lastCheckStr)
-	}
-	n.CreatedAt = parseTime(createdStr)
-	n.UpdatedAt = parseTime(updatedStr)
-	return n, nil
+	return scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE url=?`, rawURL))
 }
 
 func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
@@ -114,8 +106,9 @@ func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (
 	if node.Enabled {
 		enabledInt = 1
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,health_status,config_status,config_fingerprint,version,protocol_version,capabilities,latency_ms,last_check,last_error,created_at,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.Version, node.ProtocolVersion, string(capsBytes), node.LatencyMS, "", node.LastError, nowStr, nowStr)
+	repositoryHealthBytes, _ := json.Marshal(node.RepositoryHealth)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,mutation_token,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.MutationToken, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.ConfigGeneration, node.NodeID, node.CoordinatorID, node.CoordinatorEpoch, node.Version, node.ProtocolVersion, string(capsBytes), string(repositoryHealthBytes), node.LatencyMS, "", node.LastError, nowStr, nowStr)
 	if err != nil {
 		return node, err
 	}
@@ -124,6 +117,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, 
 		return node, err
 	}
 	node.ID = id
+	node.MutationTokenConfigured = node.MutationToken != ""
 	node.CreatedAt = now
 	node.UpdatedAt = now
 	return node, nil
@@ -142,30 +136,59 @@ func (s *Store) UpdateClusterNode(ctx context.Context, node model.ClusterNode) (
 	if node.Enabled {
 		enabledInt = 1
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET name=?,url=?,region=?,country=?,priority=?,weight=?,enabled=?,updated_at=? WHERE id=?`,
-		node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, nowStr, node.ID)
+	result, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET name=?,url=?,region=?,country=?,priority=?,weight=?,enabled=?,mutation_token=?,updated_at=? WHERE id=?`,
+		node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.MutationToken, nowStr, node.ID)
 	if err != nil {
 		return node, err
 	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return node, err
+	} else if affected == 0 {
+		return node, sql.ErrNoRows
+	}
 	node.UpdatedAt = now
+	node.MutationTokenConfigured = node.MutationToken != ""
 	return node, nil
 }
 
-func (s *Store) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, latencyMS int64, lastError string, lastCheck time.Time) error {
+func (s *Store) UpdateClusterNodeStatus(ctx context.Context, node model.ClusterNode) error {
 	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
 	var checkStr string
-	if !lastCheck.IsZero() {
-		checkStr = lastCheck.UTC().Format(time.RFC3339Nano)
+	if !node.LastCheck.IsZero() {
+		checkStr = node.LastCheck.UTC().Format(time.RFC3339Nano)
 	}
-	capsBytes, _ := json.Marshal(caps)
-	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET health_status=?,config_status=?,config_fingerprint=?,version=?,protocol_version=?,capabilities=?,latency_ms=?,last_error=?,last_check=?,updated_at=? WHERE id=?`,
-		healthStatus, configStatus, fingerprint, version, protoVer, string(capsBytes), latencyMS, lastError, checkStr, nowStr, id)
-	return err
+	capsBytes, _ := json.Marshal(node.Capabilities)
+	repositoryHealthBytes, _ := json.Marshal(node.RepositoryHealth)
+	result, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET health_status=?,config_status=?,config_fingerprint=?,config_generation=?,node_id=?,coordinator_id=?,coordinator_epoch=?,version=?,protocol_version=?,capabilities=?,repository_health=?,latency_ms=?,last_error=?,last_check=?,updated_at=? WHERE id=?`,
+		node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.ConfigGeneration, node.NodeID, node.CoordinatorID,
+		node.CoordinatorEpoch, node.Version, node.ProtocolVersion, string(capsBytes), string(repositoryHealthBytes), node.LatencyMS,
+		node.LastError, checkStr, nowStr, node.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) DeleteClusterNode(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id=?`, id)
-	return err
+	result, err := s.db.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) SetClusterNodeEnabled(ctx context.Context, id int64, enabled bool) error {
@@ -174,8 +197,18 @@ func (s *Store) SetClusterNodeEnabled(ctx context.Context, id int64, enabled boo
 		enabledInt = 1
 	}
 	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
-	_, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET enabled=?,updated_at=? WHERE id=?`, enabledInt, nowStr, id)
-	return err
+	result, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET enabled=?,updated_at=? WHERE id=?`, enabledInt, nowStr, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) ClusterSetting(ctx context.Context, key string) (string, bool, error) {

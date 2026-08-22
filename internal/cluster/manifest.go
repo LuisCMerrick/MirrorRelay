@@ -12,7 +12,7 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
-const ClusterProtocolVersion = 1
+const ClusterProtocolVersion = 2
 
 type canonicalMirror struct {
 	Name               string              `json:"name"`
@@ -77,11 +77,20 @@ type canonicalUpstream struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-func CanonicalFingerprint(repositories []model.Mirror) string {
-	if len(repositories) == 0 {
-		return "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	}
+type canonicalCustomConfig struct {
+	Name           string `json:"name"`
+	Context        string `json:"context"`
+	RepositorySlug string `json:"repository_slug"`
+	Enabled        bool   `json:"enabled"`
+	Content        string `json:"content"`
+}
 
+type canonicalClusterConfig struct {
+	Repositories []canonicalMirror       `json:"repositories"`
+	Custom       []canonicalCustomConfig `json:"custom_configs"`
+}
+
+func canonicalizeRepositories(repositories []model.Mirror) []canonicalMirror {
 	canonical := make([]canonicalMirror, 0, len(repositories))
 	for _, m := range repositories {
 		hosts := append([]string(nil), m.RewriteHosts...)
@@ -114,7 +123,16 @@ func CanonicalFingerprint(repositories []model.Mirror) string {
 			if upstreams[i].Priority != upstreams[j].Priority {
 				return upstreams[i].Priority < upstreams[j].Priority
 			}
-			return upstreams[i].URL < upstreams[j].URL
+			if upstreams[i].URL != upstreams[j].URL {
+				return upstreams[i].URL < upstreams[j].URL
+			}
+			if upstreams[i].Host != upstreams[j].Host {
+				return upstreams[i].Host < upstreams[j].Host
+			}
+			if upstreams[i].Weight != upstreams[j].Weight {
+				return upstreams[i].Weight < upstreams[j].Weight
+			}
+			return !upstreams[i].Enabled && upstreams[j].Enabled
 		})
 
 		cm := canonicalMirror{
@@ -177,13 +195,57 @@ func CanonicalFingerprint(repositories []model.Mirror) string {
 	sort.Slice(canonical, func(i, j int) bool {
 		return canonical[i].Slug < canonical[j].Slug
 	})
+	return canonical
+}
 
-	data, err := json.Marshal(canonical)
+// CanonicalClusterConfigFingerprint covers every field synchronized to and
+// activated by an Edge while excluding database-local timestamps and IDs.
+func CanonicalClusterConfigFingerprint(repositories []model.Mirror, customConfigs []model.CustomConfig) string {
+	repositorySlugs := make(map[int64]string, len(repositories))
+	for _, repository := range repositories {
+		repositorySlugs[repository.ID] = strings.ToLower(strings.TrimSpace(repository.Slug))
+	}
+	custom := make([]canonicalCustomConfig, 0, len(customConfigs))
+	for _, value := range customConfigs {
+		content := strings.ReplaceAll(value.Content, "\r\n", "\n")
+		content = strings.ReplaceAll(content, "\r", "\n")
+		custom = append(custom, canonicalCustomConfig{
+			Name:           strings.TrimSpace(value.Name),
+			Context:        strings.ToLower(strings.TrimSpace(value.Context)),
+			RepositorySlug: repositorySlugs[value.RepositoryID],
+			Enabled:        value.Enabled,
+			Content:        content,
+		})
+	}
+	sort.Slice(custom, func(i, j int) bool {
+		if custom[i].Context != custom[j].Context {
+			return custom[i].Context < custom[j].Context
+		}
+		if custom[i].RepositorySlug != custom[j].RepositorySlug {
+			return custom[i].RepositorySlug < custom[j].RepositorySlug
+		}
+		if custom[i].Name != custom[j].Name {
+			return custom[i].Name < custom[j].Name
+		}
+		return custom[i].Content < custom[j].Content
+	})
+
+	data, err := json.Marshal(canonicalClusterConfig{
+		Repositories: canonicalizeRepositories(repositories),
+		Custom:       custom,
+	})
 	if err != nil {
 		return ""
 	}
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("sha256:%x", sum)
+}
+
+// CanonicalFingerprint remains a repository-only convenience for callers that
+// intentionally have no custom configuration. Cluster protocol code must use
+// CanonicalClusterConfigFingerprint with the complete active snapshot.
+func CanonicalFingerprint(repositories []model.Mirror) string {
+	return CanonicalClusterConfigFingerprint(repositories, []model.CustomConfig{})
 }
 
 func ExtractCapabilities(repositories []model.Mirror) []string {
@@ -202,7 +264,8 @@ func ExtractCapabilities(repositories []model.Mirror) []string {
 	return caps
 }
 
-func GenerateManifest(cfg config.Config, repositories []model.Mirror, build buildinfo.Info, configGeneration int64) model.ClusterManifest {
+func GenerateManifest(cfg config.Config, repositories []model.Mirror, customConfigs []model.CustomConfig, build buildinfo.Info,
+	configGeneration int64, coordinatorID, coordinatorEpoch string) model.ClusterManifest {
 	nodeID := cfg.Distributed.Node.Name
 	if nodeID == "" {
 		nodeID = "mirrorrelay-node"
@@ -211,8 +274,10 @@ func GenerateManifest(cfg config.Config, repositories []model.Mirror, build buil
 		ProtocolVersion:    ClusterProtocolVersion,
 		MirrorRelayVersion: build.Version,
 		NodeID:             nodeID,
+		CoordinatorID:      strings.TrimSpace(coordinatorID),
+		CoordinatorEpoch:   strings.TrimSpace(coordinatorEpoch),
 		ConfigGeneration:   configGeneration,
-		ConfigFingerprint:  CanonicalFingerprint(repositories),
+		ConfigFingerprint:  CanonicalClusterConfigFingerprint(repositories, customConfigs),
 		Capabilities:       ExtractCapabilities(repositories),
 	}
 }

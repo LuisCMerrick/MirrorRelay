@@ -50,7 +50,12 @@ export async function renderCurrentPage() {
 
 export function initRouter() {
   document.querySelectorAll('nav button').forEach(button => button.addEventListener('click', async () => {
-    document.querySelectorAll('nav button').forEach(candidate => candidate.classList.toggle('active', candidate === button));
+    document.querySelectorAll('nav button').forEach(candidate => {
+      const active = candidate === button;
+      candidate.classList.toggle('active', active);
+      if (active) candidate.setAttribute('aria-current', 'page');
+      else candidate.removeAttribute('aria-current');
+    });
     document.querySelectorAll('.page').forEach(page => page.classList.add('hidden'));
     state.currentPage = button.dataset.page;
     $('#page-' + state.currentPage).classList.remove('hidden');

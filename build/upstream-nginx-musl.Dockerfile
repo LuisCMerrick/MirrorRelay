@@ -6,8 +6,8 @@ FROM --platform=$BUILDPLATFORM alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6f
 ARG BUILDPLATFORM
 ARG TARGETPLATFORM
 ARG TARGETARCH
-ARG NGINX_VERSION=1.30.2
-ARG NGINX_SHA256=7df3090907fca3cc0e456d6dc00ceb230da74ea88026ceff0affc29dbbd9ac4c
+ARG NGINX_VERSION=1.30.4
+ARG NGINX_SHA256=4261dc90e9e47c1c4041276e9aaa3d48ebe2e664f728e14fa95ae6c67d57a08b
 ARG OPENSSL_VERSION=3.5.7
 ARG OPENSSL_SHA256=a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8
 ARG PCRE2_VERSION=10.47
@@ -21,8 +21,8 @@ ENV TZ=UTC
 COPY --from=xx / /
 COPY --chmod=0755 build/target-uname.sh /opt/mirrorrelay-cross/bin/uname
 
-RUN case "${TARGETARCH}" in amd64|arm64) ;; *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac
 RUN apk add --no-cache bash binutils build-base ca-certificates clang curl file lld llvm perl
+RUN case "${TARGETARCH}" in amd64|arm64) ;; *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac
 RUN xx-apk add --no-cache gcc linux-headers musl-dev \
  && xx-clang --setup-target-triple
 
@@ -70,7 +70,7 @@ RUN set -eu; \
       --with-pcre-jit \
       --with-zlib="/build/zlib-${ZLIB_VERSION}" \
       --with-openssl="/build/openssl-${OPENSSL_VERSION}" \
-      --with-openssl-opt="${openssl_target} no-shared no-tests no-module" \
+      --with-openssl-opt="${openssl_target} no-shared no-tests no-module no-quic" \
       --without-http_fastcgi_module \
       --without-http_uwsgi_module \
       --without-http_scgi_module \

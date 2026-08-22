@@ -1,14 +1,87 @@
 package database
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 )
+
+func TestCreateInitialAdminIsAtomic(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	var created atomic.Int32
+	errCh := make(chan error, 8)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			user, ok, createErr := store.CreateInitialAdmin(context.Background(), "first-admin", "hash")
+			if createErr != nil {
+				errCh <- createErr
+				return
+			}
+			if ok {
+				if user.Username != "first-admin" || user.Role != "admin" {
+					errCh <- fmt.Errorf("unexpected initial administrator: %+v", user)
+					return
+				}
+				created.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for createErr := range errCh {
+		t.Fatal(createErr)
+	}
+	count, err := store.CountUsers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Load() != 1 || count != 1 {
+		t.Fatalf("initial administrators created=%d users=%d, want 1/1", created.Load(), count)
+	}
+}
+
+func TestAuxiliaryURLSigningKeyPersists(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "mirrorrelay.db")
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.AuxiliaryURLSigningKey(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	second, err := reopened.AuxiliaryURLSigningKey(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 32 || !bytes.Equal(first, second) {
+		t.Fatal("auxiliary URL signing key changed across database reopen")
+	}
+}
 
 func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
@@ -223,14 +296,15 @@ func TestClusterNodeAndSettingStore(t *testing.T) {
 
 	// 2. Create Cluster Nodes
 	node1 := model.ClusterNode{
-		Name:         "tokyo-01",
-		URL:          "https://jp.repo.example.com",
-		Region:       "jp-tokyo",
-		Country:      "JP",
-		Priority:     100,
-		Weight:       80,
-		Enabled:      true,
-		Capabilities: []string{"apt", "rpm", "pypi"},
+		Name:          "tokyo-01",
+		URL:           "https://jp.repo.example.com",
+		MutationToken: "tokyo-mutation-secret",
+		Region:        "jp-tokyo",
+		Country:       "JP",
+		Priority:      100,
+		Weight:        80,
+		Enabled:       true,
+		Capabilities:  []string{"apt", "rpm", "pypi"},
 	}
 	created1, err := store.CreateClusterNode(ctx, node1)
 	if err != nil {
@@ -263,13 +337,27 @@ func TestClusterNodeAndSettingStore(t *testing.T) {
 
 	// 4. Update status
 	now := time.Now()
-	err = store.UpdateClusterNodeStatus(ctx, created1.ID, "healthy", "match", "sha256:abcd", "0.0.1", 1, []string{"apt", "rpm", "pypi"}, 37, "", now)
+	created1.HealthStatus = "degraded"
+	created1.ConfigStatus = "match"
+	created1.ConfigFingerprint = "sha256:abcd"
+	created1.ConfigGeneration = 9
+	created1.NodeID = "tokyo-edge"
+	created1.CoordinatorID = "coordinator-1"
+	created1.CoordinatorEpoch = "epoch-1"
+	created1.Version = "0.0.1"
+	created1.ProtocolVersion = 2
+	created1.RepositoryHealth = map[string]bool{"debian": true, "pypi": false}
+	created1.LatencyMS = 37
+	created1.LastCheck = now
+	err = store.UpdateClusterNodeStatus(ctx, created1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got1, err := store.GetClusterNode(ctx, created1.ID)
-	if err != nil || got1.HealthStatus != "healthy" || got1.ConfigStatus != "match" || got1.ConfigFingerprint != "sha256:abcd" || got1.LatencyMS != 37 {
+	if err != nil || got1.HealthStatus != "degraded" || got1.ConfigStatus != "match" || got1.ConfigFingerprint != "sha256:abcd" ||
+		got1.ConfigGeneration != 9 || got1.CoordinatorEpoch != "epoch-1" || !got1.RepositoryHealth["debian"] ||
+		got1.RepositoryHealth["pypi"] || got1.LatencyMS != 37 || got1.MutationToken != "tokyo-mutation-secret" {
 		t.Fatalf("unexpected node after status update: %+v", got1)
 	}
 

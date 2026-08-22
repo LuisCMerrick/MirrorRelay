@@ -61,44 +61,46 @@ type cacheKeyManager interface {
 }
 
 type Engine struct {
-	cfg         config.Config
-	registry    *mirror.Registry
-	cacheKeys   cacheKeyManager
-	stats       *stats.Stats
-	logger      *accesslog.Logger
-	limiter     *limit.Limiter
-	proxy       *httputil.ReverseProxy
-	transport   *upstreamNginxTransport
-	bufferPool  *bufferPool
-	validators  *metadataValidators
-	compressors gzipPool
-	adminCIDRs  security.CIDRList
-	appearance  *appearance.Store
+	cfg                 config.Config
+	registry            *mirror.Registry
+	cacheKeys           cacheKeyManager
+	stats               *stats.Stats
+	logger              *accesslog.Logger
+	limiter             *limit.Limiter
+	proxy               *httputil.ReverseProxy
+	transport           *upstreamNginxTransport
+	bufferPool          *bufferPool
+	validators          *metadataValidators
+	compressors         gzipPool
+	adminCIDRs          security.CIDRList
+	appearance          *appearance.Store
+	auxiliarySigningKey []byte
 
 	tokenMu      sync.RWMutex
 	tokenTargets map[int64]*url.URL
 }
 
-func New(cfg config.Config, registry *mirror.Registry, cacheKeys *cachectl.Manager, metric *stats.Stats, logger *accesslog.Logger) *Engine {
-	return newEngine(cfg, registry, cacheKeys, metric, logger, net.DefaultResolver)
+func New(cfg config.Config, registry *mirror.Registry, cacheKeys *cachectl.Manager, metric *stats.Stats, logger *accesslog.Logger, auxiliarySigningKey []byte) *Engine {
+	return newEngine(cfg, registry, cacheKeys, metric, logger, net.DefaultResolver, auxiliarySigningKey)
 }
 
-func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyManager, metric *stats.Stats, logger *accesslog.Logger, resolver security.Resolver) *Engine {
+func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyManager, metric *stats.Stats, logger *accesslog.Logger, resolver security.Resolver, auxiliarySigningKey []byte) *Engine {
 	adminCIDRs, _ := security.ParseCIDRs(cfg.Security.AdminCIDRs)
 	transport := newUpstreamNginxTransport(cfg, resolver)
 	engine := &Engine{
-		cfg:          cfg,
-		registry:     registry,
-		cacheKeys:    cacheKeys,
-		stats:        metric,
-		logger:       logger,
-		limiter:      limit.New(cfg.Limits.MaxTotalConcurrency, cfg.Limits.MaxIPConcurrency),
-		transport:    transport,
-		bufferPool:   newBufferPool(cfg.Performance.StreamBufferSize),
-		validators:   newMetadataValidators(cfg.Metadata.ValidatorEntries),
-		adminCIDRs:   adminCIDRs,
-		appearance:   appearance.New(cfg.UIEnhancement),
-		tokenTargets: make(map[int64]*url.URL),
+		cfg:                 cfg,
+		registry:            registry,
+		cacheKeys:           cacheKeys,
+		stats:               metric,
+		logger:              logger,
+		limiter:             limit.New(cfg.Limits.MaxTotalConcurrency, cfg.Limits.MaxIPConcurrency),
+		transport:           transport,
+		bufferPool:          newBufferPool(cfg.Performance.StreamBufferSize),
+		validators:          newMetadataValidators(cfg.Metadata.ValidatorEntries),
+		adminCIDRs:          adminCIDRs,
+		appearance:          appearance.New(cfg.UIEnhancement),
+		auxiliarySigningKey: append([]byte(nil), auxiliarySigningKey...),
+		tokenTargets:        make(map[int64]*url.URL),
 	}
 	transport.engine = engine
 	engine.proxy = &httputil.ReverseProxy{

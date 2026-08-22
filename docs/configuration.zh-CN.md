@@ -4,12 +4,19 @@
 
 MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/config.example.yaml`](../configs/config.example.yaml) 开始。Duration 使用 Go 格式，例如 `15s`、`5m`、`720h`；字节数使用整数。
 
-只有以下 Bootstrap/Runtime 值可由环境变量覆盖：
+只有以下部署/运行值可由环境变量覆盖：
 
 | 变量 | 含义 |
 |---|---|
-| `MIRRORRELAY_ADMIN_USERNAME` | 数据库无用户时创建的初始管理员名 |
-| `MIRRORRELAY_ADMIN_PASSWORD` | 初始管理员密码；生产首次启动必填 |
+| `MIRRORRELAY_ADMIN_HOST` | 独立管理 Hostname |
+| `MIRRORRELAY_DISTRIBUTED_ENABLED` | 分布式模式 Boolean 覆盖值 |
+| `MIRRORRELAY_DISTRIBUTED_ROLE` | `standalone`、`coordinator` 或 `edge`；Coordinator/Edge 同时启用分布式模式 |
+| `MIRRORRELAY_DISTRIBUTED_TOKEN` | 集群共享的只读探测凭据 |
+| `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN` | 当前 Edge 独立的同步/Purge 凭据 |
+| `MIRRORRELAY_COORDINATOR_ID` | 当前 Edge 信任的 Coordinator 身份 |
+| `MIRRORRELAY_NODE_NAME` | 分布式节点标识 |
+| `MIRRORRELAY_NODE_PUBLIC_BASE_URL` | Edge 对外重定向 Base URL |
+| `MIRRORRELAY_NODE_REGION` | 分布式节点 Region |
 | `GOGC` | Go Runtime GC 目标，优先于 YAML |
 | `GOMEMLIMIT` | Go Runtime 软内存上限，优先于 YAML |
 
@@ -25,7 +32,7 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 保存或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
-Web UI 覆盖端点启用状态与回环端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。Bootstrap 与信任边界路径仍以 YAML 为准：
+Web UI 覆盖端点启用状态与回环端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。信任边界路径仍以 YAML 为准：
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -49,7 +56,7 @@ upstream_nginx.ca_bundle
 | `server.local_port` | `9081` | 只有显式关闭前端 Unix Socket 后才使用的回环端口 |
 | `upstream_nginx.upstream_unix_socket_enabled` | `true` | Go 到 Managed Upstream Nginx 使用 Unix Socket |
 | `upstream_nginx.upstream_socket` | `/run/mirrorrelay/upstream.sock` | Managed Upstream Nginx Socket 路径 |
-| `upstream_nginx.upstream_socket_mode` | `0600` | Socket 权限（`0600` 或 `0660`） |
+| `upstream_nginx.upstream_socket_mode` | `0660` | 固定要求的 Socket 权限 |
 | `upstream_nginx.upstream_local_port` | `9082` | 只有显式关闭上游 Unix Socket 后才使用的回环端口 |
 
 TCP 回退端点始终绑定 `127.0.0.1`。如果两个 Socket 都关闭，两个端口必须不同。Unix Socket 失败时不会隐式回退到 TCP。回环 TCP 不具备 Unix 文件属主与权限模式隔离，因此只能在信任本机进程的环境中使用。
@@ -218,7 +225,7 @@ MirrorRelay 提供常见 Linux 发行版与软件包管理器的开箱即用交�
 
 Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Strip/Add Prefix、Host 与请求 Header 改写、连接/读取/发送超时、Cache 类别 TTL、认证响应缓存、Metadata Rewrite Host/缓冲上限、逐仓库 `html_rewrite_enabled` 开关、健康策略、并发/带宽限制、访问策略、客户端帮助配置（`help.enabled`、`help.template`、`help.title`、`help.summary`）、Registry Auth/Token/Blob 策略，以及 HTTP/私网许可开关。仓库验证会拒绝根路径、系统路径、后台路径或 `/_mirrorrelay/` 冲突、重复或相互重叠的仓库路径、重复公开 Host，以及占用已配置共享 Host 的 Host Mode 仓库。
 
-`html_rewrite_enabled` 默认值为 `false`。为可浏览仓库响应启用后，MirrorRelay 会相对所选上游页面解析同源 HTML URL。位于有效上游 Base（包含 `add_prefix`）下的 URL 会返回公开仓库 Namespace（包含 `strip_prefix`）；同一 Origin 上的其他路径使用 `/_mirrorrelay/upstream/<仓库ID>/`。辅助 Scope 不会许可其他 Origin，并复用仓库原有 Upstream Group 与策略；但它确实扩大了该 Origin 可经 MirrorRelay 访问的路径范围，因此应把此开关视为显式发布决定。生成的共享入口片段会为 Path Mode 仓库包含必需的辅助 Location。
+`html_rewrite_enabled` 默认值为 `false`。为可浏览仓库响应启用后，MirrorRelay 会相对所选上游页面解析同源 HTML URL。位于有效上游 Base（包含 `add_prefix`）下的 URL 会返回公开仓库 Namespace（包含 `strip_prefix`）；同源 Base 外路径会获得不透明的 `/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>` URL。HMAC 覆盖仓库、生成页面时实际选中的上游/Host 策略、转义后的目标路径和 Query，因此客户端不能替换上游、根路径或 Query；只有 MirrorRelay 生成的目标会被接受，跨 Origin URL 保持不变。请求仍遵守仓库访问策略，并通过 Managed Upstream Nginx 复用 Pin 地址、TLS 校验、缓存策略与限制。生成的共享入口片段会为 Path Mode 仓库包含必需的辅助 Location。
 
 只有内容身份不随 Authorization 变化且实质公开时，才能启用认证响应缓存。默认情况下，携带 `Authorization` 或 `Cookie` 的请求绕过缓存；配置静态认证 Header 也会关闭缓存。Nginx 默认不会缓存带 `Set-Cookie` 的响应，MirrorRelay 的普通自定义配置不能覆盖这项内建保护。
 
@@ -236,9 +243,11 @@ MirrorRelay 支持由一个协调器（Coordinator）与多个边缘节点（Edg
 |---|---|
 | `distributed.enabled` | 全局分布式模式开关 |
 | `distributed.role` | 节点角色：`standalone`（默认单机）、`coordinator`（协调器）或 `edge`（边缘节点） |
-| `distributed.token` | 探针、配置同步与缓存淘汰 API 必填的共享认证 Token |
+| `distributed.token` | Manifest 与 Health 探针必填的共享只读凭据 |
+| `distributed.mutation_token` | Edge 专用的同步/Purge 凭据；不得等于探测凭据，也不得与其他 Edge 共用 |
+| `distributed.coordinator_id` | Edge 在 Protocol v2 变更 Envelope 中接受的 Coordinator 身份 |
 | `distributed.allow_http` | 集群节点 Origin 使用明文 HTTP 的独立显式许可；默认 `false` |
-| `distributed.node.name` | 边缘节点唯一标识名称 |
+| `distributed.node.name` | 节点唯一标识；Coordinator/Edge 角色必填并写入 Manifest |
 | `distributed.node.public_base_url` | 协调器向客户端重定向时使用的边缘节点公开 Base URL |
 | `distributed.node.region` | 节点所在地域标识（用于 Geo/CIDR 调度） |
 | `distributed.node.country` | ISO 3166-1 alpha-2 国家/地区代码 |
@@ -249,11 +258,12 @@ MirrorRelay 支持由一个协调器（Coordinator）与多个边缘节点（Edg
 | `distributed.health_check.timeout` | 探测请求超时时间 |
 | `distributed.health_check.healthy_threshold` | 判定节点转为健康的连续成功次数 |
 | `distributed.health_check.unhealthy_threshold` | 判定节点转为异常的连续失败次数 |
-| `distributed.nodes` | 协调器启动时的初始种子边缘节点列表 |
+| `distributed.nodes` | Coordinator 启动时的初始 Edge Seed；每项必须提供独立 `mutation_token` |
 
 ### 分布式不变量
 
 - **数据面隔离**：协调器永不代为拉取源站或边缘节点的包文件；它始终返回保留原始请求路径与 Query 字符串的 `HTTP 307 临时重定向`。
-- **配置一致性与漂移检测**：Coordinator 只从本机 Active 仓库快照计算权威指纹；Edge 的回执只能用于比对，不能初始化或改写权威值。发生漂移的节点会标记为 `mismatch` 并剔除路由。
+- **配置一致性与漂移检测**：Coordinator 从本机完整 Active 仓库与自定义 Managed Upstream Nginx 配置计算权威指纹；Edge 回执不能初始化或改写权威值。Protocol、Coordinator 身份/Epoch、配置 Generation 与指纹必须一致，且目标仓库必须明确为健康。
+- **防重放**：Edge 持久化已接受的 Coordinator 身份、Epoch、Generation 与指纹；旧 Generation、冲突及已退役 Epoch 会被拒绝。同步/Purge 使用与共享探测凭据分离的逐 Edge 变更凭据。
 - **安全控制面**：集群节点 URL 必须是不含凭据、路径、查询或片段的绝对 Origin。默认强制 HTTPS；`distributed.allow_http` 与全局私网地址策略是两个独立的显式决定。
 - **容器镜像仓库限制**：V1 阶段分布式调度明确不支持 Docker / OCI Registry（返回 HTTP 501）。

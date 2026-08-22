@@ -22,7 +22,7 @@ const (
 
 func (s *Server) clusterSyncReceiver(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if !s.cfg.Distributed.Enabled || s.cfg.Distributed.Token == "" {
+	if !s.cfg.Distributed.Enabled || s.cfg.Distributed.MutationToken == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -35,8 +35,8 @@ func (s *Server) clusterSyncReceiver(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !s.verifyClusterToken(r) {
-		writeError(w, http.StatusUnauthorized, "invalid cluster token")
+	if !s.verifyClusterMutationToken(r) {
+		writeError(w, http.StatusUnauthorized, "invalid cluster mutation token")
 		return
 	}
 
@@ -62,8 +62,15 @@ func (s *Server) applyClusterSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "cluster protocol version is incompatible")
 		return
 	}
-	if payload.Manifest.ConfigGeneration <= 0 || payload.Manifest.ConfigFingerprint == "" || strings.TrimSpace(payload.Manifest.NodeID) == "" {
-		writeError(w, http.StatusBadRequest, "cluster manifest node, generation and fingerprint are required")
+	coordinatorID := strings.TrimSpace(payload.Manifest.CoordinatorID)
+	coordinatorEpoch := strings.TrimSpace(payload.Manifest.CoordinatorEpoch)
+	if payload.Manifest.ConfigGeneration <= 0 || payload.Manifest.ConfigFingerprint == "" ||
+		strings.TrimSpace(payload.Manifest.NodeID) == "" || coordinatorID == "" || !cluster.ValidCoordinatorEpoch(coordinatorEpoch) {
+		writeError(w, http.StatusBadRequest, "cluster manifest coordinator, epoch, generation and fingerprint are required")
+		return
+	}
+	if coordinatorID != strings.TrimSpace(s.cfg.Distributed.CoordinatorID) || payload.Manifest.NodeID != coordinatorID {
+		writeError(w, http.StatusForbidden, "cluster coordinator identity is not authorized")
 		return
 	}
 	for index := range payload.Repositories {
@@ -76,7 +83,7 @@ func (s *Server) applyClusterSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	fingerprint := cluster.CanonicalFingerprint(payload.Repositories)
+	fingerprint := cluster.CanonicalClusterConfigFingerprint(payload.Repositories, payload.CustomConfigs)
 	if fingerprint == "" || fingerprint != payload.Manifest.ConfigFingerprint {
 		writeError(w, http.StatusConflict, "cluster configuration fingerprint does not match the payload")
 		return
@@ -90,6 +97,58 @@ func (s *Server) applyClusterSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Managed Upstream Nginx is not initialized")
 		return
 	}
+
+	state, found, err := cluster.LoadEdgeSyncState(r.Context(), s.store)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	retiredEpochs := []string(nil)
+	if found {
+		retiredEpochs = append(retiredEpochs, state.RetiredEpochs...)
+		if state.CoordinatorID != coordinatorID {
+			writeError(w, http.StatusConflict, "accepted configuration belongs to another coordinator")
+			return
+		}
+		if state.CoordinatorEpoch == coordinatorEpoch {
+			if payload.Manifest.ConfigGeneration < state.ConfigGeneration {
+				writeError(w, http.StatusConflict, "stale cluster configuration generation")
+				return
+			}
+			if payload.Manifest.ConfigGeneration == state.ConfigGeneration && fingerprint != state.ConfigFingerprint {
+				writeError(w, http.StatusConflict, "cluster configuration generation conflicts with the accepted fingerprint")
+				return
+			}
+		} else {
+			if slices.Contains(state.RetiredEpochs, coordinatorEpoch) {
+				writeError(w, http.StatusConflict, "stale coordinator epoch")
+				return
+			}
+			retiredEpochs = appendUniqueEpoch(retiredEpochs, state.CoordinatorEpoch)
+		}
+	}
+
+	if found && state.CoordinatorEpoch == coordinatorEpoch && state.ConfigGeneration == payload.Manifest.ConfigGeneration &&
+		state.ConfigFingerprint == fingerprint && state.Status == "applied" {
+		actualRepositories, actualCustom, available := s.upstreamNginx.ActiveConfiguration()
+		if available && cluster.CanonicalClusterConfigFingerprint(actualRepositories, actualCustom) == fingerprint {
+			writeClusterSyncAcknowledgement(w, payload, s.build.Version)
+			return
+		}
+	}
+
+	pendingState := model.ClusterSyncState{
+		CoordinatorID:     coordinatorID,
+		CoordinatorEpoch:  coordinatorEpoch,
+		ConfigGeneration:  payload.Manifest.ConfigGeneration,
+		ConfigFingerprint: fingerprint,
+		Status:            "pending",
+		RetiredEpochs:     append([]string(nil), retiredEpochs...),
+	}
+	if err := cluster.PutEdgeSyncState(r.Context(), s.store, pendingState); err != nil {
+		writeInternal(w, err)
+		return
+	}
 	if _, err := s.upstreamNginx.ApplyConfiguration(r.Context(), payload.Repositories, payload.CustomConfigs,
 		"cluster", "apply coordinator configuration generation"); err != nil {
 		_ = s.audit(r, "cluster", "cluster_sync_apply", "cluster", err.Error(), false)
@@ -101,21 +160,43 @@ func (s *Server) applyClusterSync(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, err)
 		return
 	}
-	actualRepositories := s.registry.List()
-	actualFingerprint := cluster.CanonicalFingerprint(actualRepositories)
+	actualRepositories, actualCustom, available := s.upstreamNginx.ActiveConfiguration()
+	if !available {
+		writeError(w, http.StatusInternalServerError, "activated cluster configuration snapshot is unavailable")
+		return
+	}
+	actualFingerprint := cluster.CanonicalClusterConfigFingerprint(actualRepositories, actualCustom)
 	actualCapabilities := cluster.ExtractCapabilities(actualRepositories)
 	if actualFingerprint != payload.Manifest.ConfigFingerprint || !slices.Equal(actualCapabilities, payload.Manifest.Capabilities) {
 		writeError(w, http.StatusInternalServerError, "activated cluster configuration acknowledgement is inconsistent")
 		return
 	}
+	pendingState.Status = "applied"
+	if err := cluster.PutEdgeSyncState(r.Context(), s.store, pendingState); err != nil {
+		_ = s.audit(r, "cluster", "cluster_sync_apply", "cluster", err.Error(), false)
+		writeInternal(w, err)
+		return
+	}
 	_ = s.audit(r, "cluster", "cluster_sync_apply", "cluster", actualFingerprint, true)
+	writeClusterSyncAcknowledgement(w, payload, s.build.Version)
+}
+
+func appendUniqueEpoch(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" || slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
+}
+
+func writeClusterSyncAcknowledgement(w http.ResponseWriter, payload model.ClusterSyncRequest, version string) {
 	writeJSON(w, http.StatusOK, model.ClusterSyncResponse{
 		Status:             "applied",
-		Fingerprint:        actualFingerprint,
+		Fingerprint:        payload.Manifest.ConfigFingerprint,
 		ProtocolVersion:    cluster.ClusterProtocolVersion,
 		ConfigGeneration:   payload.Manifest.ConfigGeneration,
-		MirrorRelayVersion: s.build.Version,
-		Capabilities:       actualCapabilities,
+		MirrorRelayVersion: version,
+		Capabilities:       payload.Manifest.Capabilities,
 	})
 }
 
@@ -125,8 +206,20 @@ func (s *Server) applyClusterPurge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.Scope = strings.TrimSpace(payload.Scope)
+	payload.CoordinatorID = strings.TrimSpace(payload.CoordinatorID)
+	payload.CoordinatorEpoch = strings.TrimSpace(payload.CoordinatorEpoch)
 	payload.RepositorySlug = strings.ToLower(strings.TrimSpace(payload.RepositorySlug))
 	payload.ObjectID = strings.TrimSpace(payload.ObjectID)
+	state, found, err := cluster.LoadEdgeSyncState(r.Context(), s.store)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if !found || state.Status != "applied" || payload.CoordinatorID != strings.TrimSpace(s.cfg.Distributed.CoordinatorID) ||
+		payload.CoordinatorID != state.CoordinatorID || payload.CoordinatorEpoch != state.CoordinatorEpoch {
+		writeError(w, http.StatusConflict, "cache purge is not bound to the accepted coordinator epoch")
+		return
+	}
 	if s.cache == nil || s.registry == nil {
 		writeError(w, http.StatusServiceUnavailable, "cache manager is not initialized")
 		return

@@ -26,9 +26,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.15 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.15-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.15-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.16 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.16-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.16-source/vendor/modules.txt'
 ```
 
 带 Vendor 的源码包从本次发布对应的精确 Git Commit 导出，再在导出树内执行 `go mod vendor`。托管构建流程会解包并执行 `go list -mod=vendor ./...`，通过后才把它加入 GitHub Release 与 `SHA256SUMS`。
@@ -36,6 +36,8 @@ tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.15-source-with-vendor.tar.gz \
 amd64 Artifact 必须是 ELF x86-64，arm64 Artifact 必须是 ELF AArch64；两者都不能包含 ELF Interpreter 或非预期的运行时共享库依赖。发行版源码注释不得使用中文；中文 UI 字符串和中文文档是内容，不属于代码注释。
 
 Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/Clang musl 交叉工具链编译。arm64 任务仅对少量 Configure Runtime Probe 和最终可执行文件集成测试使用 QEMU；编译过程本身不在模拟器中运行。
+
+固定的 OpenSSL 构建启用 `no-quic`，Managed Upstream Nginx 也不构建 Nginx HTTP/3 模块。因此正式二进制会排除未使用的 OpenSSL QUIC 服务端实现，同时保留 HTTPS 上游能力。
 
 可选的真实 Nginx 测试会验证生成配置，并通过待验收的 Managed Upstream Nginx 从私有 HTTPS Origin 流式传输 16 MiB 响应，实际覆盖 CA 信任、证书名称校验、固定目标地址和响应 SHA-256 校验。
 
@@ -57,7 +59,7 @@ Managed Upstream Nginx 在原生构建平台容器中使用固定版本的 `xx`/
 | Cache | MISS 后 HIT、并发首次填充、全局/仓库/单对象逻辑失效、物理回收状态真实 |
 | 配置 | 无效 Candidate 不改变 Active；有效变更和回滚均使用 Graceful Reload |
 | Web UI | 每个仓库操作都能调用对应 API，`/` 列出已启用且可见的仓库，保存的设置在重启后生效 |
-| 可浏览 HTML | 开启仓库开关后，相对/根 URL 正确解析，Base 内链接留在公开 Namespace，同源 Base 外资源使用 `/_mirrorrelay/upstream/<ID>/`，跨 Origin URL 保持不变 |
+| 可浏览 HTML | 开启仓库开关后，相对/根 URL 正确解析，Base 内链接留在公开 Namespace，同源 Base 外资源使用绑定上游的 HMAC URL，伪造路径/Query/上游会失败，data/普通 URL 混合 `srcset` 可用，跨 Origin URL 保持不变 |
 | 入口 | 安装或重启 MirrorRelay 时，External Shared Nginx 上的其他既有站点继续服务 |
 
 ## 大对象与连续性测试

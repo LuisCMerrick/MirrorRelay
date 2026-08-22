@@ -46,30 +46,13 @@ The packages install these fixed paths:
 
 The DEB configuration selects `/etc/ssl/certs/ca-certificates.crt`; the RPM configuration selects the RHEL-family `/etc/pki/tls/certs/ca-bundle.crt`. Portable tar users must confirm the CA bundle path for their distribution before starting the service.
 
-They create the `mirrorrelay` system account and private runtime, state, cache and log directories. The service is not enabled or started automatically. Create `/etc/mirrorrelay/environment` with mode `0600`, then edit it without placing the password in shell history:
-
-```sh
-sudo touch /etc/mirrorrelay/environment
-sudo chmod 0600 /etc/mirrorrelay/environment
-sudoedit /etc/mirrorrelay/environment
-```
-
-The file must contain a strong bootstrap password and may override the initial username:
-
-```text
-MIRRORRELAY_ADMIN_USERNAME=admin
-MIRRORRELAY_ADMIN_PASSWORD=replace-with-a-long-random-password
-```
-
-Review `/etc/mirrorrelay/config.yaml`, then run:
+They create the `mirrorrelay` system account and private runtime, state, cache and log directories. The service is not enabled or started automatically. Review `/etc/mirrorrelay/config.yaml` first, especially `security.admin_cidrs`. Its packaged default permits only loopback clients; replace it with the exact administration networks when remote management is required. Then run:
 
 ```sh
 sudo systemctl enable --now mirrorrelay.service
 ```
 
-After the first administrator exists and sign-in succeeds, remove `MIRRORRELAY_ADMIN_PASSWORD` from the environment file and restart MirrorRelay. Existing users are stored in SQLite and do not require the bootstrap secret on later starts.
-
-After the HTTPS ingress is available, continue with the [Web UI guide](web-ui.md). The management session cookie requires HTTPS outside loopback development access.
+After the HTTPS ingress is available, open the administration URL. With an empty user database, the page requires one-time registration of the initial administrator instead of accepting a preset password. Registration is available only through the configured administration host/path and allowed administrator CIDRs; complete it before exposing that surface to untrusted networks. The management session cookie requires HTTPS outside loopback development access. Continue with the [Web UI guide](web-ui.md).
 
 The systemd unit creates `/run/mirrorrelay` with mode `0750` and preserves it across MirrorRelay restarts so the version-bound Managed Upstream Nginx can remain attached when `stop_on_mirrorrelay_exit` is false. The directory is still transient and is cleared with the host's `/run` filesystem at boot.
 

@@ -33,6 +33,8 @@ type clientExample struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Command     string `json:"command"`
+	Format      string `json:"format,omitempty"`
+	FilePath    string `json:"file_path,omitempty"`
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, out any) error {

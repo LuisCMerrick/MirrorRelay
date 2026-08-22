@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
@@ -103,10 +102,8 @@ func Default() Config {
 			WorkerInterval: 60 * time.Second,
 		},
 		Admin: AdminConfig{
-			Host:            "",
-			Path:            "/admin/",
-			InitialUsername: "admin",
-			InitialPassword: "",
+			Host: "",
+			Path: "/admin/",
 		},
 		Shutdown: ShutdownConfig{
 			GracePeriod: 30 * time.Second,
@@ -137,10 +134,12 @@ func Default() Config {
 			StopOnMirrorRelayExit:  true,
 		},
 		Distributed: DistributedConfig{
-			Enabled:   false,
-			Role:      "standalone",
-			Token:     "",
-			AllowHTTP: false,
+			Enabled:       false,
+			Role:          "standalone",
+			Token:         "",
+			MutationToken: "",
+			CoordinatorID: "",
+			AllowHTTP:     false,
 			Node: DistributedNodeConfig{
 				Name:          "",
 				PublicBaseURL: "",
@@ -234,23 +233,9 @@ func applyDevDefaults(cfg *Config) {
 	} else {
 		cfg.UpstreamNginx.WorkerUser = ""
 	}
-	if cfg.Admin.InitialPassword == "" {
-		cfg.Admin.InitialPassword = "adminadmin"
-	}
 }
 
 func applyEnvironment(cfg *Config) {
-	if v := os.Getenv("MIRRORRELAY_ADMIN_USERNAME"); v != "" {
-		cfg.Admin.InitialUsername = v
-	}
-	if v := os.Getenv("MIRRORRELAY_ADMIN_PASSWORD_FILE"); v != "" {
-		if content, err := os.ReadFile(v); err == nil {
-			cfg.Admin.InitialPassword = strings.TrimSpace(string(content))
-		}
-	}
-	if v := os.Getenv("MIRRORRELAY_ADMIN_PASSWORD"); v != "" {
-		cfg.Admin.InitialPassword = v
-	}
 	if v := os.Getenv("MIRRORRELAY_ADMIN_HOST"); v != "" {
 		cfg.Admin.Host = v
 	}
@@ -267,6 +252,12 @@ func applyEnvironment(cfg *Config) {
 	}
 	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_TOKEN"); v != "" {
 		cfg.Distributed.Token = v
+	}
+	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN"); v != "" {
+		cfg.Distributed.MutationToken = v
+	}
+	if v := os.Getenv("MIRRORRELAY_COORDINATOR_ID"); v != "" {
+		cfg.Distributed.CoordinatorID = v
 	}
 	if v := os.Getenv("MIRRORRELAY_NODE_NAME"); v != "" {
 		cfg.Distributed.Node.Name = v

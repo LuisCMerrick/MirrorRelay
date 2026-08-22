@@ -199,7 +199,7 @@ http {
     client_body_temp_path %s/temp/client;
     proxy_temp_path %s/temp/proxy;
     proxy_cache_path %s levels=1:2 keys_zone=mirrorrelay_cache:64m inactive=%s max_size=%d min_free=%d use_temp_path=off;
-    log_format mirrorrelay '$time_iso8601 request_id=$http_x_mirror_internal_request_id client_ip=$http_x_mirror_internal_client_ip repo=$http_x_mirror_internal_repository_id host=$host method=$request_method uri="$request_uri" status=$status bytes=$body_bytes_sent request_time=$request_time upstream="$upstream_addr" upstream_status="$upstream_status" upstream_time="$upstream_response_time" cache=$upstream_cache_status';
+    log_format mirrorrelay '$time_iso8601 request_id=$http_x_mirror_internal_request_id client_ip=$http_x_mirror_internal_client_ip repo=$http_x_mirror_internal_repository_id host=$host method=$request_method uri="$uri" status=$status bytes=$body_bytes_sent request_time=$request_time upstream="$upstream_addr" upstream_status="$upstream_status" upstream_time="$upstream_response_time" cache=$upstream_cache_status';
     access_log %s/access.log mirrorrelay;
     resolver %s valid=%s ipv6=on;
 

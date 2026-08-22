@@ -51,7 +51,7 @@ function renderMirrorsTable() {
       <td>
         <div class="code-copy-row">
           <code>${esc(publicURL(repository))}</code>
-          <button class="icon-btn" data-action="copy-repository-url" data-id="${repository.id}" title="${L('Copy URL')}">
+          <button class="icon-btn" data-action="copy-repository-url" data-id="${repository.id}" title="${L('Copy URL')}" aria-label="${L('Copy URL')}">
             ${icon('copy', 13)}
           </button>
         </div>
@@ -78,14 +78,14 @@ function renderMirrorsTable() {
         <div class="actions">
           ${helpBtn}
           <button data-action="show-repository" data-id="${repository.id}">${icon('file-text', 13)} ${L('Details')}</button>
-          <button data-action="check-mirror" data-id="${repository.id}">${icon('play', 13)} ${L('Test')}</button>
-          <button data-action="preview-repository-config" data-id="${repository.id}">${icon('code', 13)} ${L('Config')}</button>
-          <button data-action="purge-repository" data-id="${repository.id}">${icon('database', 13)} ${L('Purge')}</button>
-          <button data-action="edit-mirror" data-id="${repository.id}">${icon('edit', 13)} ${L('Edit')}</button>
-          <button data-action="toggle-mirror" data-id="${repository.id}" data-enabled="${!repository.enabled}">
+          <button class="requires-operator" data-action="check-mirror" data-id="${repository.id}">${icon('play', 13)} ${L('Test')}</button>
+          <button class="requires-operator" data-action="preview-repository-config" data-id="${repository.id}">${icon('code', 13)} ${L('Config')}</button>
+          <button class="requires-operator" data-action="purge-repository" data-id="${repository.id}">${icon('database', 13)} ${L('Purge')}</button>
+          <button class="requires-operator" data-action="edit-mirror" data-id="${repository.id}">${icon('edit', 13)} ${L('Edit')}</button>
+          <button class="requires-operator" data-action="toggle-mirror" data-id="${repository.id}" data-enabled="${!repository.enabled}">
             ${repository.enabled ? L('Disable') : L('Enable')}
           </button>
-          <button class="danger" data-action="delete-mirror" data-id="${repository.id}" title="${L('Delete')}">
+          <button class="danger requires-operator" data-action="delete-mirror" data-id="${repository.id}" title="${L('Delete')}" aria-label="${L('Delete')}">
             ${icon('trash', 13)}
           </button>
         </div>

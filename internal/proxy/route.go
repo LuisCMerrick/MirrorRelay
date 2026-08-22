@@ -31,18 +31,26 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 		if containsEncodedPathSeparator(request.URL.EscapedPath()) {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "upstream auxiliary resource path contains an encoded separator"}
 		}
-		repositoryID, relative, err := parseAuxiliaryUpstreamRoute(request.URL.Path)
+		route, err := parseAuxiliaryUpstreamRoute(request.URL.Path, request.URL.RawQuery)
 		if err != nil {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: err.Error()}
 		}
-		repository, found := e.registry.GetByID(repositoryID)
+		repository, found := e.registry.GetByID(route.repositoryID)
 		if !found || !repository.Enabled || !repository.HTMLRewriteEnabled || !e.auxiliaryRouteAllowed(repository, request.Host) {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusNotFound, text: "upstream auxiliary resource route not found"}
 		}
-		if unsafeRepositoryPath(relative) {
-			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "upstream auxiliary resource path contains an unsafe segment"}
+		var selected model.Upstream
+		for _, upstream := range repository.Upstreams {
+			if upstream.ID == route.upstreamID && upstream.Enabled {
+				selected = upstream
+				break
+			}
 		}
-		return repository, relative, nil, true, nil
+		if selected.ID == 0 || !verifyAuxiliaryURLSignature(e.auxiliarySigningKey, repository, selected, route) {
+			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusNotFound, text: "upstream auxiliary resource route not found"}
+		}
+		repository.Upstreams = []model.Upstream{selected}
+		return repository, route.target.Path, nil, true, nil
 	}
 	if repositoryID, ok := parseTokenRoute(request.URL.Path); ok {
 		repository, found := e.registry.GetByID(repositoryID)

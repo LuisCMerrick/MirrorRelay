@@ -53,7 +53,7 @@ func TestZeroCopyXAccelRedirectBypass(t *testing.T) {
 	}
 	metric := stats.New()
 
-	engine := New(cfg, registry, cacheManager, metric, nil)
+	engine := New(cfg, registry, cacheManager, metric, nil, testAuxiliarySigningKey)
 	defer engine.CloseIdleConnections()
 
 	// 1. Binary package request with X-Accel-Supported -> returns X-Accel-Redirect
@@ -86,7 +86,7 @@ func TestZeroCopyXAccelRedirectBypass(t *testing.T) {
 	// 3. Binary package when ZeroCopyBypass is disabled -> should NOT return X-Accel-Redirect
 	cfgDisabled := cfg
 	cfgDisabled.Performance.ZeroCopyBypass = false
-	engineDisabled := New(cfgDisabled, registry, cacheManager, metric, nil)
+	engineDisabled := New(cfgDisabled, registry, cacheManager, metric, nil, testAuxiliarySigningKey)
 	defer engineDisabled.CloseIdleConnections()
 
 	wDisabled := httptest.NewRecorder()

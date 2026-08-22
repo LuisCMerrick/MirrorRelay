@@ -15,19 +15,18 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 - 开发模式监听 `https://127.0.0.1:8443`。
-- 默认管理员账号密码：`admin` / `adminadmin`。
+- 首次访问时注册初始管理员；系统不再提供默认账号密码。
 
 ### 方式 B：生产环境发行版安装包部署 (DEB / RPM)
 ```bash
 # Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
 
 # RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
 
-# 配置初始管理员密码并启用服务：
-echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
-sudo chmod 0600 /etc/mirrorrelay/environment
+# 审核 security.admin_cidrs 后启用服务：
+sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
 
 # 授权外部共享 Nginx 运行用户访问 Unix Domain Socket：
@@ -42,7 +41,7 @@ sudo usermod -aG mirrorrelay www-data
 1. 在浏览器中打开：
    - **生产环境**：`https://mirror.example.com/admin/`
    - **开发模式**：`https://127.0.0.1:8443/admin/`
-2. 输入管理员账号登录。
+2. 如果数据库为空，请注册初始管理员；否则使用已有账号登录。
 3. 登录后进入**概览（Dashboard）**页面，可实时查看系统运行状态与服务健康度。
 
 ---
@@ -72,11 +71,29 @@ sudo usermod -aG mirrorrelay www-data
 - **缓存策略**：开启（默认策略）
 
 #### 配置 APT 客户端
-在您的 Debian 机器上编辑 `/etc/apt/sources.list`：
+
+以下两种格式只选一种。现代 DEB822 格式请创建 `/etc/apt/sources.list.d/mirrorrelay.sources`：
+
 ```text
-deb https://mirror.example.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirror.example.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirror.example.com/debian-security bookworm-security main contrib non-free non-free-firmware
+Types: deb
+URIs: https://mirror.example.com/debian/
+Suites: bookworm bookworm-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://mirror.example.com/debian-security/
+Suites: bookworm-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+```
+
+传统单行格式请创建 `/etc/apt/sources.list.d/mirrorrelay.list`（也可以编辑 `/etc/apt/sources.list`）：
+
+```text
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm main contrib non-free non-free-firmware
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm-updates main contrib non-free non-free-firmware
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian-security/ bookworm-security main contrib non-free non-free-firmware
 ```
 运行更新测试：
 ```bash

@@ -7,7 +7,7 @@ Thank you for your interest in contributing to MirrorRelay! We welcome bug repor
 ## Development Setup
 
 ### Prerequisites
-- Go 1.24+
+- Go 1.26.6+
 - Node.js (for syntax checking `node --check`)
 - Docker (for building musl Managed Upstream Nginx binaries via Buildx)
 
@@ -18,7 +18,7 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-Open `https://127.0.0.1:8443/admin/` and sign in with default credentials `admin` / `adminadmin`.
+Open `https://127.0.0.1:8443/admin/` and complete the one-time initial-administrator registration. Development mode does not create default credentials.
 
 ---
 

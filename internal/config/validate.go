@@ -28,8 +28,8 @@ func (c Config) Validate() error {
 	}
 	if c.UpstreamNginx.UpstreamSocketEnabled {
 		upstreamMode, err := parseSocketMode(c.UpstreamNginx.UpstreamSocketModeText)
-		if err != nil || (upstreamMode != 0o600 && upstreamMode != 0o660) {
-			return errors.New("upstream_nginx.upstream_socket_mode must be 0600 or 0660")
+		if err != nil || upstreamMode != 0o660 {
+			return errors.New("upstream_nginx.upstream_socket_mode must be 0660")
 		}
 		if strings.TrimSpace(c.UpstreamNginx.UpstreamSocket) == "" {
 			return errors.New("upstream_nginx.upstream_socket is required when Unix sockets are enabled")
@@ -93,9 +93,6 @@ func (c Config) Validate() error {
 	if c.Limits.MaxTotalConcurrency < 0 || c.Limits.MaxIPConcurrency < 0 || c.Limits.BandwidthLimitBPS < 0 ||
 		c.Warmup.MaxConcurrency < 0 || c.Warmup.BandwidthLimit < 0 || c.Warmup.RetryCount < 0 {
 		return errors.New("global and warmup limits cannot be negative")
-	}
-	if strings.TrimSpace(c.Admin.InitialUsername) == "" {
-		return errors.New("admin.initial_username is required")
 	}
 	adminPath, err := normalizeAdminPath(c.Admin.Path)
 	if err != nil || adminPath != c.Admin.Path {
@@ -174,8 +171,12 @@ func (c Config) Validate() error {
 		return errors.New("distributed.role must be standalone, coordinator or edge")
 	}
 	if c.Distributed.Enabled || c.Distributed.Role != "standalone" {
-		if c.Distributed.Enabled && strings.TrimSpace(c.Distributed.Token) == "" {
-			return errors.New("distributed.token is required when distributed mode is enabled")
+		probeToken := strings.TrimSpace(c.Distributed.Token)
+		if c.Distributed.Enabled && probeToken == "" {
+			return errors.New("distributed.token probe credential is required when distributed mode is enabled")
+		}
+		if c.Distributed.Enabled && probeToken != c.Distributed.Token {
+			return errors.New("distributed.token probe credential must not contain surrounding whitespace")
 		}
 		if c.Distributed.Routing.Mode != "" && c.Distributed.Routing.Mode != "hybrid" && c.Distributed.Routing.Mode != "cidr" && c.Distributed.Routing.Mode != "geo" && c.Distributed.Routing.Mode != "priority" {
 			return errors.New("distributed.routing.mode must be hybrid, cidr, geo or priority")
@@ -189,9 +190,13 @@ func (c Config) Validate() error {
 			}
 		}
 		if c.Distributed.Role == "coordinator" {
+			if strings.TrimSpace(c.Distributed.Node.Name) == "" {
+				return errors.New("distributed.node.name is required for a coordinator")
+			}
 			if c.Distributed.HealthCheck.Interval <= 0 || c.Distributed.HealthCheck.Timeout <= 0 {
 				return errors.New("distributed.health_check interval and timeout must be positive")
 			}
+			mutationTokens := make(map[string]string, len(c.Distributed.Nodes))
 			for _, seed := range c.Distributed.Nodes {
 				if strings.TrimSpace(seed.URL) == "" {
 					return errors.New("distributed node seed URL cannot be empty")
@@ -199,11 +204,43 @@ func (c Config) Validate() error {
 				if _, err := security.ParseOriginURL(seed.URL, c.Distributed.AllowHTTP); err != nil {
 					return fmt.Errorf("invalid distributed node seed URL %q: %w", seed.URL, err)
 				}
+				mutationToken := strings.TrimSpace(seed.MutationToken)
+				if mutationToken == "" {
+					return fmt.Errorf("distributed node seed %q requires a unique mutation_token", seed.Name)
+				}
+				if mutationToken != seed.MutationToken {
+					return fmt.Errorf("distributed node seed %q mutation_token must not contain surrounding whitespace", seed.Name)
+				}
+				if mutationToken == probeToken {
+					return fmt.Errorf("distributed node seed %q mutation_token must differ from distributed.token", seed.Name)
+				}
+				if previous, exists := mutationTokens[mutationToken]; exists {
+					return fmt.Errorf("distributed node seeds %q and %q must not share a mutation_token", previous, seed.Name)
+				}
+				mutationTokens[mutationToken] = seed.Name
 			}
 		}
-		if c.Distributed.Role == "edge" && c.Distributed.Node.PublicBaseURL != "" {
-			if _, err := security.ParseOriginURL(c.Distributed.Node.PublicBaseURL, c.Distributed.AllowHTTP); err != nil {
-				return fmt.Errorf("invalid distributed node public_base_url %q: %w", c.Distributed.Node.PublicBaseURL, err)
+		if c.Distributed.Role == "edge" {
+			if strings.TrimSpace(c.Distributed.Node.Name) == "" {
+				return errors.New("distributed.node.name is required for an edge")
+			}
+			mutationToken := strings.TrimSpace(c.Distributed.MutationToken)
+			if mutationToken == "" {
+				return errors.New("distributed.mutation_token is required for an edge")
+			}
+			if mutationToken != c.Distributed.MutationToken {
+				return errors.New("distributed.mutation_token must not contain surrounding whitespace")
+			}
+			if mutationToken == probeToken {
+				return errors.New("distributed.mutation_token must differ from the distributed.token probe credential")
+			}
+			if strings.TrimSpace(c.Distributed.CoordinatorID) == "" {
+				return errors.New("distributed.coordinator_id is required for an edge")
+			}
+			if c.Distributed.Node.PublicBaseURL != "" {
+				if _, err := security.ParseOriginURL(c.Distributed.Node.PublicBaseURL, c.Distributed.AllowHTTP); err != nil {
+					return fmt.Errorf("invalid distributed node public_base_url %q: %w", c.Distributed.Node.PublicBaseURL, err)
+				}
 			}
 		}
 	}

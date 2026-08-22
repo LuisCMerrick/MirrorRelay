@@ -29,6 +29,8 @@ import (
 )
 
 type Store interface {
+	CountUsers(context.Context) (int, error)
+	CreateInitialAdmin(context.Context, string, string) (model.User, bool, error)
 	UserByName(context.Context, string) (model.User, error)
 	UpdatePassword(context.Context, int64, string) error
 	CreateUser(context.Context, string, string, string) error
@@ -60,7 +62,7 @@ type Store interface {
 	GetClusterNodeByURL(context.Context, string) (model.ClusterNode, error)
 	CreateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
 	UpdateClusterNode(context.Context, model.ClusterNode) (model.ClusterNode, error)
-	UpdateClusterNodeStatus(context.Context, int64, string, string, string, string, int, []string, int64, string, time.Time) error
+	UpdateClusterNodeStatus(context.Context, model.ClusterNode) error
 	DeleteClusterNode(context.Context, int64) error
 	SetClusterNodeEnabled(context.Context, int64, bool) error
 	ClusterSetting(context.Context, string) (string, bool, error)
@@ -87,6 +89,7 @@ type Server struct {
 	clusterChecker *cluster.Checker
 	clusterMetrics *cluster.Metrics
 	clusterSync    *cluster.SyncManager
+	clusterEpoch   string
 	warmupEngine   *warmup.Engine
 	sessions       *auth.Sessions
 	loginLimiter   *auth.LoginLimiter
@@ -147,15 +150,19 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		srv.clusterMetrics = cluster.NewMetrics()
 		srv.clusterChecker = cluster.NewChecker(cfg, store, srv.clusterRouter, srv.clusterMetrics, &auditRecorderAdapter{server: srv})
 		if cfg.Distributed.Role == "coordinator" {
-			repositories := []model.Mirror(nil)
-			if registry != nil {
-				repositories = registry.List()
+			epoch, epochErr := cluster.EnsureCoordinatorEpoch(context.Background(), store)
+			if epochErr != nil {
+				return nil, epochErr
 			}
-			if err := srv.clusterChecker.SetClusterFingerprint(context.Background(), cluster.CanonicalFingerprint(repositories)); err != nil {
-				return nil, fmt.Errorf("persist Coordinator cluster fingerprint: %w", err)
+			srv.clusterEpoch = epoch
+			srv.clusterSync = cluster.NewSyncManager(cfg, store, epoch)
+			if repositories, custom, available := srv.activeClusterConfiguration(); available {
+				manifest := srv.clusterManifestForConfiguration(repositories, custom)
+				if err := srv.clusterChecker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
+					return nil, fmt.Errorf("persist Coordinator cluster state: %w", err)
+				}
 			}
 		}
-		srv.clusterSync = cluster.NewSyncManager(cfg, store)
 		if store != nil {
 			if nodes, err := store.ListClusterNodes(context.Background()); err == nil {
 				srv.clusterRouter.SetNodes(nodes)
@@ -214,10 +221,40 @@ func (s *Server) publishActiveRouting() error {
 func (s *Server) PublishActiveRepositories(repositories []model.Mirror) {
 	s.registry.Replace(repositories)
 	if s.cfg.Distributed.Enabled && s.clusterChecker != nil && s.cfg.Distributed.Role == "coordinator" {
-		if err := s.clusterChecker.SetClusterFingerprint(context.Background(), cluster.CanonicalFingerprint(repositories)); err != nil {
-			slog.Error("persist Coordinator cluster fingerprint", "error", err)
+		_, custom, available := s.activeClusterConfiguration()
+		if !available {
+			slog.Error("persist Coordinator cluster state", "error", "active configuration snapshot is unavailable")
+			return
+		}
+		manifest := s.clusterManifestForConfiguration(repositories, custom)
+		if err := s.clusterChecker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
+			slog.Error("persist Coordinator cluster state", "error", err)
 		}
 	}
+}
+
+func (s *Server) activeClusterConfiguration() ([]model.Mirror, []model.CustomConfig, bool) {
+	if s.upstreamNginx == nil {
+		return nil, nil, false
+	}
+	return s.upstreamNginx.ActiveConfiguration()
+}
+
+func (s *Server) clusterManifestForConfiguration(repositories []model.Mirror, custom []model.CustomConfig) model.ClusterManifest {
+	generation := int64(0)
+	if s.upstreamNginx != nil {
+		generation = s.upstreamNginx.Status().CurrentConfigVersion
+	}
+	coordinatorID, coordinatorEpoch := "", ""
+	if s.cfg.Distributed.Role == "coordinator" {
+		coordinatorID = strings.TrimSpace(s.cfg.Distributed.Node.Name)
+		coordinatorEpoch = s.clusterEpoch
+	} else if state, found, err := cluster.LoadEdgeSyncState(context.Background(), s.store); err == nil && found {
+		coordinatorID = state.CoordinatorID
+		coordinatorEpoch = state.CoordinatorEpoch
+		generation = state.ConfigGeneration
+	}
+	return cluster.GenerateManifest(s.cfg, repositories, custom, s.build, generation, coordinatorID, coordinatorEpoch)
 }
 
 func (s *Server) Handler(proxy http.Handler) http.Handler {
@@ -263,16 +300,17 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 				http.NotFound(w, r)
 				return
 			}
-			if !s.verifyClusterToken(r) {
+			if !s.verifyClusterProbeToken(r) {
 				writeError(w, http.StatusUnauthorized, "invalid cluster token")
 				return
 			}
 			if r.URL.Path == "/api/v1/cluster/manifest" {
-				var gen int64 = 1
-				if s.cache != nil {
-					gen = s.cache.GlobalGeneration()
+				repositories, custom, available := s.activeClusterConfiguration()
+				if !available {
+					repositories = s.registry.List()
+					custom = []model.CustomConfig{}
 				}
-				manifest := cluster.GenerateManifest(s.cfg, s.registry.List(), s.build, gen)
+				manifest := s.clusterManifestForConfiguration(repositories, custom)
 				writeJSON(w, http.StatusOK, manifest)
 				return
 			}

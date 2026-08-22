@@ -1,13 +1,19 @@
 package web
 
 import (
+	"errors"
 	"io/fs"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testing.T) {
 	assets := FS()
+	if _, err := fs.Stat(assets, "app.js"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("unused legacy UI bundle is still embedded: %v", err)
+	}
 	index, err := fs.ReadFile(assets, "index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +31,10 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 		t.Fatal(err)
 	}
 	settingsScript, err := fs.ReadFile(assets, "js/pages/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mirrorDetailScript, err := fs.ReadFile(assets, "js/pages/mirrorDetail.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,6 +59,7 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			`id="html-rewrite-enabled"`, `id="restart-header"`, `id="restart-sidebar"`,
 			`href="app.css"`, `src="js/main.js"`, `src="js/theme-bootstrap.js"`,
 			`data-theme-mode="light"`, `data-theme-mode="dark"`, `data-theme-mode="auto"`,
+			`id="login-password-confirmation"`, `id="login-mode-title"`,
 		}},
 		"localeEn": {content: string(localeEn), expected: []string{
 			"export default", "Linux repository reverse-proxy gateway",
@@ -59,7 +70,7 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			"本地端点与入口", "前端 Unix Socket",
 		}},
 		"mainScript": {content: string(mainScript), expected: []string{
-			"import", "boot()", "applyLanguage", "triggerRestart", "initThemeControls",
+			"import", "boot()", "applyLanguage", "triggerRestart", "initThemeControls", "/auth/bootstrap",
 		}},
 		"themeBootstrap": {content: string(themeBootstrap), expected: []string{
 			"mirrorrelay.theme", "prefers-color-scheme: dark", "dataset.theme",
@@ -74,6 +85,10 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			"One active destination", "Running configuration", "oapi.dingtalk.com",
 			"open.feishu.cn", "qyapi.weixin.qq.com", "hooks.slack.com", "Custom JSON webhook",
 		}},
+		"mirrorDetailScript": {content: string(mirrorDetailScript), expected: []string{
+			"DEB822 (.sources)", "sources.list one-line format", "playground-format",
+			"debian-security-12", "ubuntu-archive-keyring.gpg",
+		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, value := range test.expected {
@@ -83,12 +98,213 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			}
 		})
 	}
-	for _, assetContent := range []string{string(index), string(mainScript), string(themeBootstrap), string(themeScript), string(settingsScript), string(localeEn), string(localeZh)} {
+	for _, assetContent := range []string{string(index), string(mainScript), string(themeBootstrap), string(themeScript), string(settingsScript), string(mirrorDetailScript), string(localeEn), string(localeZh)} {
 		if strings.Contains(assetContent, "onclick=") {
 			t.Fatal("strict-CSP Web UI contains an inline click handler")
 		}
 		if strings.Contains(assetContent, "/admin/") || strings.Contains(assetContent, "fetch('/api/v1") {
 			t.Fatal("embedded assets contain a fixed administration path")
 		}
+	}
+}
+
+func TestEmbeddedUIUsesProgressiveDisclosureForTechnicalAndMaintenanceDetails(t *testing.T) {
+	assets := FS()
+	read := func(name string) string {
+		t.Helper()
+		value, err := fs.ReadFile(assets, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(value)
+	}
+
+	style := read("app.css")
+	upstream := read("js/pages/upstreamNginx.js")
+	pages := map[string]struct {
+		asset    string
+		required []string
+	}{
+		"dashboard":  {"js/pages/dashboard.js", []string{"disclosure(L('Request path')", "compact-cards"}},
+		"system":     {"js/pages/system.js", []string{"disclosure-stack", "Managed Upstream Nginx lifecycle"}},
+		"health":     {"js/pages/health.js", []string{"Component and endpoint details", "compact-cards"}},
+		"cluster":    {"js/pages/cluster.js", []string{"Cluster configuration details", "compact-cards"}},
+		"cache":      {"js/pages/cache.js", []string{`<details class="disclosure-panel">`, "Targeted Cache Object Invalidation"}},
+		"ingress":    {"js/pages/ingress.js", []string{"ingress-snippet-disclosure", "Hidden by default. Expand to inspect and copy."}},
+		"settings":   {"js/pages/settings.js", []string{"settings-section", "index === 0 ? ' open' : ''"}},
+		"appearance": {"js/pages/appearance.js", []string{"settings-section", "disclosure-chevron"}},
+	}
+
+	for _, expected := range []string{
+		".disclosure-panel", ".disclosure-panel[open]", "> summary:focus-visible",
+		"@media (prefers-reduced-motion: reduce)", ".cards.compact-cards",
+	} {
+		if !strings.Contains(style, expected) {
+			t.Fatalf("shared UI style missing %q", expected)
+		}
+	}
+
+	for name, page := range pages {
+		t.Run(name, func(t *testing.T) {
+			content := read(page.asset)
+			for _, expected := range page.required {
+				if !strings.Contains(content, expected) {
+					t.Fatalf("%s missing %q", page.asset, expected)
+				}
+			}
+		})
+	}
+
+	for _, expected := range []string{
+		"upstream-technical-details", "Managed Upstream Nginx technical details",
+		"upstream-config-disclosure", "copy-upstream-config", "Configuration copied.",
+		"state.role === 'admin' || state.role === 'operator'",
+	} {
+		if !strings.Contains(upstream, expected) {
+			t.Fatalf("Managed Upstream Nginx page missing %q", expected)
+		}
+	}
+	if strings.Contains(upstream, "card(L('Build ID')") || strings.Contains(upstream, "card('PID'") {
+		t.Fatal("Managed Upstream Nginx first-level summary exposes secondary binary/process details")
+	}
+	toggle := strings.Index(upstream, "configDisclosure?.addEventListener('toggle'")
+	configFetch := strings.Index(upstream, "api('/upstream-nginx/config')")
+	if toggle < 0 || configFetch < toggle {
+		t.Fatal("effective Managed Upstream Nginx configuration is not lazily fetched after disclosure")
+	}
+}
+
+func TestEmbeddedClientConfigurationNeverDisablesTLSVerification(t *testing.T) {
+	value, err := fs.ReadFile(FS(), "js/pages/mirrorDetail.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(value)
+	for _, prohibited := range []string{"trusted-host", "strict-ssl=false", "insecure-registries"} {
+		if strings.Contains(content, prohibited) {
+			t.Fatalf("client configuration generator contains TLS bypass %q", prohibited)
+		}
+	}
+}
+
+func TestEmbeddedUIKeepsRoleRestrictedControlsOutOfLowerPrivilegeViews(t *testing.T) {
+	assets := FS()
+	read := func(name string) string {
+		t.Helper()
+		value, err := fs.ReadFile(assets, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(value)
+	}
+
+	for name, expected := range map[string][]string{
+		"index.html":               {"requires-admin", "requires-operator", `id="user-role"`},
+		"app.css":                  {`:root[data-role="viewer"] .requires-operator`, `:root:not([data-role="admin"]) .requires-admin`},
+		"js/main.js":               {"document.documentElement.dataset.role", "refreshRoleUI()"},
+		"js/pages/mirrors.js":      {`class="requires-operator" data-action="check-mirror"`},
+		"js/pages/mirrorDetail.js": {`class="requires-operator" data-action="view-effective-config"`},
+		"js/pages/cluster.js":      {"const canManage = state.role === 'admin' || state.role === 'operator'"},
+		"js/pages/cache.js":        {"const canManage = state.role === 'admin' || state.role === 'operator'"},
+		"js/pages/system.js":       {`class="btn-restart-inline requires-admin"`},
+	} {
+		content := read(name)
+		for _, value := range expected {
+			if !strings.Contains(content, value) {
+				t.Fatalf("%s missing role-aware UI marker %q", name, value)
+			}
+		}
+	}
+}
+
+func TestEmbeddedUILocaleResourcesCoverStaticReferences(t *testing.T) {
+	assets := FS()
+	read := func(name string) string {
+		t.Helper()
+		value, err := fs.ReadFile(assets, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.ReplaceAll(string(value), "\r\n", "\n")
+	}
+	sectionKeys := func(content, section, nextSection string) map[string]struct{} {
+		t.Helper()
+		startMarker := "\n  " + section + ": {"
+		start := strings.Index(content, startMarker)
+		if start < 0 {
+			t.Fatalf("locale is missing %s section", section)
+		}
+		start += len(startMarker)
+		endMarker := "\n}\n};"
+		if nextSection != "" {
+			endMarker = "\n  " + nextSection + ":"
+		}
+		end := strings.Index(content[start:], endMarker)
+		if end < 0 {
+			t.Fatalf("locale %s section has no terminator", section)
+		}
+		keys := make(map[string]struct{})
+		keyPattern := regexp.MustCompile(`(?m)^    ("(?:\\.|[^"\\])*"):`)
+		for _, match := range keyPattern.FindAllStringSubmatch(content[start:start+end], -1) {
+			key, err := strconv.Unquote(match[1])
+			if err != nil {
+				t.Fatalf("decode locale key %s: %v", match[1], err)
+			}
+			if _, exists := keys[key]; exists {
+				t.Fatalf("locale %s section contains duplicate key %q", section, key)
+			}
+			keys[key] = struct{}{}
+		}
+		return keys
+	}
+
+	en := read("locales/en.js")
+	zh := read("locales/zh.js")
+	enDictionary := sectionKeys(en, "dictionary", "pageMeta")
+	zhDictionary := sectionKeys(zh, "dictionary", "pageMeta")
+	enStrings := sectionKeys(en, "strings", "")
+	zhStrings := sectionKeys(zh, "strings", "")
+	requireParity := func(name string, left, right map[string]struct{}) {
+		t.Helper()
+		for key := range left {
+			if _, exists := right[key]; !exists {
+				t.Errorf("%s is missing locale key %q", name, key)
+			}
+		}
+	}
+	requireParity("Chinese dictionary", enDictionary, zhDictionary)
+	requireParity("English dictionary", zhDictionary, enDictionary)
+	requireParity("Chinese strings", enStrings, zhStrings)
+	requireParity("English strings", zhStrings, enStrings)
+
+	staticPattern := regexp.MustCompile(`data-i18n="([^"]+)"`)
+	singleQuotePattern := regexp.MustCompile(`\bL\('([^']+)'`)
+	doubleQuotePattern := regexp.MustCompile(`\bL\("([^"]+)"`)
+	checkReferences := func(name, content string) {
+		t.Helper()
+		for _, match := range staticPattern.FindAllStringSubmatch(content, -1) {
+			if _, exists := enDictionary[match[1]]; !exists {
+				t.Errorf("%s references untranslated data-i18n key %q", name, match[1])
+			}
+		}
+		for _, pattern := range []*regexp.Regexp{singleQuotePattern, doubleQuotePattern} {
+			for _, match := range pattern.FindAllStringSubmatch(content, -1) {
+				if _, exists := enStrings[match[1]]; !exists {
+					t.Errorf("%s references untranslated L key %q", name, match[1])
+				}
+			}
+		}
+	}
+	checkReferences("index.html", read("index.html"))
+	if err := fs.WalkDir(assets, "js", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(path, ".js") {
+			checkReferences(path, read(path))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

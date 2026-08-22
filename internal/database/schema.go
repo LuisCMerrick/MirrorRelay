@@ -183,12 +183,18 @@ CREATE TABLE IF NOT EXISTS cluster_nodes (
   priority INTEGER NOT NULL DEFAULT 100,
   weight INTEGER NOT NULL DEFAULT 100,
   enabled INTEGER NOT NULL DEFAULT 1,
+  mutation_token TEXT NOT NULL DEFAULT '',
   health_status TEXT NOT NULL DEFAULT 'unknown',
   config_status TEXT NOT NULL DEFAULT 'unknown',
   config_fingerprint TEXT NOT NULL DEFAULT '',
+  config_generation INTEGER NOT NULL DEFAULT 0,
+  node_id TEXT NOT NULL DEFAULT '',
+  coordinator_id TEXT NOT NULL DEFAULT '',
+  coordinator_epoch TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
   protocol_version INTEGER NOT NULL DEFAULT 0,
   capabilities TEXT NOT NULL DEFAULT '[]',
+  repository_health TEXT NOT NULL DEFAULT '{}',
   latency_ms INTEGER NOT NULL DEFAULT 0,
   last_check TEXT NOT NULL DEFAULT '',
   last_error TEXT NOT NULL DEFAULT '',
@@ -254,6 +260,18 @@ CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
 	}
 	if err := s.ensureColumn(ctx, "cluster_nodes", "latency_ms", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	for name, definition := range map[string]string{
+		"mutation_token":    "TEXT NOT NULL DEFAULT ''",
+		"config_generation": "INTEGER NOT NULL DEFAULT 0",
+		"node_id":           "TEXT NOT NULL DEFAULT ''",
+		"coordinator_id":    "TEXT NOT NULL DEFAULT ''",
+		"coordinator_epoch": "TEXT NOT NULL DEFAULT ''",
+		"repository_health": "TEXT NOT NULL DEFAULT '{}'",
+	} {
+		if err := s.ensureColumn(ctx, "cluster_nodes", name, definition); err != nil {
+			return err
+		}
 	}
 	for name, definition := range map[string]string{
 		"upstream_bytes":  "INTEGER NOT NULL DEFAULT 0",

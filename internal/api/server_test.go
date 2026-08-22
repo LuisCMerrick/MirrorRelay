@@ -374,14 +374,45 @@ func TestDebianSecurityClientExamples(t *testing.T) {
 
 	repoDebSec := model.Mirror{
 		Type:        "apt",
+		Slug:        "debian-security",
 		ProfileName: "Debian Security",
 		PublicMode:  "path",
 		PublicPath:  "/debian-security/",
 	}
 
 	exDebSec := clientExamples(cfg, repoDebSec)
-	if len(exDebSec) == 0 || exDebSec[0].Command != "deb https://mirror.example.com/debian-security bookworm-security main contrib non-free-firmware" {
+	if len(exDebSec) != 2 || exDebSec[0].Format != "sources.list" || exDebSec[1].Format != "deb822" {
+		t.Fatalf("expected both APT formats: %+v", exDebSec)
+	}
+	if exDebSec[0].FilePath != "/etc/apt/sources.list.d/mirrorrelay-debian-security.list" ||
+		exDebSec[1].FilePath != "/etc/apt/sources.list.d/mirrorrelay-debian-security.sources" {
+		t.Fatalf("unexpected repository-scoped APT paths: %+v", exDebSec)
+	}
+	if !strings.Contains(exDebSec[0].Command, "https://mirror.example.com/debian-security/ bookworm-security") ||
+		strings.Contains(exDebSec[0].Command, "bookworm-security-security") ||
+		!strings.Contains(exDebSec[1].Command, "Suites: bookworm-security") {
 		t.Fatalf("unexpected debian-security example: %+v", exDebSec)
+	}
+}
+
+func TestUbuntuClientExamplesUseUbuntuKeyringInBothFormats(t *testing.T) {
+	cfg := config.Default()
+	cfg.HTTP.PublicBaseURL = "https://mirror.example.com"
+	repository := model.Mirror{
+		Name: "Ubuntu", Slug: "ubuntu", Type: "apt", ProfileName: "Ubuntu",
+		PublicMode: "path", PublicPath: "/ubuntu/",
+	}
+
+	examples := clientExamples(cfg, repository)
+	if len(examples) != 2 || examples[0].Format != "sources.list" || examples[1].Format != "deb822" {
+		t.Fatalf("expected both Ubuntu APT formats: %+v", examples)
+	}
+	for _, example := range examples {
+		if !strings.Contains(example.Command, "/usr/share/keyrings/ubuntu-archive-keyring.gpg") ||
+			!strings.Contains(example.Command, "noble-security") ||
+			strings.Contains(example.Command, "debian-archive-keyring") {
+			t.Fatalf("unexpected Ubuntu APT example: %+v", example)
+		}
 	}
 }
 

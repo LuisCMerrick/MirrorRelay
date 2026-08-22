@@ -172,31 +172,40 @@ type CacheGeneration struct {
 }
 
 type ClusterNode struct {
-	ID                int64     `json:"id"`
-	Name              string    `json:"name"`
-	URL               string    `json:"url"`
-	Region            string    `json:"region"`
-	Country           string    `json:"country,omitempty"`
-	Priority          int       `json:"priority"`
-	Weight            int       `json:"weight"`
-	Enabled           bool      `json:"enabled"`
-	HealthStatus      string    `json:"health_status"`
-	ConfigStatus      string    `json:"config_status"`
-	ConfigFingerprint string    `json:"config_fingerprint,omitempty"`
-	Version           string    `json:"version,omitempty"`
-	ProtocolVersion   int       `json:"protocol_version"`
-	Capabilities      []string  `json:"capabilities,omitempty"`
-	LatencyMS         int64     `json:"latency_ms,omitempty"`
-	LastCheck         time.Time `json:"last_check,omitempty"`
-	LastError         string    `json:"last_error,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                      int64           `json:"id"`
+	Name                    string          `json:"name"`
+	URL                     string          `json:"url"`
+	Region                  string          `json:"region"`
+	Country                 string          `json:"country,omitempty"`
+	Priority                int             `json:"priority"`
+	Weight                  int             `json:"weight"`
+	Enabled                 bool            `json:"enabled"`
+	MutationToken           string          `json:"mutation_token,omitempty"`
+	MutationTokenConfigured bool            `json:"mutation_token_configured"`
+	HealthStatus            string          `json:"health_status"`
+	ConfigStatus            string          `json:"config_status"`
+	ConfigFingerprint       string          `json:"config_fingerprint,omitempty"`
+	ConfigGeneration        int64           `json:"config_generation,omitempty"`
+	NodeID                  string          `json:"node_id,omitempty"`
+	CoordinatorID           string          `json:"coordinator_id,omitempty"`
+	CoordinatorEpoch        string          `json:"coordinator_epoch,omitempty"`
+	Version                 string          `json:"version,omitempty"`
+	ProtocolVersion         int             `json:"protocol_version"`
+	Capabilities            []string        `json:"capabilities,omitempty"`
+	RepositoryHealth        map[string]bool `json:"repository_health,omitempty"`
+	LatencyMS               int64           `json:"latency_ms,omitempty"`
+	LastCheck               time.Time       `json:"last_check,omitempty"`
+	LastError               string          `json:"last_error,omitempty"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
 }
 
 type ClusterManifest struct {
 	ProtocolVersion    int      `json:"protocol_version"`
 	MirrorRelayVersion string   `json:"mirrorrelay_version"`
 	NodeID             string   `json:"node_id"`
+	CoordinatorID      string   `json:"coordinator_id"`
+	CoordinatorEpoch   string   `json:"coordinator_epoch"`
 	ConfigGeneration   int64    `json:"config_generation"`
 	ConfigFingerprint  string   `json:"config_fingerprint"`
 	Capabilities       []string `json:"capabilities"`
@@ -218,10 +227,12 @@ type ClusterSyncResponse struct {
 }
 
 type ClusterPurgeRequest struct {
-	Scope          string `json:"scope"`
-	RepositorySlug string `json:"repository_slug,omitempty"`
-	ObjectID       string `json:"object_id,omitempty"`
-	ObjectPath     string `json:"object_path,omitempty"`
+	CoordinatorID    string `json:"coordinator_id"`
+	CoordinatorEpoch string `json:"coordinator_epoch"`
+	Scope            string `json:"scope"`
+	RepositorySlug   string `json:"repository_slug,omitempty"`
+	ObjectID         string `json:"object_id,omitempty"`
+	ObjectPath       string `json:"object_path,omitempty"`
 }
 
 type ClusterPurgeResponse struct {
@@ -236,8 +247,18 @@ type ClusterPurgeResponse struct {
 type ClusterHealth struct {
 	Status            string          `json:"status"`
 	Version           string          `json:"version"`
+	ConfigGeneration  int64           `json:"config_generation"`
 	ConfigFingerprint string          `json:"config_fingerprint"`
 	Repositories      map[string]bool `json:"repositories,omitempty"`
+}
+
+type ClusterSyncState struct {
+	CoordinatorID     string   `json:"coordinator_id"`
+	CoordinatorEpoch  string   `json:"coordinator_epoch"`
+	ConfigGeneration  int64    `json:"config_generation"`
+	ConfigFingerprint string   `json:"config_fingerprint"`
+	Status            string   `json:"status"`
+	RetiredEpochs     []string `json:"retired_epochs,omitempty"`
 }
 
 type ClusterOverview struct {

@@ -2,7 +2,7 @@
 import { api } from './api.js';
 import { dispatchAction } from './actions.js';
 import { $, notice } from './dom.js';
-import { applyLanguage, currentLanguage, onLanguageChange } from './i18n.js';
+import { applyLanguage, currentLanguage, getLocale, L, onLanguageChange } from './i18n.js';
 import { onRestartCompleted, triggerRestart } from './restart.js';
 import { initRouter, renderCurrentPage, updatePageHeading } from './router.js';
 import { state } from './state.js';
@@ -15,6 +15,36 @@ import { loadProfilesData } from './pages/profiles.js';
 import { initCustom } from './pages/custom.js';
 import { initCluster } from './pages/cluster.js';
 
+let initialRegistrationRequired = false;
+
+function refreshLoginMode() {
+  const dictionary = getLocale().dictionary || {};
+  const text = key => dictionary[key] || key;
+  $('#login-mode-title').textContent = text(initialRegistrationRequired ? 'initialAdminTitle' : 'signInTitle');
+  $('#login-mode-description').textContent = text(initialRegistrationRequired ? 'initialAdminDescription' : 'signInDescription');
+  $('#login-submit').textContent = text(initialRegistrationRequired ? 'createAdministrator' : 'signIn');
+  $('#login-password-confirmation-group').classList.toggle('hidden', !initialRegistrationRequired);
+  $('#login-password-confirmation').required = initialRegistrationRequired;
+  $('#login-password').autocomplete = initialRegistrationRequired ? 'new-password' : 'current-password';
+}
+
+function refreshRoleUI() {
+  const labels = {
+    admin: L('Admin'),
+    operator: L('Operator'),
+    viewer: L('Viewer')
+  };
+  document.documentElement.dataset.role = state.role || 'admin';
+  const roleLabel = $('#user-role');
+  if (roleLabel) roleLabel.textContent = labels[state.role] || labels.admin;
+}
+
+async function loadInitialRegistrationStatus() {
+  const status = await api('/auth/bootstrap');
+  initialRegistrationRequired = Boolean(status?.required);
+  refreshLoginMode();
+}
+
 async function boot() {
   let session;
   try {
@@ -23,9 +53,16 @@ async function boot() {
     state.signedIn = false;
     $('#app').classList.add('hidden');
     $('#login').classList.remove('hidden');
+    try {
+      await loadInitialRegistrationStatus();
+    } catch (error) {
+      $('#login-error').textContent = error.message;
+    }
     return;
   }
   state.csrf = session.csrf_token;
+  state.role = session.role || 'admin';
+  refreshRoleUI();
   state.signedIn = true;
   $('#user-name').textContent = session.username;
   try {
@@ -46,6 +83,8 @@ async function boot() {
 // switch without a full page reload.
 onLanguageChange(() => {
   refreshThemeControls();
+  refreshLoginMode();
+  refreshRoleUI();
   updatePageHeading();
   if (!state.signedIn) return;
   void (async () => {
@@ -64,10 +103,32 @@ $('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
   $('#login-error').textContent = '';
   try {
-    const session = await api('/auth/login', {method: 'POST', body: JSON.stringify({username: $('#login-user').value, password: $('#login-password').value})});
+    const username = $('#login-user').value;
+    const password = $('#login-password').value;
+    let session;
+    if (initialRegistrationRequired) {
+      const confirmation = $('#login-password-confirmation').value;
+      if (password !== confirmation) {
+        const dictionary = getLocale().dictionary || {};
+        throw new Error(dictionary.passwordConfirmationMismatch || 'Password confirmation does not match.');
+      }
+      session = await api('/auth/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({username, password, password_confirmation: confirmation})
+      });
+    } else {
+      session = await api('/auth/login', {method: 'POST', body: JSON.stringify({username, password})});
+    }
     state.csrf = session.csrf_token;
+    $('#login-password').value = '';
+    $('#login-password-confirmation').value = '';
     await boot();
-  } catch (error) { $('#login-error').textContent = error.message; }
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+    if (initialRegistrationRequired) {
+      try { await loadInitialRegistrationStatus(); } catch (_) {}
+    }
+  }
 });
 $('#logout').addEventListener('click', async () => {
   try { await api('/auth/logout', {method: 'POST'}); } catch (_) {}

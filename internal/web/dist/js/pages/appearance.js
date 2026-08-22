@@ -23,9 +23,9 @@ export async function loadAppearance() {
       <p class="muted">${L('Configure the default administration theme and optional public repository UI enhancements. Browser theme choices are applied immediately and saved locally.')}</p>
     </div>
     <form id="appearance-form" class="settings-form">
-      <fieldset>
-        <legend>${L('Theme and colors')}</legend>
-        <div class="form-grid">
+      <details class="disclosure-panel settings-section" open>
+        <summary><span class="disclosure-title">${icon('palette', 17)} ${L('Theme and colors')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
+        <div class="disclosure-content form-grid">
           <label class="check wide"><input id="app-ui-enabled" type="checkbox" ${appearance.enabled ? 'checked' : ''}><span>${L('Enable public repository UI enhancement')}</span></label>
           <label><span>${L('Theme')}</span><select id="app-theme">
             <option value="system" ${appearance.theme === 'system' ? 'selected' : ''}>${L('Auto (follow system)')}</option>
@@ -34,39 +34,39 @@ export async function loadAppearance() {
           </select><small class="field-help">${L('Instance default for browsers without a saved theme preference.')}</small></label>
           <label><span>${L('Accent Color')}</span><input type="color" id="app-accent-color" value="${esc(appearance.accent_color || '#2563eb')}"></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>${L('Branding')}</legend>
-        <div class="form-grid">
+      <details class="disclosure-panel settings-section">
+        <summary><span class="disclosure-title">${icon('layers', 17)} ${L('Branding')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
+        <div class="disclosure-content form-grid">
           <label><span>${L('Instance Name / Title')}</span><input id="app-brand-title" value="${esc(appearance.branding?.title || 'MirrorRelay')}"></label>
           <label><span>${L('Logo URL (optional)')}</span><input id="app-brand-logo" value="${esc(appearance.branding?.logo || '')}"></label>
           <label class="wide"><span>${L('Favicon URL (optional)')}</span><input id="app-brand-favicon" value="${esc(appearance.branding?.favicon || '')}"></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>${L('Login page')}</legend>
-        <div class="form-grid">
+      <details class="disclosure-panel settings-section">
+        <summary><span class="disclosure-title">${icon('account', 17)} ${L('Login page')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
+        <div class="disclosure-content form-grid">
           <label><span>${L('Login Title')}</span><input id="app-login-title" value="${esc(appearance.login?.title || 'MirrorRelay')}"></label>
           <label><span>${L('Login Subtitle')}</span><input id="app-login-subtitle" value="${esc(appearance.login?.subtitle || 'Repository Proxy Service')}"></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>${L('Repository Browser')}</legend>
-        <div class="form-grid">
+      <details class="disclosure-panel settings-section">
+        <summary><span class="disclosure-title">${icon('repositories', 17)} ${L('Repository Browser')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
+        <div class="disclosure-content form-grid">
           <label class="check wide"><input id="app-browser-enabled" type="checkbox" ${appearance.repository_browser?.enabled !== false ? 'checked' : ''}><span>${L('Enable Repository Directory Browser')}</span></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>${L('Custom CSS')}</legend>
-        <div class="form-grid">
+      <details class="disclosure-panel settings-section">
+        <summary><span class="disclosure-title">${icon('code', 17)} ${L('Custom CSS')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
+        <div class="disclosure-content form-grid">
           <label class="check wide"><input id="app-css-enabled" type="checkbox" ${appearance.custom_css?.enabled ? 'checked' : ''}><span>${L('Enable Custom CSS')}</span></label>
           <label class="wide"><span>${L('Custom CSS File Path')}</span><input id="app-css-file" value="${esc(appearance.custom_css?.file || '/var/lib/mirrorrelay/ui/custom.css')}"></label>
         </div>
-      </fieldset>
+      </details>
 
       <footer>
         <div id="appearance-error" class="error"></div>

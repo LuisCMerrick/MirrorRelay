@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM --platform=linux/amd64 golang:1.24-alpine AS build
+FROM --platform=linux/amd64 golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS build
 
-ARG VERSION=0.0.15
+ARG VERSION=0.0.16
 ARG TARGETARCH
 WORKDIR /src
 RUN test "${TARGETARCH}" = "amd64"
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/mirrorrelay ./cmd/mirrorrelay
 
-FROM --platform=linux/amd64 alpine:3.22.2
+FROM --platform=linux/amd64 alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412
 RUN apk add --no-cache ca-certificates \
     && addgroup -S -g 65532 mirrorrelay \
     && adduser -S -D -H -u 65532 -G mirrorrelay mirrorrelay \

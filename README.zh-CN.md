@@ -99,22 +99,21 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-在浏览器直接打开 `https://127.0.0.1:8443/admin/`，使用默认账号密码 `admin` / `adminadmin` 登录。
+在浏览器打开 `https://127.0.0.1:8443/admin/` 并注册初始管理员。MirrorRelay 不提供默认账号密码。
 
 ### 方式 2：生产环境发行版安装包部署 (DEB / RPM)
 
 1. **安装软件包**：
    ```bash
    # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
+   sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
 
    # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
+   sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
    ```
-2. **设置初始管理员密码并启用服务**：
+2. **审核管理网络边界并启用服务**：
    ```bash
-   echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
-   sudo chmod 0600 /etc/mirrorrelay/environment
+   sudoedit /etc/mirrorrelay/config.yaml   # 设置 security.admin_cidrs
    sudo systemctl enable --now mirrorrelay.service
    ```
 3. **对接外部共享 Nginx**（详见 [安装说明](docs/installation.zh-CN.md)）：
@@ -123,15 +122,24 @@ go run ./cmd/mirrorrelay -dev
    sudo usermod -aG mirrorrelay www-data
    ```
    在外部 Nginx 的 `server` 块中引入自动生成的集成配置 `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 并平滑重载 Nginx。
+4. 打开 HTTPS 管理地址并完成一次性的初始管理员注册，再向不受信任网络开放管理面。
 
 ### 仓库添加与客户端配置示例
 
 1. **在 Web UI 中添加 Debian 仓库**：
    - 名称：`debian`，标识：`debian`，类型：`apt`，公开路径：`/debian`
    - 上游源地址：`https://deb.debian.org/debian`
-2. **配置客户端源地址**（`/etc/apt/sources.list`）：
+2. **配置客户端源地址**，可使用 DEB822（`/etc/apt/sources.list.d/mirrorrelay.sources`）：
    ```text
-   deb https://mirror.example.com/debian bookworm main contrib non-free
+   Types: deb
+   URIs: https://mirror.example.com/debian/
+   Suites: bookworm
+   Components: main contrib non-free non-free-firmware
+   Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+   ```
+   或传统单行格式（`/etc/apt/sources.list.d/mirrorrelay.list`）：
+   ```text
+   deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm main contrib non-free non-free-firmware
    ```
 3. **运行更新测试**：
    ```bash

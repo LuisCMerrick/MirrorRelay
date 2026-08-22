@@ -99,22 +99,21 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-Open `https://127.0.0.1:8443/admin/` in your browser and sign in with `admin` / `adminadmin`.
+Open `https://127.0.0.1:8443/admin/` and register the initial administrator. MirrorRelay does not ship default credentials.
 
 ### Option 2: Production Package Deployment (DEB / RPM)
 
 1. **Install Package**:
    ```bash
    # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
+   sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
 
    # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
+   sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
    ```
-2. **Configure Initial Admin Password & Enable Service**:
+2. **Review the Administration Network Boundary & Enable Service**:
    ```bash
-   echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
-   sudo chmod 0600 /etc/mirrorrelay/environment
+   sudoedit /etc/mirrorrelay/config.yaml   # set security.admin_cidrs
    sudo systemctl enable --now mirrorrelay.service
    ```
 3. **Connect External Shared Nginx** (see [Installation Guide](docs/installation.md)):
@@ -123,15 +122,24 @@ Open `https://127.0.0.1:8443/admin/` in your browser and sign in with `admin` / 
    sudo usermod -aG mirrorrelay www-data
    ```
    Include the generated snippet `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in your Nginx `server` block and reload Nginx.
+4. Open the HTTPS administration URL and complete the one-time initial-administrator registration before exposing it to untrusted networks.
 
 ### Example Repository & Client Setup
 
 1. **Add Debian Repository** in Web UI:
    - Name: `debian`, Slug: `debian`, Type: `apt`, Public Path: `/debian`
    - Upstream URL: `https://deb.debian.org/debian`
-2. **Configure Client** (`/etc/apt/sources.list`):
+2. **Configure Client** using either DEB822 (`/etc/apt/sources.list.d/mirrorrelay.sources`):
    ```text
-   deb https://mirror.example.com/debian bookworm main contrib non-free
+   Types: deb
+   URIs: https://mirror.example.com/debian/
+   Suites: bookworm
+   Components: main contrib non-free non-free-firmware
+   Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+   ```
+   or the traditional one-line format (`/etc/apt/sources.list.d/mirrorrelay.list`):
+   ```text
+   deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm main contrib non-free non-free-firmware
    ```
 3. **Verify**:
    ```bash

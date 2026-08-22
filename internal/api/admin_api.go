@@ -47,6 +47,20 @@ func (s *Server) webHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	path := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(s.cfg.AdminAPIPath(), "/"))
+	if path == "/auth/bootstrap" {
+		switch r.Method {
+		case http.MethodGet:
+			s.initialAdminStatus(w, r)
+		case http.MethodPost:
+			s.mutationMu.Lock()
+			defer s.mutationMu.Unlock()
+			s.registerInitialAdmin(w, r)
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		}
+		return
+	}
 	if path == "/auth/login" && r.Method == http.MethodPost {
 		s.login(w, r)
 		return
@@ -78,6 +92,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "/webhooks/test" && r.Method == http.MethodPost:
 		s.testWebhook(w, r, session)
 	case path == "/users" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		users, err := s.store.ListUsers(r.Context())
 		if err != nil {
 			writeInternal(w, err)
@@ -137,6 +154,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, entries)
 	case path == "/access" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		lines, err := readLastLines(filepath.Join(s.cfg.UpstreamNginx.LogPath, "access.log"), 200, 2<<20)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			writeInternal(w, err)
@@ -209,6 +229,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "/upstream-nginx/status" && r.Method == http.MethodGet:
 		writeJSON(w, 200, s.upstreamNginx.Status())
 	case path == "/upstream-nginx/test" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		mirrors, err := s.store.ListMirrors(r.Context())
 		if err != nil {
 			writeInternal(w, err)
@@ -365,7 +388,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, session auth
 		return
 	}
 	input.Username = strings.TrimSpace(input.Username)
-	if len(input.Username) < 3 || len(input.Username) > 64 || strings.ContainsAny(input.Username, " \t\r\n") {
+	if !validUsername(input.Username) {
 		writeError(w, 400, "username must be 3..64 non-space characters")
 		return
 	}
@@ -440,6 +463,70 @@ func (s *Server) rollbackConfig(w http.ResponseWriter, r *http.Request, session 
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+func validUsername(username string) bool {
+	return len(username) >= 3 && len(username) <= 64 && !strings.ContainsAny(username, " \t\r\n")
+}
+
+func (s *Server) initialAdminStatus(w http.ResponseWriter, r *http.Request) {
+	count, err := s.store.CountUsers(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"required": count == 0})
+}
+
+func (s *Server) registerInitialAdmin(w http.ResponseWriter, r *http.Request) {
+	count, err := s.store.CountUsers(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if count != 0 {
+		writeError(w, http.StatusConflict, "initial administrator already exists")
+		return
+	}
+	var in struct {
+		Username             string `json:"username"`
+		Password             string `json:"password"`
+		PasswordConfirmation string `json:"password_confirmation"`
+	}
+	if decodeJSON(w, r, &in) != nil {
+		return
+	}
+	in.Username = strings.TrimSpace(in.Username)
+	if !validUsername(in.Username) {
+		writeError(w, http.StatusBadRequest, "username must be 3..64 non-space characters")
+		return
+	}
+	if in.Password != in.PasswordConfirmation {
+		writeError(w, http.StatusBadRequest, "password confirmation does not match")
+		return
+	}
+	hash, err := auth.HashPassword(in.Password)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user, created, err := s.store.CreateInitialAdmin(r.Context(), in.Username, hash)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	if !created {
+		writeError(w, http.StatusConflict, "initial administrator already exists")
+		return
+	}
+	session, err := s.sessions.Create(user.ID, user.Username, user.Role)
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	s.sessions.SetCookie(w, session)
+	_ = s.audit(r, user.Username, "initial_admin_register", "user", user.Username, true)
+	writeJSON(w, http.StatusCreated, map[string]any{"username": user.Username, "role": user.Role, "csrf_token": session.CSRFToken})
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {

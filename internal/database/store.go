@@ -3,7 +3,9 @@ package database
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
@@ -12,6 +14,8 @@ import (
 )
 
 const AppearanceSettingsKey = "appearance_settings_v1"
+
+const auxiliaryURLSigningKeySetting = "auxiliary_url_signing_key_v1"
 
 type Store struct{ db *sql.DB }
 
@@ -58,4 +62,24 @@ ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_
 func (s *Store) DeleteSetting(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key=?`, key)
 	return err
+}
+
+func (s *Store) AuxiliaryURLSigningKey(ctx context.Context) ([]byte, error) {
+	if raw, found, err := s.Setting(ctx, auxiliaryURLSigningKeySetting); err != nil {
+		return nil, fmt.Errorf("read auxiliary URL signing key: %w", err)
+	} else if found {
+		decoded, decodeErr := base64.RawURLEncoding.DecodeString(raw)
+		if decodeErr != nil || len(decoded) != 32 {
+			return nil, errors.New("stored auxiliary URL signing key is invalid")
+		}
+		return decoded, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("generate auxiliary URL signing key: %w", err)
+	}
+	if err := s.PutSetting(ctx, auxiliaryURLSigningKeySetting, base64.RawURLEncoding.EncodeToString(key)); err != nil {
+		return nil, fmt.Errorf("persist auxiliary URL signing key: %w", err)
+	}
+	return key, nil
 }

@@ -51,7 +51,7 @@ func (e *Engine) modifyResponse(response *http.Response) error {
 			metadataConfig.RewriteBufferLimit = meta.repository.MetadataLimitBytes
 		}
 		validator, changed, err := rewriteHTMLResponseBody(response, meta.repository, selected.upstream, meta.logicalURL,
-			metadataConfig, uiEnhancement, acceptsGzip(meta.clientEncoding), &e.compressors)
+			metadataConfig, uiEnhancement, acceptsGzip(meta.clientEncoding), &e.compressors, e.auxiliarySigningKey)
 		if err != nil {
 			return err
 		}

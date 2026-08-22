@@ -102,6 +102,7 @@ check_payload() {
     'Managed Upstream Nginx SHA256:'; do
     grep -F "$metadata_label" "$payload_root/$build_info_path" >/dev/null
   done
+  grep -F 'no-quic' "$payload_root/$build_info_path" >/dev/null
   mirrorrelay_checksum=$(sha256sum "$payload_root/$mirrorrelay_path" | awk '{print $1}')
   upstream_checksum=$(sha256sum "$payload_root/$nginx_path" | awk '{print $1}')
   grep -F "MirrorRelay SHA256: $mirrorrelay_checksum" "$payload_root/$build_info_path" >/dev/null
@@ -223,7 +224,7 @@ for service_root in "$deb_root" "$rpm_root"; do
   grep -Fx 'ExecStart=/usr/bin/mirrorrelay -config /etc/mirrorrelay/config.yaml' "$service_file" >/dev/null
   package_config="$service_root/etc/mirrorrelay/config.yaml"
   grep -Fx '  frontend_socket_mode: "0660"' "$package_config" >/dev/null
-  grep -Fx '  upstream_socket_mode: "0600"' "$package_config" >/dev/null
+  grep -Fx '  upstream_socket_mode: "0660"' "$package_config" >/dev/null
   grep -Fx '  binary: /usr/lib/mirrorrelay/nginx/nginx' "$package_config" >/dev/null
   grep -Fx '  prefix: /var/lib/mirrorrelay/runtime/upstream-nginx' "$package_config" >/dev/null
   grep -Fx '  pid: /run/mirrorrelay/upstream-nginx.pid' "$package_config" >/dev/null

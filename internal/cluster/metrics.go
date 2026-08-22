@@ -86,11 +86,16 @@ func (m *Metrics) UpdateNodeStats(nodes []model.ClusterNode, clusterFingerprint 
 		if isHealthy {
 			healthy++
 		}
-		isMatch := (clusterFingerprint == "" || n.ConfigFingerprint == clusterFingerprint) && n.ConfigStatus != "mismatch" && n.ConfigStatus != "drifted"
-		if !isMatch && n.ConfigStatus == "mismatch" {
+		isMatch := clusterFingerprint != "" && n.ConfigFingerprint == clusterFingerprint && n.ConfigStatus == "match"
+		if !isMatch {
 			mismatch++
 		}
-		if n.Enabled && isHealthy && isMatch && (n.ProtocolVersion == 0 || n.ProtocolVersion == ClusterProtocolVersion) {
+		hasHealthyRepository := false
+		for _, repositoryHealthy := range n.RepositoryHealth {
+			hasHealthyRepository = hasHealthyRepository || repositoryHealthy
+		}
+		isReachable := isHealthy || n.HealthStatus == "degraded"
+		if n.Enabled && isReachable && isMatch && n.ProtocolVersion == ClusterProtocolVersion && hasHealthyRepository {
 			routable++
 		}
 	}

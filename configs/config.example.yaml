@@ -58,7 +58,7 @@ security:
   session_timeout: 12h
   login_window: 15m
   login_max_failures: 5
-  admin_cidrs: []
+  admin_cidrs: ["127.0.0.1/32", "::1/128"]
 transport:
   dial_timeout: 10s
   keep_alive: 30s
@@ -76,8 +76,6 @@ health:
 admin:
   host: ""
   path: /admin/
-  initial_username: "admin"
-  initial_password: ""
 shutdown:
   grace_period: 30m
 upstream_nginx:
@@ -88,7 +86,7 @@ upstream_nginx:
   log_path: /var/log/mirrorrelay/upstream-nginx
   upstream_unix_socket_enabled: true
   upstream_socket: /run/mirrorrelay/upstream.sock
-  upstream_socket_mode: "0600"
+  upstream_socket_mode: "0660"
   upstream_local_port: 9082
   ca_bundle: /etc/ssl/certs/ca-certificates.crt
   tls_verify_depth: 5
@@ -107,6 +105,8 @@ distributed:
   enabled: false
   role: standalone
   token: ""
+  mutation_token: ""
+  coordinator_id: ""
   allow_http: false
   node:
     name: "node-01"

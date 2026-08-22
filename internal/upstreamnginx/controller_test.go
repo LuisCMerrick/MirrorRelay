@@ -219,8 +219,8 @@ func TestUpstreamNginxBinaryMetadataIncludesArchitectureAndBuildID(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	architecture, checksum, buildID := upstreamNginxBinaryMetadata(executable, "nginx version: nginx/1.30.2")
-	if architecture == "" || len(checksum) != 64 || !strings.HasPrefix(buildID, "nginx-1.30.2-linux-") {
+	architecture, checksum, buildID := upstreamNginxBinaryMetadata(executable, "nginx version: nginx/1.30.4")
+	if architecture == "" || len(checksum) != 64 || !strings.HasPrefix(buildID, "nginx-1.30.4-linux-") {
 		t.Fatalf("unexpected binary metadata: architecture=%q checksum=%q build_id=%q", architecture, checksum, buildID)
 	}
 }

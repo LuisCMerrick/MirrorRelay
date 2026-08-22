@@ -65,6 +65,10 @@ var builtins = []Profile{
 				{Key: "bookworm-security", Label: "Debian 12 (bookworm-security)", Codename: "bookworm-security", Default: true},
 				{Key: "bullseye-security", Label: "Debian 11 (bullseye-security)", Codename: "bullseye-security"},
 			},
+			Formats: []model.HelpFormat{
+				{Key: "sources.list", Label: "sources.list 单行格式", Default: true},
+				{Key: "deb822", Label: "DEB822 格式 (.sources)", Extension: ".sources"},
+			},
 		},
 	},
 	{

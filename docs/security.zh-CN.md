@@ -8,7 +8,7 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 
 ## 1. 核心安全不变式
 
-1. **专用数据平面物理隔离**：Go 控制平面绝不直接发起对外部上游软件包服务器的 HTTP 连接，所有上游流量均由受管、静态链接的 `受管上游 Nginx` 独立进程代理处理。
+1. **专用数据平面物理隔离**：Go 控制平面绝不直接发起对外部上游软件包服务器的 HTTP 连接，所有上游流量均由静态链接的 `Managed Upstream Nginx` 独立进程代理处理。
 2. **严格 SSRF 深度防御**：所有上游源地址与重定向跳转目标均需解析并匹配私有网络、环回地址、链路本地地址及云元数据 CIDR 黑名单。
 3. **禁止绕过 TLS 证书链校验**：上游 HTTPS 连接始终强制执行严格的证书链与主机名验证（`proxy_ssl_verify on`），系统拒绝任何不安全证书绕过选项。
 4. **内部 Header 绝对净化**：客户端请求中携带的 `X-Mirror-Internal-*` 前缀请求头一律在代理前被强制剥离，杜绝内部路由上下文伪造。
@@ -30,11 +30,12 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 
 ## 3. 身份认证与会话管理
 
-- **密码哈希算法**：管理员密码采用 **Argon2id**（内存：64 MB，迭代轮数：3，并发度：2）高强度哈希算法。
+- **首次注册**：系统不提供默认管理员密码，也不通过环境变量预置管理员。用户表为空时，只允许通过配置的管理 Host/Path 与 CIDR 边界注册一次初始 Admin；数据库原子条件保证并发请求中只能有一个成功。
+- **密码哈希算法**：管理员密码采用 **Argon2id**（内存：64 MB，迭代轮数：3，最多 4 个线程）高强度哈希算法。
 - **并发防 DoS 节流**：密码校验由并发信号量保护，防止通过大量并发登录请求耗尽 CPU 资源。
 - **高熵会话令牌**：采用 256 位密码学安全随机数（`crypto/rand`），在 SQLite 数据库中以 SHA-256 哈希值持久化（明文令牌绝不落盘）。
 - **Cookie 安全属性**：会话 Cookie 强制开启 `HttpOnly`、`Secure` 及 `SameSite=Strict`。
-- **CSRF 双重防护**：所有修改状态的 API 请求（`POST`、`PUT`、`DELETE`）必须携带有效的 `X-CSRF-Token`，并在服务端通过常量时间比较校验。
+- **CSRF 双重防护**：所有已认证的状态修改 API（`POST`、`PUT`、`DELETE`）必须携带有效的 `X-CSRF-Token`，并在服务端通过常量时间比较校验。未认证的一次性初始注册请求改由空数据库条件、原子插入与管理网络边界共同约束。
 
 ---
 
@@ -42,6 +43,7 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 
 - **SQL 注入防御**：`internal/database/store.go` 中 100% 的 SQLite 查询均采用参数化 `?` 占位符，并强制启用 `PRAGMA foreign_keys = ON`。
 - **路径穿越防御**：仓库路径严格过滤 NUL 空字符、回车换行、反斜杠、目录跳转符（`.` / `..`）及 URL 编码分隔符（`%2f`、`%5c`）。缓存文件路径采用清洗后标准路径的 SHA-256 哈希值作为落盘键名。
+- **HTML 辅助路由签名**：仓库 Base 外的同源目标只能使用 HMAC Scope URL，签名绑定仓库、实际选中的上游/Host 策略、转义路径与 Query。客户端修改上游、路径或 Query 时，请求会在到达 Managed Upstream Nginx 前被拒绝。
 - **JSON 严格反序列化**：管理 API 解析 JSON 请求时强制开启 `DisallowUnknownFields()` 并使用 `http.MaxBytesReader` 限制请求体上限为 1 MB。
 
 ---
@@ -91,7 +93,9 @@ MirrorRelay 内置企业级供应链投毒与依赖混淆（Dependency Confusion
 MirrorRelay 支持三级权限隔离体系：
 - **`admin`（超级管理员）**：拥有全系统控制权，包括用户增删、系统级设置覆写、服务平滑重启及 Webhook 联通性测试。
 - **`operator`（运维管理员）**：具备仓库配置管理（CRUD）、缓存精确刷新、健康检查触发及 Nginx 平滑重载/回滚权限，不可修改系统用户或核心底层配置。
-- **`viewer`（只读审计员）**：仅具备监控大盘、日志、已脱敏仓库详情与健康状态的只读查看权限。静态认证/Cookie/Token Header 及含凭据的 Token URL 不会出现在 Viewer 响应中；Effective、逐仓库及自定义 Managed Upstream Nginx 配置仅允许 `admin` 或 `operator` 读取。一切写操作均被拒绝（HTTP 403）。
+- **`viewer`（只读审计员）**：仅具备监控大盘、Audit Log、已脱敏仓库详情与健康状态的只读查看权限。Token Endpoint 整体省略，静态认证/Cookie/Token Header 不会出现在 Viewer 响应中；Managed Upstream Nginx Access 记录以及 Effective、逐仓库和自定义配置仅允许 `admin` 或 `operator` 读取。一切写操作均被拒绝（HTTP 403）。
+
+Managed Upstream Nginx 记录 `$uri` 而不是 `$request_uri`，因此 Access Log 不会持久化 Token、签名等 Query 值；管理 API 对这些记录应用同样的 Admin/Operator 权限边界。
 
 ---
 

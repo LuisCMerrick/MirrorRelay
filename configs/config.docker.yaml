@@ -26,11 +26,11 @@ cache:
   wait_for_fill: 30m
   minimum_free_bytes: 1073741824
 logging: {path: "/var/log/mirrorrelay", queue_size: 8192, max_size_mb: 1024, keep_days: 30}
-security: {allow_http_upstream: false, allow_private_upstream: false, expose_client_ip: false, session_timeout: 12h, login_window: 15m, login_max_failures: 5, admin_cidrs: []}
+security: {allow_http_upstream: false, allow_private_upstream: false, expose_client_ip: false, session_timeout: 12h, login_window: 15m, login_max_failures: 5, admin_cidrs: ["127.0.0.1/32", "::1/128"]}
 transport: {dial_timeout: 10s, keep_alive: 30s, tls_handshake_timeout: 10s, response_header_timeout: 30s, idle_connection_timeout: 90s, max_idle_connections: 512, max_idle_connections_per_host: 64}
 limits: {max_total_concurrency: 0, max_ip_concurrency: 0, bandwidth_limit_bps: 0}
 health: {worker_interval: 15s}
-admin: {host: "", path: /admin/, initial_username: "admin", initial_password: ""}
+admin: {host: "", path: /admin/}
 shutdown: {grace_period: 30m}
 upstream_nginx:
   mode: managed
@@ -40,7 +40,7 @@ upstream_nginx:
   log_path: /var/log/mirrorrelay/upstream-nginx
   upstream_unix_socket_enabled: true
   upstream_socket: /run/mirrorrelay/upstream.sock
-  upstream_socket_mode: "0600"
+  upstream_socket_mode: "0660"
   upstream_local_port: 9082
   ca_bundle: /etc/ssl/certs/ca-certificates.crt
   tls_verify_depth: 5
@@ -59,6 +59,8 @@ distributed:
   enabled: false
   role: standalone
   token: ""
+  mutation_token: ""
+  coordinator_id: ""
   allow_http: false
   node:
     name: "node-01"

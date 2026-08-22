@@ -23,7 +23,7 @@ export function stateLabel(value) {
   return String(value || '—');
 }
 export function exitSummary(status = {}) {
-  if (!status.last_exit_at) return '—';
+  if (!status.last_exit_at || String(status.last_exit_at).startsWith('0001-01-01')) return '—';
   const loc = getLocale();
   if (typeof loc.exitSummary === 'function') {
     return loc.exitSummary(date(status.last_exit_at), status.last_exit_code, status.last_exit_reason);

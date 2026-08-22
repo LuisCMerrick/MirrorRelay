@@ -50,15 +50,44 @@ func clientExamples(cfg config.Config, repository model.Mirror) []clientExample 
 	}
 	switch repository.Type {
 	case "apt":
-		suite := "bookworm"
-		components := "main contrib non-free-firmware"
-		pName := strings.ToLower(repository.ProfileName)
-		if strings.Contains(pName, "debian security") || strings.Contains(pName, "debian-security") {
-			suite = "bookworm-security"
-		} else if strings.Contains(pName, "ubuntu") {
-			suite, components = "noble", "main restricted universe multiverse"
+		base = strings.TrimRight(base, "/") + "/"
+		fileBase := "mirrorrelay"
+		if repository.Slug != "" {
+			fileBase += "-" + repository.Slug
 		}
-		return []clientExample{{Title: "APT source", Command: "deb " + base + " " + suite + " " + components}}
+		listPath := "/etc/apt/sources.list.d/" + fileBase + ".list"
+		deb822Path := "/etc/apt/sources.list.d/" + fileBase + ".sources"
+		profileName := strings.ToLower(repository.ProfileName + " " + repository.Name)
+		suites := []string{"bookworm", "bookworm-updates", "bookworm-backports"}
+		components := "main contrib non-free non-free-firmware"
+		keyring := "/usr/share/keyrings/debian-archive-keyring.gpg"
+		if strings.Contains(profileName, "debian security") || strings.Contains(profileName, "debian-security") {
+			suites = []string{"bookworm-security"}
+		} else if strings.Contains(profileName, "ubuntu") {
+			suites = []string{"noble", "noble-updates", "noble-backports", "noble-security"}
+			components = "main restricted universe multiverse"
+			keyring = "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+		}
+		lines := make([]string, 0, len(suites))
+		for _, suite := range suites {
+			lines = append(lines, "deb [signed-by="+keyring+"] "+base+" "+suite+" "+components)
+		}
+		return []clientExample{
+			{
+				Title:       "APT sources.list one-line format",
+				Description: "Save as " + listPath,
+				Command:     strings.Join(lines, "\n"),
+				Format:      "sources.list",
+				FilePath:    listPath,
+			},
+			{
+				Title:       "APT DEB822 format",
+				Description: "Save as " + deb822Path,
+				Command:     "Types: deb\nURIs: " + base + "\nSuites: " + strings.Join(suites, " ") + "\nComponents: " + components + "\nSigned-By: " + keyring,
+				Format:      "deb822",
+				FilePath:    deb822Path,
+			},
+		}
 	case "rpm":
 		return []clientExample{{Title: "DNF/YUM baseurl", Command: "baseurl=" + base + "/$releasever/BaseOS/$basearch/os/"}}
 	case "apk":

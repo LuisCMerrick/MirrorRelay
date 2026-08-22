@@ -7,6 +7,7 @@ import { $, esc, notice } from '../dom.js';
 import { bytes, date, duration, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { state } from '../state.js';
 
 export async function loadCache() {
   const [cache, dashboard, repositories, warmupStatus, warmupJobs] = await Promise.all([
@@ -18,6 +19,8 @@ export async function loadCache() {
   ]);
 
   const jobs = cache.purge_jobs || [], maximum = cache.maximum_bytes || cache.max_bytes || 0, byRepository = dashboard.stats.by_mirror || {};
+  const usagePercent = maximum ? Math.min(100, 100 * cache.bytes / maximum) : 0;
+  const canManage = state.role === 'admin' || state.role === 'operator';
 
   const warmupRows = (warmupJobs || []).map(job => {
     const isRunning = job.status === 'running';
@@ -38,36 +41,41 @@ export async function loadCache() {
         <small>${number(job.completed_items || 0)} / ${number(job.total_items || 0)} ${L('items')} (${bytes(job.bytes_downloaded || 0)})</small>
       </td>
       <td>${job.last_run_at ? date(job.last_run_at) : '—'}</td>
-      <td>
+      ${canManage ? `<td>
         <div class="actions">
           ${isRunning
             ? `<button class="small danger" data-action="cancel-warmup" data-id="${job.id}">${icon('alert', 12)} ${L('Cancel')}</button>`
             : `<button class="small secondary" data-action="run-warmup" data-id="${job.id}">${icon('play', 12)} ${L('Run now')}</button>`}
-          <button class="small danger" data-action="delete-warmup" data-id="${job.id}">${icon('trash', 12)}</button>
+          <button class="small danger" data-action="delete-warmup" data-id="${job.id}" title="${L('Delete')}" aria-label="${L('Delete')}">${icon('trash', 12)}</button>
         </div>
-      </td>
+      </td>` : ''}
     </tr>`;
   }).join('');
 
   $('#page-cache').innerHTML = `
-    <div class="cards">
+    <div class="cards compact-cards">
+      ${card(L('Cache usage'), bytes(cache.bytes), false, 'database', `${usagePercent.toFixed(1)}% · ${bytes(maximum)} ${L('maximum')}`)}
       ${card(L('Cache files'), number(cache.files), false, 'file-text')}
-      ${card(L('Used space'), bytes(cache.bytes), false, 'database')}
-      ${card(L('Maximum space'), bytes(maximum), false, 'hard-drive')}
-      ${card(L('Global generation'), cache.global_generation, false, 'refresh')}
-      ${card(L('Warm-Up Status'), warmupStatus.enabled ? L('Active') : L('Disabled (Default)'), warmupStatus.enabled, 'zap')}
-      ${card(L('Warm-Up Total Items'), number(warmupStatus.total_warmups || 0), false, 'trend-up')}
+      ${card(L('Warm-Up Status'), warmupStatus.enabled ? L('Active') : L('Disabled (Default)'), warmupStatus.enabled, 'zap', L('%s total items', number(warmupStatus.total_warmups || 0)))}
     </div>
 
     <!-- Smart Cache Warm-Up & Predictive Pre-Fetching Section -->
-    <div class="panel">
-      <div class="panel-header-row">
-        <h2>${icon('zap', 18)} ${L('Smart Cache Warm-Up & Predictive Pre-Fetching')}</h2>
+    <details class="disclosure-panel">
+      <summary>
+        <span class="disclosure-heading">
+          <span class="disclosure-title">${icon('zap', 17)} ${L('Smart Cache Warm-Up & Predictive Pre-Fetching')}</span>
+          <span class="disclosure-description">${L('Tasks, schedules and execution progress')}</span>
+        </span>
+        <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+      </summary>
+      <div class="disclosure-content">
+        <div class="panel-header-row">
+          <span></span>
         ${warmupStatus.enabled ? `<span class="badge ok">${L('Engine Active')}</span>` : `<span class="badge yellow">${L('Engine Disabled (Default)')}</span>`}
-      </div>
+        </div>
       <p class="muted">${L('Proactively pre-fetch and warm up repository indexes, release manifests, and critical packages into Managed Upstream Nginx proxy cache. Features intelligent metadata parsing (APT / RPM / PyPI) to eliminate first-hit cache misses.')}</p>
 
-      <form id="create-warmup-form" class="form-grid" style="margin-top: 16px;">
+      <form id="create-warmup-form" class="form-grid spaced-form requires-operator">
         <label>
           <span>${L('Target Repository')}</span>
           <select id="warmup-repo-select" required>
@@ -86,14 +94,14 @@ export async function loadCache() {
           <span>${L('Target URL Paths / Relative Patterns (one per line, e.g. /dists/bookworm/Release)')}</span>
           <textarea id="warmup-patterns-input" rows="3" required placeholder="/dists/bookworm/Release&#10;/dists/bookworm/main/binary-amd64/Packages.gz&#10;/simple/requests/"></textarea>
         </label>
-        <div class="toolbar end" style="grid-column: span 2; margin-bottom: 0; padding: 0; background: transparent; border: none;">
+        <div class="form-actions">
           <button type="submit" class="btn-primary">
             ${icon('plus', 14)} ${L('Create Warm-Up Task')}
           </button>
         </div>
       </form>
 
-      <div class="table-wrap" style="margin-top: 20px;">
+      <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -103,25 +111,30 @@ export async function loadCache() {
               <th>${L('Status')}</th>
               <th>${L('Progress / Bytes')}</th>
               <th>${L('Last run')}</th>
-              <th>${L('Actions')}</th>
+              ${canManage ? `<th>${L('Actions')}</th>` : ''}
             </tr>
           </thead>
           <tbody>
-            ${warmupRows || `<tr><td colspan="7" class="empty">${L('No warm-up tasks configured yet.')}</td></tr>`}
+            ${warmupRows || `<tr><td colspan="${canManage ? 7 : 6}" class="empty">${L('No warm-up tasks configured yet.')}</td></tr>`}
           </tbody>
         </table>
       </div>
-    </div>
+      </div>
+    </details>
 
     <!-- Targeted Object Search & Purge Explorer -->
-    <div class="panel">
-      <div class="panel-header-row">
-        <h2>${icon('search', 18)} ${L('Targeted Cache Object Invalidation')}</h2>
-        <span class="badge blue">${L('Instant Purge')}</span>
-      </div>
+    <details class="disclosure-panel">
+      <summary>
+        <span class="disclosure-heading">
+          <span class="disclosure-title">${icon('search', 17)} ${L('Targeted Cache Object Invalidation')}</span>
+          <span class="disclosure-description">${L('Purge one repository path or prefix')}</span>
+        </span>
+        <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+      </summary>
+      <div class="disclosure-content">
       <p class="muted">${L('Perform precision targeted cache purging on a specific repository and object path without affecting other cached files.')}</p>
       
-      <form id="targeted-purge-form" class="form-grid">
+      <form id="targeted-purge-form" class="form-grid requires-operator">
         <label>
           <span>${L('Repository')}</span>
           <select id="purge-repo-select" required>
@@ -132,26 +145,36 @@ export async function loadCache() {
           <span>${L('Object URL Path / Prefix (leave empty to purge entire repository)')}</span>
           <input id="purge-path-input" placeholder="/debian/dists/bookworm/Release or /simple/requests/" />
         </label>
-        <div class="toolbar end" style="grid-column: span 2; margin-bottom: 0; padding: 0; background: transparent; border: none;">
+        <div class="form-actions">
           <button type="submit" class="danger">
             ${icon('trash', 14)} ${L('Invalidate Target Path')}
           </button>
         </div>
       </form>
-      <div id="targeted-purge-result" class="notice ok hidden" style="margin-top: 14px;"></div>
-    </div>
+      <div id="targeted-purge-result" class="notice ok inline-result hidden"></div>
+      </div>
+    </details>
 
-    <div class="panel">
-      <h2>${icon('database', 18)} ${L('Cache storage')}</h2>
+    <details class="disclosure-panel">
+      <summary>
+        <span class="disclosure-heading">
+          <span class="disclosure-title">${icon('database', 17)} ${L('Cache storage')}</span>
+          <span class="disclosure-description">${L('Path, limits, generation and global purge')}</span>
+        </span>
+        <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+      </summary>
+      <div class="disclosure-content">
       ${kv(L('Path'), cache.path)}
       ${kv(L('Maximum files'), number(cache.maximum_files))}
       ${kv(L('Minimum free space'), bytes(cache.minimum_free_bytes))}
       ${kv(L('Inactive window'), duration(cache.inactive_seconds))}
+      ${kv(L('Global generation'), cache.global_generation)}
       <div class="panel-actions">
-        <button class="danger" id="clear-cache">${icon('trash', 14)} ${L('Global logical purge')}</button>
+        <button class="danger requires-operator" id="clear-cache">${icon('trash', 14)} ${L('Global logical purge')}</button>
       </div>
       <p class="muted">${L('Logical invalidation is immediate. Physical files remain until the asynchronous Nginx cache manager completes its inactive/max_size cleanup window.')}</p>
-    </div>
+      </div>
+    </details>
 
     <div class="panel">
       <h2>${icon('layers', 18)} ${L('Repository cache traffic today')}</h2>
@@ -193,7 +216,7 @@ export async function loadCache() {
               <th>${L('Logical purge')}</th>
               <th>${L('Physical reclaim')}</th>
               <th>${L('Reclaimed')}</th>
-              <th>${L('Operator')}</th>
+              <th>${L('Triggered by')}</th>
             </tr>
           </thead>
           <tbody>

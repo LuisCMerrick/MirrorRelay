@@ -166,10 +166,8 @@ type HealthConfig struct {
 }
 
 type AdminConfig struct {
-	Host            string `yaml:"host"`
-	Path            string `yaml:"path"`
-	InitialUsername string `yaml:"initial_username"`
-	InitialPassword string `yaml:"initial_password"`
+	Host string `yaml:"host"`
+	Path string `yaml:"path"`
 }
 
 type ShutdownConfig struct {
@@ -177,14 +175,16 @@ type ShutdownConfig struct {
 }
 
 type DistributedConfig struct {
-	Enabled     bool                     `yaml:"enabled"`
-	Role        string                   `yaml:"role"`
-	Token       string                   `yaml:"token"`
-	AllowHTTP   bool                     `yaml:"allow_http"`
-	Node        DistributedNodeConfig    `yaml:"node"`
-	Routing     DistributedRoutingConfig `yaml:"routing"`
-	HealthCheck DistributedHealthConfig  `yaml:"health_check"`
-	Nodes       []DistributedNodeSeed    `yaml:"nodes"`
+	Enabled       bool                     `yaml:"enabled"`
+	Role          string                   `yaml:"role"`
+	Token         string                   `yaml:"token"`
+	MutationToken string                   `yaml:"mutation_token"`
+	CoordinatorID string                   `yaml:"coordinator_id"`
+	AllowHTTP     bool                     `yaml:"allow_http"`
+	Node          DistributedNodeConfig    `yaml:"node"`
+	Routing       DistributedRoutingConfig `yaml:"routing"`
+	HealthCheck   DistributedHealthConfig  `yaml:"health_check"`
+	Nodes         []DistributedNodeSeed    `yaml:"nodes"`
 }
 
 type DistributedNodeConfig struct {
@@ -218,11 +218,12 @@ type DistributedHealthConfig struct {
 }
 
 type DistributedNodeSeed struct {
-	Name     string `yaml:"name"`
-	URL      string `yaml:"url"`
-	Region   string `yaml:"region"`
-	Country  string `yaml:"country"`
-	Priority int    `yaml:"priority"`
-	Weight   int    `yaml:"weight"`
-	Enabled  bool   `yaml:"enabled"`
+	Name          string `yaml:"name"`
+	URL           string `yaml:"url"`
+	MutationToken string `yaml:"mutation_token"`
+	Region        string `yaml:"region"`
+	Country       string `yaml:"country"`
+	Priority      int    `yaml:"priority"`
+	Weight        int    `yaml:"weight"`
+	Enabled       bool   `yaml:"enabled"`
 }

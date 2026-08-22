@@ -61,10 +61,7 @@ sudo apt-get update
 
 ### 3. 完整配置示例
 
-` + "```" + `text
-# /etc/apt/sources.list.d/debian-security.list
-deb {{REPOSITORY_URL}} {{CODENAME}}-security main contrib non-free non-free-firmware
-` + "```" + `
+{{CONFIG_BLOCK}}
 `,
 
 	"builtin://help/ubuntu.md": `## Ubuntu 软件仓库配置说明
@@ -84,13 +81,7 @@ sudo apt-get update
 
 ### 3. 完整配置示例
 
-` + "```" + `text
-# /etc/apt/sources.list
-deb {{REPOSITORY_URL}} {{CODENAME}} main restricted universe multiverse
-deb {{REPOSITORY_URL}} {{CODENAME}}-updates main restricted universe multiverse
-deb {{REPOSITORY_URL}} {{CODENAME}}-backports main restricted universe multiverse
-deb {{REPOSITORY_URL}} {{CODENAME}}-security main restricted universe multiverse
-` + "```" + `
+{{CONFIG_BLOCK}}
 `,
 
 	"builtin://help/rocky.md": `## Rocky Linux 软件仓库配置说明

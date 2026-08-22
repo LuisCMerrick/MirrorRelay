@@ -117,13 +117,18 @@ export async function loadSettings() {
       </div>`
     : `<div class="notice">${icon('check-circle', 16)} ${L('The running process matches the saved settings.')}</div>`;
 
-  const groups = settingsGroups.map(group => `
-    <fieldset>
-      <legend>${esc(group.title)}</legend>
-      <div class="form-grid">
+  const groups = settingsGroups.map((group, index) => `
+    <details class="disclosure-panel settings-section"${index === 0 ? ' open' : ''}>
+      <summary>
+        <span class="disclosure-heading">
+          <span class="disclosure-title">${icon('settings', 17)} ${esc(group.title)}</span>
+        </span>
+        <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+      </summary>
+      <div class="disclosure-content form-grid">
         ${group.fields.map(field => settingsInput(field, settings)).join('')}
       </div>
-    </fieldset>
+    </details>
   `).join('');
 
   $('#page-settings').innerHTML = `

@@ -19,7 +19,6 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/accesslog"
 	"github.com/LuisCMerrick/MirrorRelay/internal/api"
 	"github.com/LuisCMerrick/MirrorRelay/internal/applog"
-	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
 	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
@@ -36,7 +35,7 @@ import (
 )
 
 var (
-	version        = "0.0.15"
+	version        = "0.0.16"
 	gitCommit      = "unknown"
 	buildTimestamp = "unknown"
 	buildID        = ""
@@ -111,22 +110,30 @@ func run() error {
 
 	if len(cfg.Distributed.Nodes) > 0 {
 		for _, seed := range cfg.Distributed.Nodes {
-			if _, err := store.GetClusterNodeByURL(context.Background(), seed.URL); err != nil {
-				_, _ = store.CreateClusterNode(context.Background(), model.ClusterNode{
-					Name:     seed.Name,
-					URL:      seed.URL,
-					Region:   seed.Region,
-					Country:  seed.Country,
-					Priority: seed.Priority,
-					Weight:   seed.Weight,
-					Enabled:  seed.Enabled,
-				})
+			existing, lookupErr := store.GetClusterNodeByURL(context.Background(), seed.URL)
+			if lookupErr != nil && !database.IsNotFound(lookupErr) {
+				return fmt.Errorf("load distributed node seed %q: %w", seed.Name, lookupErr)
+			}
+			if database.IsNotFound(lookupErr) {
+				if _, err := store.CreateClusterNode(context.Background(), model.ClusterNode{
+					Name:          seed.Name,
+					URL:           seed.URL,
+					MutationToken: seed.MutationToken,
+					Region:        seed.Region,
+					Country:       seed.Country,
+					Priority:      seed.Priority,
+					Weight:        seed.Weight,
+					Enabled:       seed.Enabled,
+				}); err != nil {
+					return fmt.Errorf("create distributed node seed %q: %w", seed.Name, err)
+				}
+			} else if seed.MutationToken != "" && existing.MutationToken != seed.MutationToken {
+				existing.MutationToken = seed.MutationToken
+				if _, err := store.UpdateClusterNode(context.Background(), existing); err != nil {
+					return fmt.Errorf("update distributed node seed %q mutation credential: %w", seed.Name, err)
+				}
 			}
 		}
-	}
-
-	if err := bootstrapAdmin(context.Background(), store, cfg, dev); err != nil {
-		return err
 	}
 
 	registry := mirror.NewRegistry(store)
@@ -142,7 +149,11 @@ func run() error {
 	defer accessLogger.Close()
 	checker := health.New(cfg, store, registry)
 	upstreamNginxController := upstreamnginx.NewController(cfg, store)
-	engine := proxy.New(cfg, registry, cacheManager, metric, accessLogger)
+	auxiliarySigningKey, err := store.AuxiliaryURLSigningKey(context.Background())
+	if err != nil {
+		return err
+	}
+	engine := proxy.New(cfg, registry, cacheManager, metric, accessLogger, auxiliarySigningKey)
 	defer engine.CloseIdleConnections()
 	control, err := api.New(cfg, fileConfig, store, registry, cacheManager, metric, checker, upstreamNginxController, webassets.FS(), build)
 	if err != nil {
@@ -294,32 +305,6 @@ func runProduct(
 	}
 	if isRestart {
 		return errRestartRequested
-	}
-	return nil
-}
-
-func bootstrapAdmin(ctx context.Context, store *database.Store, cfg config.Config, dev bool) error {
-	count, err := store.CountUsers(ctx)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-	if cfg.Admin.InitialPassword == "" {
-		return errors.New("no administrator exists: set MIRRORRELAY_ADMIN_PASSWORD for the first startup")
-	}
-	hash, err := auth.HashPassword(cfg.Admin.InitialPassword)
-	if err != nil {
-		return fmt.Errorf("initial administrator password: %w", err)
-	}
-	if err := store.CreateUser(ctx, cfg.Admin.InitialUsername, hash, "admin"); err != nil {
-		return err
-	}
-	if dev {
-		slog.Warn("development administrator created", "username", cfg.Admin.InitialUsername, "password", cfg.Admin.InitialPassword)
-	} else {
-		slog.Info("initial administrator created", "username", cfg.Admin.InitialUsername)
 	}
 	return nil
 }

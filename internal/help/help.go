@@ -165,12 +165,26 @@ func Render(repo model.Mirror, publicBaseURL, variantKey, formatKey, instanceNam
 func generateConfigBlock(repo model.Mirror, repoURL, variant, codename, format string) string {
 	switch repo.Type {
 	case "apt":
-		if format == "deb822" {
-			return fmt.Sprintf("```text\n# /etc/apt/sources.list.d/%s.sources\nTypes: deb\nURIs: %s\nSuites: %s %s-updates %s-backports\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n```",
-				repo.Slug, repoURL, codename, codename, codename)
+		suites := []string{codename, codename + "-updates", codename + "-backports"}
+		components := "main contrib non-free non-free-firmware"
+		keyring := "/usr/share/keyrings/debian-archive-keyring.gpg"
+		switch repo.Help.Template {
+		case "builtin://help/debian-security.md":
+			suites = []string{codename}
+		case "builtin://help/ubuntu.md":
+			suites = []string{codename, codename + "-updates", codename + "-backports", codename + "-security"}
+			components = "main restricted universe multiverse"
+			keyring = "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
 		}
-		return fmt.Sprintf("```text\n# /etc/apt/sources.list\ndeb %s %s main contrib non-free non-free-firmware\ndeb %s %s-updates main contrib non-free non-free-firmware\ndeb %s %s-backports main contrib non-free non-free-firmware\n```",
-			repoURL, codename, repoURL, codename, repoURL, codename)
+		if format == "deb822" {
+			return fmt.Sprintf("```text\n# /etc/apt/sources.list.d/%s.sources\nTypes: deb\nURIs: %s\nSuites: %s\nComponents: %s\nSigned-By: %s\n```",
+				repo.Slug, repoURL, strings.Join(suites, " "), components, keyring)
+		}
+		lines := make([]string, 0, len(suites))
+		for _, suite := range suites {
+			lines = append(lines, fmt.Sprintf("deb [signed-by=%s] %s %s %s", keyring, repoURL, suite, components))
+		}
+		return fmt.Sprintf("```text\n# /etc/apt/sources.list.d/%s.list\n%s\n```", repo.Slug, strings.Join(lines, "\n"))
 	case "rpm":
 		return fmt.Sprintf("```ini\n[%s-baseos]\nname=%s BaseOS\nbaseurl=%s$releasever/BaseOS/$basearch/os/\nenabled=1\ngpgcheck=1\n```",
 			repo.Slug, repo.Name, repoURL)

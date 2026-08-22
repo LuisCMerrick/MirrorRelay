@@ -19,6 +19,8 @@ func TestClusterManifestAndHealthEndpoints(t *testing.T) {
 	cfg.Distributed.Enabled = true
 	cfg.Distributed.Role = "edge"
 	cfg.Distributed.Token = "secret-token-123"
+	cfg.Distributed.MutationToken = "edge-mutation-token"
+	cfg.Distributed.CoordinatorID = "coordinator-1"
 	cfg.Distributed.Node.Name = "tokyo-01"
 
 	registry := mirror.NewRegistry(nil)
@@ -53,7 +55,8 @@ func TestClusterManifestAndHealthEndpoints(t *testing.T) {
 	if err := json.NewDecoder(rec2.Body).Decode(&manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.NodeID != "tokyo-01" || manifest.ProtocolVersion != 1 || len(manifest.Capabilities) != 1 || manifest.Capabilities[0] != "apt" {
+	if manifest.NodeID != "tokyo-01" || manifest.ProtocolVersion != cluster.ClusterProtocolVersion || manifest.ConfigGeneration != 0 ||
+		len(manifest.Capabilities) != 1 || manifest.Capabilities[0] != "apt" {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
 
@@ -95,8 +98,9 @@ func TestCoordinatorDistributed307Redirect(t *testing.T) {
 			HealthStatus:      "healthy",
 			ConfigStatus:      "match",
 			ConfigFingerprint: fp,
-			ProtocolVersion:   1,
+			ProtocolVersion:   cluster.ClusterProtocolVersion,
 			Capabilities:      []string{"apt"},
+			RepositoryHealth:  map[string]bool{"debian": true},
 		},
 	})
 

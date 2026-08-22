@@ -14,6 +14,28 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// CreateInitialAdmin creates the first user only while the user table is
+// empty. The conditional INSERT is atomic, so concurrent first-use requests
+// cannot create more than one initial administrator.
+func (s *Store) CreateInitialAdmin(ctx context.Context, username, passwordHash string) (model.User, bool, error) {
+	now := nowText()
+	result, err := s.db.ExecContext(ctx, `INSERT INTO users(username,password_hash,role,created_at,updated_at)
+SELECT ?,?,'admin',?,?
+WHERE NOT EXISTS (SELECT 1 FROM users)`, username, passwordHash, now, now)
+	if err != nil {
+		return model.User{}, false, err
+	}
+	created, err := result.RowsAffected()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	if created != 1 {
+		return model.User{}, false, nil
+	}
+	user, err := s.UserByName(ctx, username)
+	return user, err == nil, err
+}
+
 func (s *Store) CreateUser(ctx context.Context, username, passwordHash, role string) error {
 	now := nowText()
 	if role == "" {

@@ -18,7 +18,9 @@ https://repo.example.com/admin/
 
 Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因此生产登录必须使用 HTTPS，UI 与 API 也必须保持同源。非回环主机上的明文 HTTP 地址可能接受登录请求，但浏览器不会保留 Session Cookie。不要把私有前端 Socket 或回环备用端口直接暴露到网络。
 
-首次启动时，MirrorRelay 使用 `MIRRORRELAY_ADMIN_USERNAME` 与 `MIRRORRELAY_ADMIN_PASSWORD` 创建初始管理员；数据库已有用户后不会再次使用这些值。如果管理面只允许特定网络访问，请配置 `security.admin_cidrs`。
+数据库没有任何用户时，登录页会切换为一次性的初始管理员注册页。第一个成功注册的账号会成为唯一初始 Admin 并立即登录；数据库原子条件可防止两个并发请求同时注册成功。该端点仍受 `admin.host` 与 `security.admin_cidrs` 保护。请先限制管理面访问范围并完成注册，再向不受信任网络开放。只要已有任意用户，注册入口就会永久关闭，除非管理员显式清除持久数据库。
+
+APT 仓库详情与内置帮助同时提供现代 DEB822（`/etc/apt/sources.list.d/*.sources`）和传统 `sources.list` 单行格式。发行版/版本与输出格式是两个独立选项，因此同一 Debian 或 Ubuntu 客户端可以自由使用任一格式。
 
 除非浏览器首选语言包含中文，否则 UI 默认使用英语。右上角的 `EN` 或 `中文` 可手动切换，选择会保存在浏览器 Local Storage。语言资源与页面功能解耦，独立维护在语言包资源文件（`locales/en.js` 与 `locales/zh.js`）中。使用完毕后，从侧边栏底部退出登录。
 
@@ -33,26 +35,38 @@ Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因�
 
 验证或 Reload 失败时，之前的 Active 路由配置继续工作。因此 Repositories 页面可能同时显示失败的 Desired 状态和仍在服务的最后一个有效 Active 状态。重试前应查看仓库错误、生成配置和 Managed Upstream Nginx 状态。
 
+## 界面层级规范
+
+管理界面的所有页面遵循同一套层级：
+
+- 首屏保留 3–5 个与当前判断直接相关的状态指标，避免在多个概览页重复铺开构建和运行时信息。
+- 技术标识、端点内部信息和低频维护操作放入原生折叠区或二级详情窗口；除当前页面的即时任务外，默认保持折叠。
+- 每个流程只突出一个主要操作；查看类操作使用中性次级按钮，危险样式仅用于破坏性操作。
+- 生成配置默认隐藏；敏感或生效配置仅在有权限的用户主动请求时加载，复制按钮与展开后的内容放在一起。
+- 亮色和暗色主题都保留清晰的键盘焦点、语义化 `details`/`summary` 行为，并尊重减少动态效果的系统偏好。
+
 ## 建议的首次使用顺序
 
-1. 打开 **系统**，确认 MirrorRelay 与 Managed Upstream Nginx 的版本、架构和端点。
-2. 打开 **健康状态**，确认 MirrorRelay、前端端点、Go Router、Managed Upstream Nginx 与上游端点正常或正在运行。
-3. 打开 **入口接入**，审核生成的片段，并通过现有入口管理员的正常流程应用。
-4. 新增一个仓库，测试上游并检查生成配置。
-5. 打开公开域名根路径，确认仓库已出现在索引中。
-6. 使用仓库详情中的客户端示例完成一次小请求，再接入生产流量。
+1. 打开 **系统**，确认 MirrorRelay 标识与本地端点。
+2. 打开 **受管上游 Nginx → 技术详情**，确认其版本、Build ID 和架构。
+3. 打开 **健康状态**，确认 MirrorRelay、前端端点、Go Router、Managed Upstream Nginx 与上游端点正常或正在运行。
+4. 打开 **入口接入**，展开并审核生成片段，再通过现有入口管理员的正常流程应用。
+5. 新增一个仓库，测试上游并检查生成配置。
+6. 打开公开域名根路径，确认仓库已出现在索引中。
+7. 使用仓库详情中的客户端示例完成一次小请求，再接入生产流量。
 
 ## 概览
 
-概览汇总：
+概览首屏聚焦仓库健康、当前请求/流量总量和缓存命中率。静态请求路径拓扑默认折叠，仅在排查部署链路时按需展开。
+
+概览还提供：
 
 - 仓库总数与启用数；
 - 正常与异常仓库数；
-- Managed Upstream Nginx 状态；
 - 当前活动请求，以及今日、24 小时和 7 天的请求量与流量；
 - 缓存命中率和已观测缓存占用；
 - 各仓库流量、状态码分类、缓存命中/未命中和上游错误；
-- MirrorRelay 与 Managed Upstream Nginx 的版本、Build ID、架构和运行时间。
+- 小时流量图表及 HTTP/缓存分类。
 
 这些计数是运维观测数据，不是计费记录。缓存占用通过异步扫描获得，因此可能晚于 Purge 或文件系统变化。
 
@@ -84,9 +98,9 @@ Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因�
 
 Path 模式应填写 `/debian/` 这类公开路径。MirrorRelay 会拒绝等于或包含后台/系统路径、与其他仓库路径重叠，或替换根索引的路径；也会拒绝重复公开 Host。配置 `http.public_base_url` 后，Host Mode 仓库还不能占用共享 Host。Host 模式应填写独立公开域名，并在 External Shared Nginx 中补齐 TLS/Server Block。只有 `security.admin_cidrs` 已定义预期客户端时，才应选择 **仅管理 CIDR**。
 
-**改写可浏览 HTML 中的同源 URL** 是逐仓库兼容开关，默认关闭。它会按照实际上游页面 URL 解析 HTML 中的 `href`、`src`、`srcset`、`action` 及相关 URL 属性。仍在上游仓库 Base 内的目标会映射回公开仓库 Namespace；位于 Base 外但与上游同源的目标会映射为 `/_mirrorrelay/upstream/<仓库ID>/...`，从而继续提供上游原有图标、样式表、脚本和图片，而不替换其内容。跨 Origin URL 和非 HTTP(S) Scheme 保持不变。
+**改写可浏览 HTML 中的同源 URL** 是逐仓库兼容开关，默认关闭。它会按照实际上游页面 URL 解析 HTML 中的 `href`、`src`、`srcset`、`action` 及相关 URL 属性。仍在上游仓库 Base 内的目标会映射回公开仓库 Namespace；位于 Base 外但与上游同源的目标会获得不透明的签名 URL：`/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>`，从而继续提供上游原有图标、样式表、脚本和图片。跨 Origin URL 与非 HTTP(S) Scheme 保持不变；包含 data URL 的混合 `srcset` 会逐候选处理。
 
-辅助路由只接受 `GET`、`HEAD`，继续受仓库公开 Host 与访问策略约束，并复用该仓库已经 Pin 的上游、TLS 校验、Header、缓存策略和限制。开启后，上游仓库 Base 之外的同源路径会有意通过这个辅助 Scope 变得可访问；只应在适合暴露该上游范围时启用。存在已启用且需要该能力的 Path Mode 仓库时，生成的 External Shared Nginx 片段会包含 `/_mirrorrelay/upstream/`，请把更新后的片段应用到共享入口。HTML Body 使用仓库 Metadata 改写上限、压缩策略和重新生成的响应 Validator。
+辅助路由只接受 `GET`、`HEAD`。HMAC 将仓库、生成源 HTML 时实际选中的上游、Host 策略、路径与 Query 绑定，修改任一部分都会被拒绝。路由继续受仓库公开 Host 与访问策略约束，并通过 Managed Upstream Nginx 复用已经 Pin 的上游、TLS 校验、Header、缓存策略和限制；签名密钥只生成一次并保存在 MirrorRelay 数据库中。存在已启用且需要该能力的 Path Mode 仓库时，生成的 External Shared Nginx 片段会包含 `/_mirrorrelay/upstream/`，请把更新后的片段应用到共享入口。HTML Body 使用仓库 Metadata 改写上限、压缩策略和重新生成的响应 Validator。
 
 选择 **验证、保存并生效** 提交 Candidate。成功表示生成、验证、持久化、原子发布和 Graceful Reload 全部完成。错误会留在表单中，不会替换 Active 配置。
 
@@ -115,7 +129,9 @@ Cache Purge 使用 Generation。新请求会立即停止使用已失效 Namespac
 
 ## Managed Upstream Nginx
 
-此页面展示进程状态、PID、运行时间、二进制版本、Build ID、架构、当前配置版本、最后 Reload/退出信息、构建参数和生效配置。
+首屏只展示进程状态、运行时间、当前配置版本和配置历史。点击 **技术详情** 会打开二级视图，其中集中展示 PID、启动时间、二进制版本、Build ID、架构、SHA-256、配置哈希、Reload/退出信息和 Nginx 编译参数。
+
+生效 Nginx 配置默认隐藏，并且只有展开 **生效配置** 后才会向 API 请求。Admin/Operator 随后可查看并点击 **复制配置**；Viewer 仍可查看状态和历史，同时不会看到其无权使用的配置控件。
 
 - **重新生成、验证并 Reload**：对当前 Desired 仓库与自定义片段执行 Reconcile。
 - **回滚**：从所选不可变历史版本恢复仓库与自定义配置，验证后执行 Graceful Reload。
@@ -130,29 +146,29 @@ MirrorRelay 会拒绝能够逃离所选 Context、创建 Listener/Route/Upstream
 
 ## 入口接入
 
-此页面展示 Ingress 模式、前端网络/地址和生成的 External Shared Nginx 片段。MirrorRelay 不安装、编辑或 Reload 共享入口。请审核文件、补全证书占位内容，再通过该入口部署的正常变更流程应用。
+此页面展示 Ingress 模式和前端端点。生成的 External Shared Nginx 片段默认隐藏，展开后方可审核和复制。MirrorRelay 不安装、编辑或 Reload 共享入口；请补全证书占位内容，再通过该入口部署的正常变更流程应用。
 
 ## 缓存
 
-缓存页面展示文件数、已扫描字节数、最大容量、全局 Generation、路径/限制，以及仓库命中和未命中流量。确认后使用 **全局逻辑失效** 可失效全部当前 Cache Namespace。
+缓存页面优先展示用量、文件数、预热状态及仓库命中/未命中流量。预热任务、定向失效、存储限制、全局 Generation 和 **全局逻辑失效** 统一放入默认折叠的维护区域；确认后执行全局操作可失效全部当前 Cache Namespace。
 
 Purge/Reclaim 表将立即完成的逻辑失效与延迟发生的物理回收分开显示。在观测窗口结束并重新扫描磁盘之前，Reclaim 显示 Pending 或 Running 属于正常情况。
 
 ## 健康状态
 
-健康页面分别显示 MirrorRelay、前端端点、External Shared Nginx、Go Router、Managed Upstream Nginx、上游端点和每个仓库。仓库显示 Unknown 通常表示尚未完成成功探测；显示异常时，应结合 **仓库 → 测试**、上游详情和日志调查。
+健康页面优先显示 MirrorRelay、Managed Upstream Nginx 和仓库健康汇总。展开 **组件与端点详情** 后可查看前端端点、External Shared Nginx、Go Router 和上游端点。仓库显示 Unknown 通常表示尚未完成成功探测；显示异常时，应结合 **仓库 → 测试**、上游详情和日志调查。
 
 ## 访问日志、审计日志与系统
 
-- **访问日志**展示最近的 Managed Upstream Nginx Access 记录，并支持手动刷新。
+- **访问日志**仅向 Admin/Operator 展示最近的 Managed Upstream Nginx Access 记录，并支持手动刷新；该日志不写入 Query 字符串。
 - **审计日志**记录管理员、客户端地址、操作、对象/详情和成功或失败结果。
-- **系统**展示 MirrorRelay 构建/运行信息、内存与文件描述符计数、Ingress/TLS 端点，以及 Managed Upstream Nginx 的准确校验值和生命周期状态。
+- **系统**首屏展示运行时间、RSS 和 Managed Upstream Nginx 状态；构建标识、Go 运行时计数器、Ingress/TLS 端点和 Nginx 生命周期按二级折叠区分组。准确的 Nginx 二进制与编译信息集中在 Nginx 页面的 **技术详情** 中。
 
-使用 Audit Log 确认谁修改了配置；使用 Access Log 调查数据面请求；启动、验证和上游故障应继续查看磁盘上的 Application 与 Nginx Error Log。
+Viewer 可读取 Audit Log，但不能访问 Managed Upstream Nginx Access Log。使用 Audit Log 确认谁修改了配置；Admin/Operator 可使用不含 Query 的 Access Log 调查数据面请求；启动、验证和上游故障应继续查看磁盘上的 Application 与 Nginx Error Log。
 
 ## 设置
 
-**设置** 页面可以管理 `config.yaml` 中的大部分运行配置，包括本地 Unix/TCP 端点、入口模式、HTTP/TLS 行为、性能、Metadata、重定向、缓存默认值、安全与管理 CIDR、传输连接池和超时、并发与带宽限制、日志轮转、健康检查调度、退出行为及 Managed Upstream Nginx 生命周期。
+**设置** 页面可以管理 `config.yaml` 中的大部分运行配置，包括本地 Unix/TCP 端点、入口模式、HTTP/TLS 行为、性能、Metadata、重定向、缓存默认值、安全与管理 CIDR、传输连接池和超时、并发与带宽限制、日志轮转、健康检查调度、退出行为及 Managed Upstream Nginx 生命周期。所有配置组使用一致的折叠区：第一组初始展开，其余按需打开。
 
 选择 **验证并保存** 时，MirrorRelay 会先严格验证完整的合并配置，再把覆盖值写入 SQLite。保存的 Web UI 值会在 MirrorRelay 下次启动时覆盖对应 YAML 值，但不会热更新当前进程。您可以直接在 Web UI 点击 **立即重启** / **重启服务** 按钮，或执行页面显示的命令：
 
@@ -162,7 +178,7 @@ sudo systemctl restart mirrorrelay
 
 重启后，页面会自动重连并显示当前进程已匹配保存值。在 **系统** 页面中也提供了 **重启服务** 按钮。**重启后恢复 YAML** 会删除 Web UI 覆盖；需要再次重启，YAML 值才会生效。
 
-Bootstrap、凭据、文件系统和可执行文件位置仍只能通过配置文件管理，避免运行中的服务迁移自身信任边界或数据库。页面会展示完整保护列表，其中包括 Socket 路径/权限、Runtime 路径、入口片段路径、TLS 证书/私钥路径、数据库/缓存/日志路径、初始管理员配置，以及 Managed Upstream Nginx 的 Binary、Prefix、PID、日志、Socket 与 CA Bundle 路径。
+凭据、文件系统和可执行文件位置仍只能通过配置文件管理，避免运行中的服务迁移自身信任边界或数据库。页面会展示完整保护列表，其中包括 Socket 路径/权限、Runtime 路径、入口片段路径、TLS 证书/私钥路径、数据库/缓存/日志路径，以及 Managed Upstream Nginx 的 Binary、Prefix、PID、日志、Socket 与 CA Bundle 路径。
 
 仓库 Desired/Active 变更不属于此页面，仍然会立即验证并激活。
 
@@ -185,9 +201,11 @@ Webhook 区域只配置一个生效的通知目标。MirrorRelay 会根据 URL �
 
 ## 用户与我的账号
 
-用户页面可创建额外管理员。用户名要求 3–64 个非空白字符，密码至少 10 位。当前登录管理员不能删除自己的账户。使用 **我的账号**，输入现有密码与新密码即可修改当前密码。
+管理员可在用户页面创建 Admin、Operator 与 Viewer 账户。用户名要求 3–64 个非空白字符，密码至少 10 位。当前登录用户不能删除自己的账户。使用 **我的账号**，输入现有密码与新密码即可修改当前密码。
 
-本版本所有管理员账户拥有相同 UI 权限。应使用独立账户，让审计记录能够识别操作人，并删除不再需要的账户。
+界面与 API 使用同一套角色策略，并隐藏当前账户无权使用的控件：Admin 管理用户与进程级设置，Operator 管理仓库、集群操作、缓存与验证，Viewer 仅查看运行状态。应使用独立账户，让审计记录能够识别操作人，并删除不再需要的账户。
+
+生成的客户端配置不会关闭 TLS 证书验证。使用私有 PKI 时，应将组织 CA 加入客户端信任库，不要使用不安全的客户端参数。
 
 ## 故障排查
 

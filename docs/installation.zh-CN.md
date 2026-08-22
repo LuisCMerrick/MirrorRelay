@@ -46,30 +46,13 @@ arm64 请改用 `sudo dnf install ./mirrorrelay-<version>.aarch64.rpm`。
 
 DEB 配置使用 `/etc/ssl/certs/ca-certificates.crt`；RPM 配置在 RHEL 系发行版上使用 `/etc/pki/tls/certs/ca-bundle.crt`。使用便携 tar 包时，必须在启动服务前确认当前发行版的 CA Bundle 路径。
 
-安装脚本会创建 `mirrorrelay` 系统账户和私有的运行时、状态、缓存与日志目录，但不会自动启用或启动服务。先创建权限为 `0600` 的 `/etc/mirrorrelay/environment`，再通过编辑器填写，避免密码进入 Shell History：
-
-```sh
-sudo touch /etc/mirrorrelay/environment
-sudo chmod 0600 /etc/mirrorrelay/environment
-sudoedit /etc/mirrorrelay/environment
-```
-
-文件必须包含强 Bootstrap 密码，也可以覆盖初始用户名：
-
-```text
-MIRRORRELAY_ADMIN_USERNAME=admin
-MIRRORRELAY_ADMIN_PASSWORD=replace-with-a-long-random-password
-```
-
-审核 `/etc/mirrorrelay/config.yaml` 后执行：
+安装脚本会创建 `mirrorrelay` 系统账户和私有的运行时、状态、缓存与日志目录，但不会自动启用或启动服务。请先审核 `/etc/mirrorrelay/config.yaml`，尤其是 `security.admin_cidrs`。软件包默认值只允许回环客户端；如需远程管理，请改为精确的管理网络。然后执行：
 
 ```sh
 sudo systemctl enable --now mirrorrelay.service
 ```
 
-首次管理员已创建且登录成功后，从 Environment 文件删除 `MIRRORRELAY_ADMIN_PASSWORD` 并重启 MirrorRelay。后续启动会读取 SQLite 中的已有用户，不再需要 Bootstrap Secret。
-
-HTTPS 入口可用后，请继续阅读 [Web UI 使用指南](web-ui.zh-CN.md)。除回环开发访问外，管理 Session Cookie 要求使用 HTTPS。
+HTTPS 入口可用后，打开管理地址。用户数据库为空时，页面会要求一次性注册初始管理员，不再接受预置密码。注册只能通过配置的管理 Host/Path 与允许的管理员 CIDR 访问；请在向不受信任网络开放管理面之前完成注册。除回环开发访问外，管理 Session Cookie 要求使用 HTTPS。随后请继续阅读 [Web UI 使用指南](web-ui.zh-CN.md)。
 
 systemd Unit 会以 `0750` 创建 `/run/mirrorrelay`，并在 MirrorRelay 重启期间保留该目录，使 `stop_on_mirrorrelay_exit` 为 false 时，与版本绑定的 Managed Upstream Nginx 可继续被新进程接管。该目录仍属于临时运行数据，并会随主机启动时的 `/run` 清理而重建。
 

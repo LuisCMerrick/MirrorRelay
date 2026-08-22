@@ -15,19 +15,18 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 - Development mode listens on `https://127.0.0.1:8443`.
-- Default credentials: `admin` / `adminadmin`.
+- On the first visit, register the initial administrator; there are no default credentials.
 
 ### Option B: Production Package Deployment (DEB / RPM)
 ```bash
 # Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.15_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
 
 # RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.15.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
 
-# Set initial administrator password & enable service:
-echo "MIRRORRELAY_ADMIN_PASSWORD=your_secure_password" | sudo tee /etc/mirrorrelay/environment
-sudo chmod 0600 /etc/mirrorrelay/environment
+# Review security.admin_cidrs, then enable the service:
+sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
 
 # Authorize External Shared Nginx user to access the Unix domain socket:
@@ -42,7 +41,7 @@ Include `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in yo
 1. Open your browser and navigate to:
    - **Production**: `https://mirror.example.com/admin/`
    - **Development**: `https://127.0.0.1:8443/admin/`
-2. Sign in with your administrator credentials.
+2. If the database is empty, register the initial administrator. Otherwise, sign in with an existing account.
 3. You will land on the **Dashboard** displaying live system status and service health.
 
 ---
@@ -72,11 +71,29 @@ In Web UI (**Repositories** -> **Add repository**):
 - **Cache**: Enabled (Default Profile)
 
 #### Configure APT Client
-Edit `/etc/apt/sources.list` on your Debian machines:
+
+Choose exactly one of the following formats. For modern DEB822, create `/etc/apt/sources.list.d/mirrorrelay.sources`:
+
 ```text
-deb https://mirror.example.com/debian bookworm main contrib non-free non-free-firmware
-deb https://mirror.example.com/debian bookworm-updates main contrib non-free non-free-firmware
-deb https://mirror.example.com/debian-security bookworm-security main contrib non-free non-free-firmware
+Types: deb
+URIs: https://mirror.example.com/debian/
+Suites: bookworm bookworm-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://mirror.example.com/debian-security/
+Suites: bookworm-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+```
+
+For the traditional one-line format, create `/etc/apt/sources.list.d/mirrorrelay.list` (or edit `/etc/apt/sources.list`):
+
+```text
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm main contrib non-free non-free-firmware
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian/ bookworm-updates main contrib non-free non-free-firmware
+deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://mirror.example.com/debian-security/ bookworm-security main contrib non-free non-free-firmware
 ```
 Run:
 ```bash

@@ -2,7 +2,7 @@
 // interactive client config playground, configuration previews, cache purge and profile upgrades.
 import { api } from '../api.js';
 import { registerAction } from '../actions.js';
-import { card, kv, showPreview } from '../components.js';
+import { card, disclosure, kv, showPreview } from '../components.js';
 import { $, copyText, esc, notice } from '../dom.js';
 import { bytes, date, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
@@ -23,17 +23,39 @@ function generateClientPlayground(repository, currentBaseUrl) {
   const baseUrl = currentBaseUrl || publicURL(repository);
   let defaultVariant = '';
   let variants = [];
+  let formats = [];
 
   switch (type) {
-    case 'apt':
-      variants = [
-        { id: 'debian-12', label: 'Debian 12 (Bookworm)', suite: 'bookworm', components: 'main contrib non-free-firmware', format: 'list' },
-        { id: 'debian-11', label: 'Debian 11 (Bullseye)', suite: 'bullseye', components: 'main contrib non-free', format: 'list' },
-        { id: 'ubuntu-2404', label: 'Ubuntu 24.04 (Noble)', suite: 'noble', components: 'main restricted universe multiverse', format: 'sources' },
-        { id: 'ubuntu-2204', label: 'Ubuntu 22.04 (Jammy)', suite: 'jammy', components: 'main restricted universe multiverse', format: 'list' }
+    case 'apt': {
+      const profileName = `${repository.profile_name || ''} ${repository.name || ''}`.toLowerCase();
+      const debian = [
+        { id: 'debian-12', label: 'Debian 12 (Bookworm)' },
+        { id: 'debian-11', label: 'Debian 11 (Bullseye)' }
+      ];
+      const debianSecurity = [
+        { id: 'debian-security-12', label: 'Debian 12 Security (Bookworm)' },
+        { id: 'debian-security-11', label: 'Debian 11 Security (Bullseye)' }
+      ];
+      const ubuntu = [
+        { id: 'ubuntu-2404', label: 'Ubuntu 24.04 LTS (Noble)' },
+        { id: 'ubuntu-2204', label: 'Ubuntu 22.04 LTS (Jammy)' }
+      ];
+      if (profileName.includes('debian security') || profileName.includes('debian-security')) {
+        variants = debianSecurity;
+      } else if (profileName.includes('ubuntu')) {
+        variants = ubuntu;
+      } else if (profileName.includes('debian')) {
+        variants = debian;
+      } else {
+        variants = [...debian, ...ubuntu];
+      }
+      formats = [
+        { id: 'deb822', label: L('DEB822 (.sources)'), default: true },
+        { id: 'sources.list', label: L('sources.list one-line format') }
       ];
       defaultVariant = variants[0].id;
       break;
+    }
     case 'rpm':
       variants = [
         { id: 'rocky-9', label: 'Rocky Linux 9', contentdir: 'rocky', releasever: '9' },
@@ -101,39 +123,46 @@ function generateClientPlayground(repository, currentBaseUrl) {
       defaultVariant = variants[0].id;
   }
 
-  return { variants, defaultVariant, baseUrl, slug, type };
+  return { variants, formats, defaultVariant, baseUrl, slug, type };
 }
 
-function computePlaygroundOutput(type, variantId, baseUrl) {
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\"'\"'") + "'";
+}
+
+function computePlaygroundOutput(type, variantId, baseUrl, selectedFormat = '', repositorySlug = '') {
   let cliCmd = '';
   let fileContent = '';
   let fileName = '';
   let filePath = '';
 
   switch (type) {
-    case 'apt':
-      if (variantId === 'ubuntu-2404') {
-        fileName = 'ubuntu.sources';
-        filePath = '/etc/apt/sources.list.d/ubuntu.sources';
-        fileContent = `Types: deb\nURIs: ${baseUrl}/\nSuites: noble noble-updates noble-backports noble-security\nComponents: main restricted universe multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg`;
-        cliCmd = `sudo sed -i.bak 's|http://archive.ubuntu.com/ubuntu|${baseUrl}|g; s|http://security.ubuntu.com/ubuntu|${baseUrl}|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true\nsudo apt update`;
-      } else if (variantId === 'debian-12') {
-        fileName = 'debian.list';
-        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
-        fileContent = `deb ${baseUrl}/ bookworm main contrib non-free non-free-firmware\ndeb ${baseUrl}/ bookworm-updates main contrib non-free non-free-firmware\ndeb ${baseUrl}/ bookworm-backports main contrib non-free non-free-firmware\ndeb ${baseUrl}-security/ bookworm-security main contrib non-free non-free-firmware`;
-        cliCmd = `sudo sed -i.bak 's|http://deb.debian.org/debian|${baseUrl}|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true\nsudo apt update`;
-      } else if (variantId === 'debian-11') {
-        fileName = 'debian.list';
-        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
-        fileContent = `deb ${baseUrl}/ bullseye main contrib non-free\ndeb ${baseUrl}/ bullseye-updates main contrib non-free\ndeb ${baseUrl}/ bullseye-backports main contrib non-free`;
-        cliCmd = `sudo sed -i.bak 's|http://deb.debian.org/debian|${baseUrl}|g' /etc/apt/sources.list 2>/dev/null || true\nsudo apt update`;
+    case 'apt': {
+      const specs = {
+        'debian-12': { suites: ['bookworm', 'bookworm-updates', 'bookworm-backports'], components: 'main contrib non-free non-free-firmware', keyring: '/usr/share/keyrings/debian-archive-keyring.gpg' },
+        'debian-11': { suites: ['bullseye', 'bullseye-updates', 'bullseye-backports'], components: 'main contrib non-free', keyring: '/usr/share/keyrings/debian-archive-keyring.gpg' },
+        'debian-security-12': { suites: ['bookworm-security'], components: 'main contrib non-free non-free-firmware', keyring: '/usr/share/keyrings/debian-archive-keyring.gpg' },
+        'debian-security-11': { suites: ['bullseye-security'], components: 'main contrib non-free', keyring: '/usr/share/keyrings/debian-archive-keyring.gpg' },
+        'ubuntu-2404': { suites: ['noble', 'noble-updates', 'noble-backports', 'noble-security'], components: 'main restricted universe multiverse', keyring: '/usr/share/keyrings/ubuntu-archive-keyring.gpg' },
+        'ubuntu-2204': { suites: ['jammy', 'jammy-updates', 'jammy-backports', 'jammy-security'], components: 'main restricted universe multiverse', keyring: '/usr/share/keyrings/ubuntu-archive-keyring.gpg' }
+      };
+      const spec = specs[variantId] || specs['debian-12'];
+      const repositoryURL = String(baseUrl).replace(/[\r\n]/g, '').replace(/\/+$/, '') + '/';
+      const safeSlug = String(repositorySlug || 'repository').toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+      const fileBase = `mirrorrelay-${safeSlug}`;
+      if (selectedFormat === 'sources.list') {
+        fileName = `${fileBase}.list`;
+        filePath = `/etc/apt/sources.list.d/${fileName}`;
+        fileContent = spec.suites.map(suite => `deb [signed-by=${spec.keyring}] ${repositoryURL} ${suite} ${spec.components}`).join('\n');
       } else {
-        fileName = 'ubuntu.list';
-        filePath = '/etc/apt/sources.list.d/mirrorrelay.list';
-        fileContent = `deb ${baseUrl}/ jammy main restricted universe multiverse\ndeb ${baseUrl}/ jammy-updates main restricted universe multiverse\ndeb ${baseUrl}/ jammy-security main restricted universe multiverse`;
-        cliCmd = `sudo sed -i.bak 's|http://archive.ubuntu.com/ubuntu|${baseUrl}|g' /etc/apt/sources.list 2>/dev/null || true\nsudo apt update`;
+        fileName = `${fileBase}.sources`;
+        filePath = `/etc/apt/sources.list.d/${fileName}`;
+        fileContent = `Types: deb\nURIs: ${repositoryURL}\nSuites: ${spec.suites.join(' ')}\nComponents: ${spec.components}\nSigned-By: ${spec.keyring}`;
       }
+      const quotedLines = fileContent.split('\n').map(shellQuote).join(' ');
+      cliCmd = `printf '%s\\n' ${quotedLines} | sudo tee ${filePath} >/dev/null\nsudo apt update`;
       break;
+    }
 
     case 'rpm':
       fileName = 'mirrorrelay.repo';
@@ -154,7 +183,7 @@ function computePlaygroundOutput(type, variantId, baseUrl) {
     case 'pypi':
       fileName = 'pip.conf';
       filePath = '~/.pip/pip.conf';
-      fileContent = `[global]\nindex-url = ${baseUrl}/simple/\ntrusted-host = ${baseUrl.replace(/^https?:\/\//, '').split(':')[0].split('/')[0]}`;
+      fileContent = `[global]\nindex-url = ${baseUrl}/simple/`;
       if (variantId === 'uv') {
         cliCmd = `export UV_DEFAULT_INDEX="${baseUrl}/simple/"`;
       } else if (variantId === 'poetry') {
@@ -167,7 +196,7 @@ function computePlaygroundOutput(type, variantId, baseUrl) {
     case 'npm':
       fileName = '.npmrc';
       filePath = '~/.npmrc';
-      fileContent = `registry=${baseUrl}/\nstrict-ssl=false`;
+      fileContent = `registry=${baseUrl}/`;
       if (variantId === 'yarn') {
         cliCmd = `yarn config set registry ${baseUrl}/`;
       } else if (variantId === 'pnpm') {
@@ -183,8 +212,7 @@ function computePlaygroundOutput(type, variantId, baseUrl) {
       fileName = 'daemon.json';
       filePath = '/etc/docker/daemon.json';
       fileContent = JSON.stringify({
-        "registry-mirrors": [baseUrl],
-        "insecure-registries": [host]
+        "registry-mirrors": [baseUrl]
       }, null, 2);
       cliCmd = `docker pull ${host}/library/nginx:latest`;
       break;
@@ -254,37 +282,50 @@ function triggerDownload(fileName, content) {
 
 async function showRepository(id) {
   try {
-    const [repositoryState, examples] = await Promise.all([api(`/mirrors/${id}/state`), api(`/mirrors/${id}/client-config`)]);
+    const repositoryState = await api(`/mirrors/${id}/state`);
     const desired = repositoryState.desired, active = repositoryState.active_found ? repositoryState.active : null, statistics = repositoryState.statistics || {};
     const latest = state.profiles.find(profile => profile.name === desired.profile_name && profile.latest_stable);
-    const upgrade = latest && latest.version !== desired.profile_version ? `<button class="btn-primary" data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${icon('zap', 13)} ${L('Preview upgrade to %s', latest.version)}</button>` : '';
+    const canManage = state.role === 'admin' || state.role === 'operator';
+    const upgrade = canManage && latest && latest.version !== desired.profile_version ? `<button class="btn-primary requires-operator" data-action="preview-profile-upgrade" data-id="${id}" data-name="${esc(latest.name)}" data-version="${esc(latest.version)}">${icon('zap', 13)} ${L('Preview upgrade to %s', latest.version)}</button>` : '';
 
     const playgroundData = generateClientPlayground(desired);
     let selectedVariant = playgroundData.defaultVariant;
+    let selectedFormat = playgroundData.formats.find(value => value.default)?.id || playgroundData.formats[0]?.id || '';
 
     const variantOptions = playgroundData.variants.map(v => `<option value="${esc(v.id)}"${v.id === selectedVariant ? ' selected' : ''}>${esc(v.label)}</option>`).join('');
+    const formatOptions = playgroundData.formats.map(format => `<option value="${esc(format.id)}"${format.id === selectedFormat ? ' selected' : ''}>${esc(format.label)}</option>`).join('');
+    const formatControl = formatOptions ? `<label>
+            <span>${L('Configuration format')}</span>
+            <select id="playground-format">${formatOptions}</select>
+          </label>` : '';
+    const trafficDetails = [
+      kv(L('Effective config'), `v${repositoryState.effective_config_version || '—'}`),
+      kv(L('Observed cache traffic'), bytes(statistics.cache_bytes || 0)),
+      kv('2xx / 3xx / 4xx / 5xx', `${number(statistics.status_2xx || 0)} / ${number(statistics.status_3xx || 0)} / ${number(statistics.status_4xx || 0)} / ${number(statistics.status_5xx || 0)}`)
+    ].join('');
 
     $('#detail-title').textContent = desired.name;
     $('#detail-content').innerHTML = `
       <div class="cards detail-cards">
         ${card(L('Desired state'), stateLabel(desired.config_state), desired.config_state === 'active', 'check-circle')}
         ${card(L('Active state'), active ? L('Published') : L('Not active'), Boolean(active), 'server')}
-        ${card(L('Effective config'), `v${repositoryState.effective_config_version || '—'}`, false, 'code')}
         ${card(L('Requests today'), number(statistics.requests || 0), false, 'trend-up')}
         ${card(L('Traffic today'), bytes(statistics.bytes || 0), false, 'ingress')}
-        ${card(L('Observed cache traffic'), bytes(statistics.cache_bytes || 0), false, 'cache')}
         ${card(L('Cache HIT / MISS'), `${number(statistics.cache_hits || 0)} / ${number(statistics.cache_misses || 0)}`, false, 'database')}
-        ${card('2xx / 3xx / 4xx / 5xx', `${number(statistics.status_2xx || 0)} / ${number(statistics.status_3xx || 0)} / ${number(statistics.status_4xx || 0)} / ${number(statistics.status_5xx || 0)}`, false, 'activity')}
         ${card(L('Upstream errors'), number(statistics.upstream_errors || 0), false, 'alert')}
       </div>
+      ${disclosure(L('Traffic details'), trafficDetails, {
+        iconName: 'activity',
+        description: L('Effective version, cache bytes and HTTP status classes')
+      })}
       <div class="toolbar">
         <div class="actions">
           <button data-action="copy-repository-url" data-id="${id}">${icon('copy', 13)} ${L('Copy URL')}</button>
-          <button data-action="edit-mirror-from-detail" data-id="${id}">${icon('edit', 13)} ${L('Edit')}</button>
-          <button data-action="check-mirror" data-id="${id}">${icon('play', 13)} ${L('Test')}</button>
-          <button data-action="preview-repository-config" data-id="${id}">${icon('code', 13)} ${L('Preview config')}</button>
-          <button data-action="view-effective-config">${icon('server', 13)} ${L('Effective config')}</button>
-          <button data-action="purge-repository" data-id="${id}">${icon('database', 13)} ${L('Purge cache')}</button>
+          <button class="requires-operator" data-action="edit-mirror-from-detail" data-id="${id}">${icon('edit', 13)} ${L('Edit')}</button>
+          <button class="requires-operator" data-action="check-mirror" data-id="${id}">${icon('play', 13)} ${L('Test')}</button>
+          <button class="requires-operator" data-action="preview-repository-config" data-id="${id}">${icon('code', 13)} ${L('Preview config')}</button>
+          <button class="requires-operator" data-action="view-effective-config">${icon('server', 13)} ${L('Effective config')}</button>
+          <button class="requires-operator" data-action="purge-repository" data-id="${id}">${icon('database', 13)} ${L('Purge cache')}</button>
           ${upgrade}
         </div>
       </div>
@@ -300,6 +341,7 @@ async function showRepository(id) {
             <span>${L('Client / Environment Variant')}</span>
             <select id="playground-variant">${variantOptions}</select>
           </label>
+          ${formatControl}
           <label>
             <span>${L('Target Base URL')}</span>
             <input id="playground-url" value="${esc(playgroundData.baseUrl)}" />
@@ -328,15 +370,13 @@ async function showRepository(id) {
         </div>
       </div>
 
-      <div class="grid2">
-        <div class="panel">
-          <h2>${icon('settings', 16)} ${L('Desired configuration')}</h2>
-          ${repositorySummary(desired)}
-        </div>
-        <div class="panel">
-          <h2>${icon('server', 16)} ${L('Active routing snapshot')}</h2>
-          ${active ? repositorySummary(active) : `<p class="muted">${L('No active version. The desired configuration may have failed validation or activation.')}</p>`}
-        </div>
+      <div class="disclosure-stack">
+        ${disclosure(L('Desired configuration'), repositorySummary(desired), {iconName: 'settings'})}
+        ${disclosure(
+          L('Active routing snapshot'),
+          active ? repositorySummary(active) : `<p class="muted">${L('No active version. The desired configuration may have failed validation or activation.')}</p>`,
+          {iconName: 'server'}
+        )}
       </div>
       <div class="panel">
         <h2>${icon('globe', 16)} ${L('Upstreams')}</h2>
@@ -371,8 +411,9 @@ async function showRepository(id) {
     // Bind playground interactions
     const updatePlaygroundView = () => {
       const vId = $('#playground-variant')?.value || selectedVariant;
+      const format = $('#playground-format')?.value || selectedFormat;
       const bUrl = $('#playground-url')?.value.trim() || playgroundData.baseUrl;
-      const out = computePlaygroundOutput(desired.type, vId, bUrl);
+      const out = computePlaygroundOutput(desired.type, vId, bUrl, format, desired.slug);
 
       const cliPre = $('#playground-cli-pre');
       const filePre = $('#playground-file-pre');
@@ -401,6 +442,7 @@ async function showRepository(id) {
     };
 
     $('#playground-variant')?.addEventListener('change', updatePlaygroundView);
+    $('#playground-format')?.addEventListener('change', updatePlaygroundView);
     $('#playground-url')?.addEventListener('input', updatePlaygroundView);
     updatePlaygroundView();
 
@@ -431,7 +473,7 @@ registerAction('preview-profile-upgrade', async button => {
   try {
     const value = await api(`/mirrors/${id}/profile/preview`, {method: 'POST', body: JSON.stringify({name, version})});
     const rows = Object.entries(value.diff || {}).map(([field, change]) => `<tr><td>${esc(field)}</td><td><code>${esc(JSON.stringify(change.before))}</code></td><td><code>${esc(JSON.stringify(change.after))}</code></td></tr>`).join('');
-    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade" class="btn-primary">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
+    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade" class="btn-primary requires-operator">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
     $('#apply-profile-upgrade').addEventListener('click', async () => {
       try {
         await api(`/mirrors/${id}/profile/apply`, {method: 'POST', body: JSON.stringify({name, version})});

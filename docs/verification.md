@@ -26,9 +26,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.15 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.15-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.15-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.16 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.16-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.16-source/vendor/modules.txt'
 ```
 
 The vendored source archive is generated from the exact Git commit being released, then `go mod vendor` is run inside that exported tree. The hosted workflow extracts the result and runs `go list -mod=vendor ./...` before adding it to the GitHub Release and `SHA256SUMS`.
@@ -36,6 +36,8 @@ The vendored source archive is generated from the exact Git commit being release
 The amd64 artifact must be ELF x86-64 and the arm64 artifact must be ELF AArch64. Neither may have an ELF interpreter or an unexpected runtime shared-library dependency. A release must not contain source-code comments written in Chinese; Chinese UI strings and Chinese documentation are intentional content, not comments.
 
 Managed Upstream Nginx is compiled in a native-build-platform container with a pinned `xx`/Clang musl cross toolchain. The arm64 job uses QEMU only for the small configure-time runtime probes and the final executable integration checks; compilation itself does not run under emulation.
+
+The pinned OpenSSL build uses `no-quic`, and Managed Upstream Nginx is built without the Nginx HTTP/3 module. This excludes the unused OpenSSL QUIC server implementation from the formal binary while retaining HTTPS upstream support.
 
 The opt-in real-Nginx tests validate generated syntax and stream a 16 MiB response from a private HTTPS origin through the tested Managed Upstream Nginx, including CA trust, certificate-name verification, pinned addressing and response SHA-256 validation.
 
@@ -57,7 +59,7 @@ Use isolated test hostnames and repositories. Record the client version, MirrorR
 | Cache | MISS then HIT, concurrent first fill, global/repository/object logical purge, truthful reclaim states |
 | Configuration | Invalid candidate leaves Active state unchanged; valid change and rollback use graceful reload |
 | Web UI | Every repository action reaches its API, `/` lists enabled visible repositories, and saved Settings apply after restart |
-| Browsable HTML | With the repository switch on, relative/root URLs resolve correctly, in-base links stay in the public namespace, same-origin out-of-base assets use `/_mirrorrelay/upstream/<id>/`, and cross-origin URLs stay unchanged |
+| Browsable HTML | With the repository switch on, relative/root URLs resolve correctly, in-base links stay in the public namespace, same-origin out-of-base assets use upstream-bound HMAC URLs, forged path/query/upstream values fail, mixed data/normal `srcset` candidates work, and cross-origin URLs stay unchanged |
 | Ingress | Multiple existing External Shared Nginx sites continue serving while MirrorRelay is installed/restarted |
 
 ## Large-object and continuity test

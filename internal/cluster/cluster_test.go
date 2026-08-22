@@ -2,9 +2,12 @@ package cluster
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,6 +64,16 @@ func TestCanonicalFingerprintStability(t *testing.T) {
 	if CanonicalFingerprint([]model.Mirror{m4}) == fp1 {
 		t.Fatal("changing package guard policy should alter fingerprint")
 	}
+	custom := []model.CustomConfig{{Name: "headers", Context: "server", Enabled: true, Content: "add_header X-Test one;\r\n"}}
+	customFingerprint := CanonicalClusterConfigFingerprint([]model.Mirror{m1}, custom)
+	custom[0].Content = "add_header X-Test one;\n"
+	if normalized := CanonicalClusterConfigFingerprint([]model.Mirror{m1}, custom); normalized != customFingerprint {
+		t.Fatalf("line-ending-only custom config change altered fingerprint: %q vs %q", customFingerprint, normalized)
+	}
+	custom[0].Content = "add_header X-Test two;\n"
+	if CanonicalClusterConfigFingerprint([]model.Mirror{m1}, custom) == customFingerprint {
+		t.Fatal("changing custom Managed Upstream Nginx configuration should alter fingerprint")
+	}
 }
 
 func TestRouterSelection(t *testing.T) {
@@ -87,8 +100,10 @@ func TestRouterSelection(t *testing.T) {
 			HealthStatus:      "healthy",
 			ConfigStatus:      "match",
 			ConfigFingerprint: fp,
-			ProtocolVersion:   1,
+			ProtocolVersion:   ClusterProtocolVersion,
 			Capabilities:      []string{"apt", "rpm"},
+			RepositoryHealth:  map[string]bool{"debian": true},
+			MutationToken:     "must-not-enter-routing-snapshot",
 		},
 		{
 			ID:                2,
@@ -101,8 +116,9 @@ func TestRouterSelection(t *testing.T) {
 			HealthStatus:      "healthy",
 			ConfigStatus:      "match",
 			ConfigFingerprint: fp,
-			ProtocolVersion:   1,
+			ProtocolVersion:   ClusterProtocolVersion,
 			Capabilities:      []string{"apt", "rpm"},
+			RepositoryHealth:  map[string]bool{"debian": true},
 		},
 		{
 			ID:                3,
@@ -115,11 +131,15 @@ func TestRouterSelection(t *testing.T) {
 			HealthStatus:      "healthy",
 			ConfigStatus:      "match",
 			ConfigFingerprint: fp,
-			ProtocolVersion:   1,
+			ProtocolVersion:   ClusterProtocolVersion,
 			Capabilities:      []string{"apt", "rpm"},
+			RepositoryHealth:  map[string]bool{"debian": true},
 		},
 	}
 	router.SetNodes(nodes)
+	if snapshot := router.Nodes(); snapshot[0].MutationToken != "" {
+		t.Fatal("Router retained an Edge mutation credential")
+	}
 
 	aptRepo := model.Mirror{Slug: "debian", Type: "apt"}
 
@@ -164,12 +184,32 @@ func TestRouterSelection(t *testing.T) {
 	}
 }
 
+func TestRouterUsesPerRepositoryHealth(t *testing.T) {
+	router := NewRouter(config.Default())
+	fingerprint := "sha256:cluster"
+	router.SetNodes([]model.ClusterNode{{
+		ID: 1, Name: "edge", Enabled: true, HealthStatus: "degraded", ConfigStatus: "match",
+		ConfigFingerprint: fingerprint, ProtocolVersion: ClusterProtocolVersion, Capabilities: []string{"apt"},
+		RepositoryHealth: map[string]bool{"debian": false, "ubuntu": true},
+	}})
+	if _, err := router.SelectNode("203.0.113.10", model.Mirror{Slug: "debian", Type: "apt"}, fingerprint); !errors.Is(err, ErrNoAvailableEdge) {
+		t.Fatalf("unhealthy repository remained routable: %v", err)
+	}
+	if node, err := router.SelectNode("203.0.113.10", model.Mirror{Slug: "ubuntu", Type: "apt"}, fingerprint); err != nil || node.ID != 1 {
+		t.Fatalf("healthy repository on degraded Edge was excluded: node=%+v err=%v", node, err)
+	}
+}
+
 type mockStore struct {
+	mu      sync.Mutex
 	nodes   map[int64]model.ClusterNode
 	setting map[string]string
+	persist error
 }
 
 func (m *mockStore) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var list []model.ClusterNode
 	for _, n := range m.nodes {
 		list = append(list, n)
@@ -178,30 +218,34 @@ func (m *mockStore) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, 
 }
 
 func (m *mockStore) GetClusterNode(ctx context.Context, id int64) (model.ClusterNode, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.nodes[id], nil
 }
 
-func (m *mockStore) UpdateClusterNodeStatus(ctx context.Context, id int64, healthStatus, configStatus, fingerprint, version string, protoVer int, caps []string, latencyMS int64, lastError string, lastCheck time.Time) error {
-	n := m.nodes[id]
-	n.HealthStatus = healthStatus
-	n.ConfigStatus = configStatus
-	n.ConfigFingerprint = fingerprint
-	n.Version = version
-	n.ProtocolVersion = protoVer
-	n.Capabilities = caps
-	n.LatencyMS = latencyMS
-	n.LastError = lastError
-	n.LastCheck = lastCheck
-	m.nodes[id] = n
+func (m *mockStore) UpdateClusterNodeStatus(_ context.Context, node model.ClusterNode) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.persist != nil {
+		return m.persist
+	}
+	if _, exists := m.nodes[node.ID]; !exists {
+		return sql.ErrNoRows
+	}
+	m.nodes[node.ID] = node
 	return nil
 }
 
 func (m *mockStore) ClusterSetting(ctx context.Context, key string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	v, ok := m.setting[key]
 	return v, ok, nil
 }
 
 func (m *mockStore) PutClusterSetting(ctx context.Context, key, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.setting == nil {
 		m.setting = make(map[string]string)
 	}
@@ -220,9 +264,11 @@ func (a *mockAudit) Record(user, action, object, detail string, ok bool) {
 func TestCheckerProbeAndDrift(t *testing.T) {
 	// Mock Edge server
 	manifest := model.ClusterManifest{
-		ProtocolVersion:    1,
+		ProtocolVersion:    ClusterProtocolVersion,
 		MirrorRelayVersion: "0.0.1",
 		NodeID:             "tokyo-01",
+		CoordinatorID:      "coordinator-1",
+		CoordinatorEpoch:   "epoch-1",
 		ConfigGeneration:   1,
 		ConfigFingerprint:  "sha256:valid_fingerprint",
 		Capabilities:       []string{"apt", "rpm"},
@@ -230,7 +276,9 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	health := model.ClusterHealth{
 		Status:            "healthy",
 		Version:           "0.0.1",
+		ConfigGeneration:  1,
 		ConfigFingerprint: "sha256:valid_fingerprint",
+		Repositories:      map[string]bool{"debian": true, "rpm": true},
 	}
 
 	edgeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +297,7 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	cfg := config.Default()
 	cfg.Distributed.Enabled = true
 	cfg.Distributed.Role = "coordinator"
+	cfg.Distributed.Node.Name = "coordinator-1"
 	cfg.Distributed.HealthCheck.Interval = time.Second
 	cfg.Distributed.HealthCheck.Timeout = time.Second
 	cfg.Distributed.HealthCheck.HealthyThreshold = 1
@@ -285,7 +334,7 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 	}
 
 	checker := NewChecker(cfg, store, router, metrics, audit)
-	if err := checker.SetClusterFingerprint(context.Background(), "sha256:valid_fingerprint"); err != nil {
+	if err := checker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
 		t.Fatal(err)
 	}
 
@@ -303,12 +352,161 @@ func TestCheckerProbeAndDrift(t *testing.T) {
 
 	// 2. Config drift: modify manifest returned by edge
 	manifest.ConfigFingerprint = "sha256:drifted_fingerprint"
+	health.ConfigFingerprint = manifest.ConfigFingerprint
 	node2, err := checker.CheckNode(context.Background(), node)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if node2.ConfigStatus != "mismatch" {
 		t.Fatalf("expected config status mismatch after drift, got %s", node2.ConfigStatus)
+	}
+
+	// 3. Manifest and health must describe the same atomic snapshot.
+	health.ConfigFingerprint = "sha256:other"
+	inconsistent, err := checker.CheckNode(context.Background(), node2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inconsistent.HealthStatus != "unhealthy" || inconsistent.ConfigStatus != "inconsistent" {
+		t.Fatalf("inconsistent probe response remained routable: %+v", inconsistent)
+	}
+}
+
+func TestCheckerReportsPersistenceFailure(t *testing.T) {
+	store := &mockStore{nodes: map[int64]model.ClusterNode{1: {ID: 1, Name: "edge"}}, persist: errors.New("disk unavailable")}
+	checker := NewChecker(config.Default(), store, nil, nil, nil)
+	manifest := model.ClusterManifest{
+		ProtocolVersion: ClusterProtocolVersion, NodeID: "edge", CoordinatorID: "coordinator", CoordinatorEpoch: "epoch",
+		ConfigGeneration: 1, ConfigFingerprint: "sha256:one", Capabilities: []string{"apt"},
+	}
+	health := model.ClusterHealth{Status: "healthy", ConfigGeneration: 1, ConfigFingerprint: "sha256:one", Repositories: map[string]bool{"debian": true}}
+	if _, err := checker.recordSuccess(context.Background(), store.nodes[1], manifest, health); err == nil {
+		t.Fatal("cluster node status persistence failure was ignored")
+	}
+}
+
+func TestCheckerAppliesRecoveryThresholdToDegradedNode(t *testing.T) {
+	store := &mockStore{nodes: map[int64]model.ClusterNode{
+		1: {ID: 1, Name: "edge", HealthStatus: "unhealthy", ConfigStatus: "match"},
+	}, setting: make(map[string]string)}
+	cfg := config.Default()
+	cfg.Distributed.HealthCheck.HealthyThreshold = 2
+	checker := NewChecker(cfg, store, nil, nil, nil)
+	manifest := model.ClusterManifest{
+		ProtocolVersion: ClusterProtocolVersion, NodeID: "edge", CoordinatorID: "coordinator", CoordinatorEpoch: "epoch",
+		ConfigGeneration: 3, ConfigFingerprint: "sha256:three", Capabilities: []string{"apt"},
+	}
+	if err := checker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
+		t.Fatal(err)
+	}
+	health := model.ClusterHealth{
+		Status: "degraded", ConfigGeneration: 3, ConfigFingerprint: manifest.ConfigFingerprint,
+		Repositories: map[string]bool{"debian": false, "ubuntu": true},
+	}
+	first, err := checker.recordSuccess(context.Background(), store.nodes[1], manifest, health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.HealthStatus != "unhealthy" {
+		t.Fatalf("degraded Edge bypassed recovery threshold after one success: %+v", first)
+	}
+	second, err := checker.recordSuccess(context.Background(), first, manifest, health)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.HealthStatus != "degraded" || !second.RepositoryHealth["ubuntu"] {
+		t.Fatalf("degraded Edge did not recover after threshold: %+v", second)
+	}
+}
+
+func TestCheckerScansNodesWithBoundedConcurrency(t *testing.T) {
+	manifest := model.ClusterManifest{
+		ProtocolVersion: ClusterProtocolVersion, NodeID: "edge", CoordinatorID: "coordinator", CoordinatorEpoch: "epoch",
+		ConfigGeneration: 7, ConfigFingerprint: "sha256:seven", Capabilities: []string{"apt"},
+	}
+	health := model.ClusterHealth{Status: "healthy", ConfigGeneration: 7, ConfigFingerprint: manifest.ConfigFingerprint, Repositories: map[string]bool{"debian": true}}
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		time.Sleep(30 * time.Millisecond)
+		if request.URL.Path == "/api/v1/cluster/manifest" {
+			_ = json.NewEncoder(w).Encode(manifest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(health)
+	}))
+	defer edge.Close()
+
+	cfg := config.Default()
+	cfg.Distributed.AllowHTTP = true
+	cfg.Distributed.HealthCheck.Timeout = 2 * time.Second
+	cfg.Distributed.HealthCheck.HealthyThreshold = 1
+	cfg.Security.AllowPrivateUpstream = true
+	store := &mockStore{nodes: make(map[int64]model.ClusterNode), setting: make(map[string]string)}
+	for id := int64(1); id <= 20; id++ {
+		store.nodes[id] = model.ClusterNode{ID: id, Name: "edge", URL: edge.URL, Enabled: true, HealthStatus: "unknown"}
+	}
+	checker := NewChecker(cfg, store, NewRouter(cfg), nil, nil)
+	if err := checker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if err := checker.CheckAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed >= 800*time.Millisecond {
+		t.Fatalf("20-node health scan was effectively serial: %s", elapsed)
+	}
+}
+
+func TestCheckerDoesNotRestoreNodeDeletedDuringScan(t *testing.T) {
+	manifest := model.ClusterManifest{
+		ProtocolVersion: ClusterProtocolVersion, NodeID: "edge", CoordinatorID: "coordinator", CoordinatorEpoch: "epoch",
+		ConfigGeneration: 4, ConfigFingerprint: "sha256:four", Capabilities: []string{"apt"},
+	}
+	health := model.ClusterHealth{
+		Status: "healthy", ConfigGeneration: 4, ConfigFingerprint: manifest.ConfigFingerprint,
+		Repositories: map[string]bool{"debian": true},
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		once.Do(func() { close(started) })
+		<-release
+		if request.URL.Path == "/api/v1/cluster/manifest" {
+			_ = json.NewEncoder(w).Encode(manifest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(health)
+	}))
+	defer edge.Close()
+
+	cfg := config.Default()
+	cfg.Distributed.AllowHTTP = true
+	cfg.Distributed.HealthCheck.Timeout = 2 * time.Second
+	cfg.Distributed.HealthCheck.HealthyThreshold = 1
+	cfg.Security.AllowPrivateUpstream = true
+	store := &mockStore{
+		nodes:   map[int64]model.ClusterNode{1: {ID: 1, Name: "edge", URL: edge.URL, Enabled: true}},
+		setting: make(map[string]string),
+	}
+	router := NewRouter(cfg)
+	router.SetNodes([]model.ClusterNode{{ID: 1, Name: "edge", Enabled: true}})
+	checker := NewChecker(cfg, store, router, nil, nil)
+	if err := checker.SetExpectedConfiguration(context.Background(), manifest); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- checker.CheckAll(context.Background()) }()
+	<-started
+	store.mu.Lock()
+	delete(store.nodes, 1)
+	store.mu.Unlock()
+	close(release)
+	if err := <-done; err == nil {
+		t.Fatal("scan did not report status persistence for a concurrently deleted node")
+	}
+	if nodes := router.Nodes(); len(nodes) != 0 {
+		t.Fatalf("deleted node was restored from a stale health snapshot: %+v", nodes)
 	}
 }
 
@@ -321,8 +519,9 @@ func TestManifestGeneration(t *testing.T) {
 		{Slug: "debian", Type: "apt", Enabled: true},
 	}
 
-	manifest := GenerateManifest(cfg, repos, build, 5)
-	if manifest.NodeID != "edge-node-1" || manifest.ProtocolVersion != 1 || manifest.ConfigGeneration != 5 {
+	manifest := GenerateManifest(cfg, repos, []model.CustomConfig{}, build, 5, "coordinator-1", "epoch-1")
+	if manifest.NodeID != "edge-node-1" || manifest.ProtocolVersion != ClusterProtocolVersion || manifest.ConfigGeneration != 5 ||
+		manifest.CoordinatorID != "coordinator-1" || manifest.CoordinatorEpoch != "epoch-1" {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
 	if len(manifest.Capabilities) != 2 || manifest.Capabilities[0] != "apt" || manifest.Capabilities[1] != "npm" {

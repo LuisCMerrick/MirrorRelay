@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## v0.0.16
+
+- **Release security baseline**:
+  - Upgraded the Managed Upstream Nginx build from 1.30.2 to 1.30.4, the stable release that fixes CVE-2026-42533, CVE-2026-60005 and CVE-2026-56434; verified the pinned source checksum and official PGP signature before updating the build fixture.
+  - Explicitly disabled the unused OpenSSL QUIC implementation in the static build; Managed Upstream Nginx does not enable HTTP/3, while HTTPS upstream support remains enabled.
+  - Raised the toolchain baseline to Go 1.26.6, updated `golang.org/x/crypto`, `golang.org/x/net` and `golang.org/x/sys`, and added a pinned CI `govulncheck` gate; the release tree reports no reachable or imported-package vulnerabilities.
+  - Aligned the existing development Compose build with Go 1.26.6 and pinned both of its base images by digest; release output remains DEB, RPM and tar.gz only.
+  - Enforced mode `0660` for both Unix sockets across strict configuration validation, examples, documentation and package verification.
+  - Removed generated pip, npm and Docker client settings that bypassed TLS certificate validation; private PKI deployments must install their CA in the client trust store.
+  - Restricted Managed Upstream Nginx validation and access-log data to Admin and Operator roles, made user enumeration Admin-only, and made the UI omit controls and navigation that the current role cannot use.
+  - Bounded cluster-wide configuration sync and cache-purge broadcasts to eight workers, matching the bounded health-scan resource model.
+  - Made cluster manifest, health, synchronization and purge responses reject unknown fields, trailing JSON and bodies over 64 KiB instead of treating an artificial read limit as EOF.
+
+- **First-use administrator registration**:
+  - Replaced startup-time preset administrator credentials with a one-time registration form shown only while the user database is empty; successful registration creates an Admin and an authenticated session.
+  - Made initial creation an atomic conditional database operation, kept it behind the configured administration host/path and CIDR boundary, and changed shipped YAML examples to loopback-only administrator CIDRs.
+  - Removed `admin.initial_username`, `admin.initial_password`, `MIRRORRELAY_ADMIN_USERNAME`, `MIRRORRELAY_ADMIN_PASSWORD` and `MIRRORRELAY_ADMIN_PASSWORD_FILE`; existing configuration must remove those YAML keys before upgrading.
+- **APT client configuration formats**:
+  - Added independent DEB822 (`.sources`) and traditional `sources.list` selectors and downloads for Debian, Debian Security and Ubuntu.
+  - Corrected distribution-specific suites, components and archive keyrings, including preventing doubled Debian Security suite suffixes.
+- **Calmer administration UI hierarchy**:
+  - Flattened the shared visual system, reduced card and panel density, removed decorative glow/hover motion, and standardized keyboard-accessible native disclosure sections across Dashboard, System, Health, Cluster, Cache, Settings, Appearance and repository details.
+  - Reduced the Managed Upstream Nginx first screen to state, uptime and configuration version; moved PID, binary/build identity, architecture, checksum, lifecycle data and compile options into an on-demand technical-details view.
+  - Made effective Managed Upstream Nginx and External Shared Nginx snippets hidden by default, with explicit expand-and-copy controls; effective configuration is now fetched only after an authorized user expands it.
+  - Completed English/Chinese coverage for every statically referenced UI label and added an automated locale-parity/reference test to prevent silent English fallbacks.
+  - Removed the unreferenced legacy monolithic Web UI bundle so the embedded administration surface has one auditable implementation path.
+- **Distributed protocol v2 correctness and trust boundaries**:
+  - Made the complete Active repository plus custom Managed Upstream Nginx snapshot authoritative, unified configuration-generation semantics, and required manifest/health generation and fingerprint agreement before routing.
+  - Persisted Coordinator identity/epoch and accepted Edge generation/fingerprint state, rejecting stale generations, same-generation conflicts and retired-epoch replays while preserving idempotent retries.
+  - Split the shared read-only probe credential from unique per-Edge sync/purge credentials, bound mutations to the configured Coordinator identity/epoch, and stopped returning mutation credentials through the API.
+  - Routed degraded nodes only for explicitly healthy repositories, kept unknown repositories unroutable, made health scans bounded-concurrent, and surfaced status-persistence failures without replacing the last durable routing snapshot.
+- **Browsable HTML auxiliary-route hardening**:
+  - Replaced caller-selectable same-origin root paths with HMAC-scoped URLs bound to the repository, exact selected upstream/Host policy, escaped path and query; signing keys are generated once and persisted in SQLite.
+  - Reworked `srcset` candidate parsing so data URLs retain internal commas while eligible normal candidates are independently rewritten.
+- **Logging and Viewer credential privacy**:
+  - Removed query strings from Managed Upstream Nginx access records and limited the access-log API/UI to Admin and Operator roles.
+  - Omitted registry token endpoints entirely from Viewer responses, including secrets carried in paths, encoded paths, queries or malformed values.
+
 ## v0.0.15
 - **Distributed control-plane correctness and security**:
   - Added authenticated Edge receivers for complete Active configuration snapshots and global/repository/object cache invalidation, with bounded strict JSON, atomic Managed Upstream Nginx activation, verified acknowledgements and accurate partial-failure audit records.

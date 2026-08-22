@@ -4,16 +4,13 @@ services:
     build:
       context: .
       args:
-        VERSION: ${MIRRORRELAY_VERSION:-0.0.1}
+        VERSION: ${MIRRORRELAY_VERSION:-0.0.16}
     restart: unless-stopped
     ulimits:
       nofile:
         soft: 1048576
         hard: 1048576
     environment:
-      MIRRORRELAY_ADMIN_USERNAME: ${MIRRORRELAY_ADMIN_USERNAME:-admin}
-      MIRRORRELAY_ADMIN_PASSWORD: ${MIRRORRELAY_ADMIN_PASSWORD:-}
-      MIRRORRELAY_ADMIN_PASSWORD_FILE: ${MIRRORRELAY_ADMIN_PASSWORD_FILE:-}
       MIRRORRELAY_ADMIN_HOST: ${MIRRORRELAY_ADMIN_HOST:-}
     volumes:
       - ./configs/config.docker.yaml:/etc/mirrorrelay/config.yaml:ro

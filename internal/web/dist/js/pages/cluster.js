@@ -1,11 +1,12 @@
 // Cluster page: overview cards, edge node table and the node dialog.
 import { api } from '../api.js';
 import { registerAction } from '../actions.js';
-import { card } from '../components.js';
+import { card, disclosure, kv } from '../components.js';
 import { $, esc, notice } from '../dom.js';
 import { date } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { state } from '../state.js';
 
 export async function loadCluster() {
   const [overview, nodes] = await Promise.all([
@@ -13,18 +14,21 @@ export async function loadCluster() {
     api('/cluster/nodes').catch(() => [])
   ]);
 
-  const overviewHtml = `<div class="cards">
-    ${card(L('Cluster role'), overview.role || 'standalone', false, 'cluster')}
-    ${card(L('Cluster status'), overview.enabled ? L('Enabled') : L('Disabled'), overview.enabled, 'check-circle')}
-    ${card(L('Total nodes'), overview.total_nodes || 0, false, 'layers')}
-    ${card(L('Healthy nodes'), overview.healthy_nodes || 0, (overview.healthy_nodes || 0) > 0, 'activity')}
+  const overviewDetails = [
+    kv(L('Cluster role'), overview.role || 'standalone'),
+    kv(L('Routing mode'), overview.routing_mode || 'hybrid'),
+    kv(L('Cluster Fingerprint'), overview.cluster_fingerprint || L('Not initialized'))
+  ].join('');
+  const canManage = state.role === 'admin' || state.role === 'operator';
+  const overviewHtml = `<div class="cards compact-cards">
+    ${card(L('Cluster status'), overview.enabled ? L('Enabled') : L('Disabled'), overview.enabled, 'cluster', overview.role || 'standalone')}
+    ${card(L('Healthy nodes'), `${overview.healthy_nodes || 0} / ${overview.total_nodes || 0}`, (overview.healthy_nodes || 0) > 0, 'activity', L('healthy / total'))}
     ${card(L('Routable nodes'), overview.routable_nodes || 0, (overview.routable_nodes || 0) > 0, 'network')}
-    ${card(L('Routing mode'), overview.routing_mode || 'hybrid', false, 'settings')}
   </div>
-  <div class="panel">
-    <h2>${icon('shield', 18)} ${L('Cluster Fingerprint')}</h2>
-    <p><code>${esc(overview.cluster_fingerprint || L('Not initialized'))}</code></p>
-  </div>`;
+  ${disclosure(L('Cluster configuration details'), overviewDetails, {
+    iconName: 'shield',
+    description: L('Role, routing mode and active fingerprint')
+  })}`;
 
   const nodeRows = (nodes || []).map(node => {
     const isHealthy = node.health_status === 'healthy';
@@ -38,15 +42,15 @@ export async function loadCluster() {
       <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(node.config_status || 'unknown')}</span></td>
       <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
-      <td>
+      ${canManage ? `<td>
         <div class="actions">
-          <button class="small secondary" data-action="sync-node" data-id="${node.id}">${icon('refresh', 12)} ${L('Sync')}</button>
-          <button class="small secondary" data-action="check-node" data-id="${node.id}">${icon('play', 12)} ${L('Check')}</button>
-          <button class="small secondary" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
-          <button class="small secondary" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
-          <button class="small danger" data-action="delete-node" data-id="${node.id}">${icon('trash', 12)}</button>
+          <button class="small secondary requires-operator" data-action="sync-node" data-id="${node.id}">${icon('refresh', 12)} ${L('Sync')}</button>
+          <button class="small secondary requires-operator" data-action="check-node" data-id="${node.id}">${icon('play', 12)} ${L('Check')}</button>
+          <button class="small secondary requires-operator" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
+          <button class="small secondary requires-operator" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
+          <button class="small danger requires-operator" data-action="delete-node" data-id="${node.id}" title="${L('Delete')}" aria-label="${L('Delete')}">${icon('trash', 12)}</button>
         </div>
-      </td>
+      </td>` : ''}
     </tr>`;
   }).join('');
 
@@ -61,8 +65,8 @@ export async function loadCluster() {
       <th>${L('Config')}</th>
       <th>${L('Fingerprint')}</th>
       <th>${L('Last check')}</th>
-      <th>${L('Actions')}</th>
-    </tr></thead><tbody>${nodeRows || `<tr><td colspan="9" class="empty">${L('No edge nodes registered yet.')}</td></tr>`}</tbody></table></div>
+      ${canManage ? `<th>${L('Actions')}</th>` : ''}
+    </tr></thead><tbody>${nodeRows || `<tr><td colspan="${canManage ? 9 : 8}" class="empty">${L('No edge nodes registered yet.')}</td></tr>`}</tbody></table></div>
   </div>`;
 
   $('#cluster-overview').innerHTML = overviewHtml;
@@ -74,6 +78,8 @@ export function initCluster() {
     $('#node-form').reset();
     $('#node-id').value = '';
     $('#node-form-title').textContent = L('Add edge node');
+    $('#node-mutation-token').required = true;
+    $('#node-mutation-token').placeholder = L('Required for a new Edge');
     $('#node-enabled').checked = true;
     $('#node-priority').value = '100';
     $('#node-weight').value = '100';
@@ -102,6 +108,7 @@ export function initCluster() {
     const payload = {
       name: $('#node-name').value.trim(),
       url: $('#node-url').value.trim(),
+      mutation_token: $('#node-mutation-token').value,
       region: $('#node-region').value.trim(),
       country: $('#node-country').value.trim().toUpperCase(),
       priority: Number($('#node-priority').value) || 100,
@@ -167,6 +174,9 @@ registerAction('edit-node', async button => {
     $('#node-id').value = node.id;
     $('#node-name').value = node.name || '';
     $('#node-url').value = node.url || '';
+    $('#node-mutation-token').value = '';
+    $('#node-mutation-token').required = false;
+    $('#node-mutation-token').placeholder = L('Leave blank to keep the current token');
     $('#node-region').value = node.region || '';
     $('#node-country').value = node.country || '';
     $('#node-priority').value = node.priority || 100;

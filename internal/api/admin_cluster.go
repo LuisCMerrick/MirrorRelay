@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -13,37 +14,66 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
-func (s *Server) verifyClusterToken(r *http.Request) bool {
-	if s.cfg.Distributed.Token == "" {
-		return false
-	}
-	hdr := r.Header.Get("X-MirrorRelay-Cluster-Token")
-	if hdr == "" {
-		authHdr := r.Header.Get("Authorization")
-		if strings.HasPrefix(authHdr, "Bearer ") {
-			hdr = strings.TrimPrefix(authHdr, "Bearer ")
+func clusterRequestToken(r *http.Request, headerName string) string {
+	value := r.Header.Get(headerName)
+	if value == "" {
+		authorization := r.Header.Get("Authorization")
+		if strings.HasPrefix(authorization, "Bearer ") {
+			value = strings.TrimPrefix(authorization, "Bearer ")
 		}
 	}
-	return subtle.ConstantTimeCompare([]byte(hdr), []byte(s.cfg.Distributed.Token)) == 1
+	return value
+}
+
+func verifyClusterCredential(r *http.Request, headerName, expected string) bool {
+	if expected == "" {
+		return false
+	}
+	provided := clusterRequestToken(r, headerName)
+	return len(provided) == len(expected) && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+}
+
+func (s *Server) verifyClusterProbeToken(r *http.Request) bool {
+	return verifyClusterCredential(r, "X-MirrorRelay-Cluster-Token", s.cfg.Distributed.Token)
+}
+
+func (s *Server) verifyClusterMutationToken(r *http.Request) bool {
+	return verifyClusterCredential(r, "X-MirrorRelay-Cluster-Mutation-Token", s.cfg.Distributed.MutationToken)
 }
 
 func (s *Server) clusterHealth() model.ClusterHealth {
 	hStatus := "healthy"
 	repoHealth := make(map[string]bool)
-	for _, m := range s.registry.List() {
+	repositories, custom, available := s.activeClusterConfiguration()
+	if !available {
+		hStatus = "degraded"
+		repositories = s.registry.List()
+		custom = []model.CustomConfig{}
+	}
+	healthRepositories := repositories
+	if s.registry != nil {
+		healthRepositories = s.registry.List()
+	}
+	for _, m := range healthRepositories {
 		if !m.Enabled {
 			continue
 		}
-		viable := repositoryHealthState(m) != "unhealthy"
+		healthState := repositoryHealthState(m)
+		// A repository with checks enabled must complete a successful probe
+		// before it is advertised as routable. Explicitly disabled health
+		// checks remain an administrator-approved viable state.
+		viable := healthState == "healthy" || healthState == "disabled"
 		repoHealth[m.Slug] = viable
 		if !viable {
 			hStatus = "degraded"
 		}
 	}
+	manifest := s.clusterManifestForConfiguration(repositories, custom)
 	return model.ClusterHealth{
 		Status:            hStatus,
 		Version:           s.build.Version,
-		ConfigFingerprint: cluster.CanonicalFingerprint(s.registry.List()),
+		ConfigGeneration:  manifest.ConfigGeneration,
+		ConfigFingerprint: manifest.ConfigFingerprint,
 		Repositories:      repoHealth,
 	}
 }
@@ -55,14 +85,23 @@ func (s *Server) clusterOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	var total, healthy, routable int
 	if s.store != nil {
-		nodes, _ := s.store.ListClusterNodes(r.Context())
+		nodes, err := s.store.ListClusterNodes(r.Context())
+		if err != nil {
+			writeInternal(w, err)
+			return
+		}
 		total = len(nodes)
 		for _, n := range nodes {
 			if n.HealthStatus == "healthy" {
 				healthy++
 			}
-			isMatch := (fp == "" || n.ConfigFingerprint == fp) && n.ConfigStatus != "mismatch" && n.ConfigStatus != "drifted"
-			if n.Enabled && n.HealthStatus == "healthy" && isMatch && (n.ProtocolVersion == 0 || n.ProtocolVersion == cluster.ClusterProtocolVersion) {
+			isMatch := fp != "" && n.ConfigFingerprint == fp && n.ConfigStatus == "match"
+			hasHealthyRepository := false
+			for _, healthy := range n.RepositoryHealth {
+				hasHealthyRepository = hasHealthyRepository || healthy
+			}
+			if n.Enabled && (n.HealthStatus == "healthy" || n.HealthStatus == "degraded") && isMatch &&
+				n.ProtocolVersion == cluster.ClusterProtocolVersion && hasHealthyRepository {
 				routable++
 			}
 		}
@@ -88,7 +127,44 @@ func (s *Server) listClusterNodes(w http.ResponseWriter, r *http.Request) {
 	if nodes == nil {
 		nodes = []model.ClusterNode{}
 	}
+	for index := range nodes {
+		nodes[index] = clusterNodeForResponse(nodes[index])
+	}
 	writeJSON(w, http.StatusOK, nodes)
+}
+
+func clusterNodeForResponse(node model.ClusterNode) model.ClusterNode {
+	node.MutationTokenConfigured = node.MutationToken != ""
+	node.MutationToken = ""
+	return node
+}
+
+func (s *Server) refreshClusterRouter(ctx context.Context) error {
+	if s.clusterRouter == nil || s.store == nil {
+		return nil
+	}
+	nodes, err := s.store.ListClusterNodes(ctx)
+	if err != nil {
+		return err
+	}
+	s.clusterRouter.SetNodes(nodes)
+	return nil
+}
+
+func (s *Server) validateClusterMutationToken(ctx context.Context, excludedNodeID int64, token string) (string, error) {
+	if token == s.cfg.Distributed.Token {
+		return "edge mutation token must differ from the cluster probe credential", nil
+	}
+	nodes, err := s.store.ListClusterNodes(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, node := range nodes {
+		if node.ID != excludedNodeID && node.MutationToken == token {
+			return "edge mutation token is already assigned to another node", nil
+		}
+	}
+	return "", nil
 }
 
 func (s *Server) createClusterNode(w http.ResponseWriter, r *http.Request, session auth.Session) {
@@ -101,6 +177,18 @@ func (s *Server) createClusterNode(w http.ResponseWriter, r *http.Request, sessi
 	in.Region = strings.TrimSpace(in.Region)
 	if in.Name == "" || in.URL == "" || in.Region == "" {
 		writeError(w, http.StatusBadRequest, "node name, url, and region are required")
+		return
+	}
+	if strings.TrimSpace(in.MutationToken) == "" {
+		writeError(w, http.StatusBadRequest, "a unique edge mutation token is required")
+		return
+	}
+	in.MutationToken = strings.TrimSpace(in.MutationToken)
+	if message, err := s.validateClusterMutationToken(r.Context(), 0, in.MutationToken); err != nil {
+		writeInternal(w, err)
+		return
+	} else if message != "" {
+		writeError(w, http.StatusBadRequest, message)
 		return
 	}
 	canonicalURL, err := cluster.ValidateNodeURL(r.Context(), s.cfg, in.URL)
@@ -128,15 +216,20 @@ func (s *Server) createClusterNode(w http.ResponseWriter, r *http.Request, sessi
 	}
 
 	if s.clusterChecker != nil {
-		probed, _ := s.clusterChecker.CheckNode(r.Context(), created)
+		probed, checkErr := s.clusterChecker.CheckNode(r.Context(), created)
 		created = probed
-		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
-			s.clusterRouter.SetNodes(all)
+		if checkErr != nil {
+			writeInternal(w, checkErr)
+			return
 		}
+	}
+	if err := s.refreshClusterRouter(r.Context()); err != nil {
+		writeInternal(w, err)
+		return
 	}
 
 	_ = s.audit(r, session.Username, "create_cluster_node", "cluster_node", created.Name, true)
-	writeJSON(w, http.StatusCreated, created)
+	writeJSON(w, http.StatusCreated, clusterNodeForResponse(created))
 }
 
 func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, session auth.Session, subpath string) {
@@ -187,20 +280,37 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 		if in.Weight <= 0 {
 			in.Weight = node.Weight
 		}
+		if strings.TrimSpace(in.MutationToken) == "" {
+			in.MutationToken = node.MutationToken
+		} else {
+			in.MutationToken = strings.TrimSpace(in.MutationToken)
+		}
+		if message, err := s.validateClusterMutationToken(r.Context(), id, in.MutationToken); err != nil {
+			writeInternal(w, err)
+			return
+		} else if message != "" {
+			writeError(w, http.StatusBadRequest, message)
+			return
+		}
 		updated, err := s.store.UpdateClusterNode(r.Context(), in)
 		if err != nil {
 			writeInternal(w, err)
 			return
 		}
 		if s.clusterChecker != nil {
-			probed, _ := s.clusterChecker.CheckNode(r.Context(), updated)
+			probed, checkErr := s.clusterChecker.CheckNode(r.Context(), updated)
 			updated = probed
-			if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
-				s.clusterRouter.SetNodes(all)
+			if checkErr != nil {
+				writeInternal(w, checkErr)
+				return
 			}
 		}
+		if err := s.refreshClusterRouter(r.Context()); err != nil {
+			writeInternal(w, err)
+			return
+		}
 		_ = s.audit(r, session.Username, "update_cluster_node", "cluster_node", updated.Name, true)
-		writeJSON(w, http.StatusOK, updated)
+		writeJSON(w, http.StatusOK, clusterNodeForResponse(updated))
 		return
 	}
 
@@ -209,8 +319,9 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 			writeInternal(w, err)
 			return
 		}
-		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
-			s.clusterRouter.SetNodes(all)
+		if err := s.refreshClusterRouter(r.Context()); err != nil {
+			writeInternal(w, err)
+			return
 		}
 		_ = s.audit(r, session.Username, "delete_cluster_node", "cluster_node", node.Name, true)
 		w.WriteHeader(http.StatusNoContent)
@@ -219,13 +330,18 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 
 	if len(parts) == 2 && parts[1] == "check" && r.Method == http.MethodPost {
 		if s.clusterChecker != nil {
-			probed, _ := s.clusterChecker.CheckNode(r.Context(), node)
+			probed, checkErr := s.clusterChecker.CheckNode(r.Context(), node)
 			node = probed
-			if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
-				s.clusterRouter.SetNodes(all)
+			if checkErr != nil {
+				writeInternal(w, checkErr)
+				return
 			}
 		}
-		writeJSON(w, http.StatusOK, node)
+		if err := s.refreshClusterRouter(r.Context()); err != nil {
+			writeInternal(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, clusterNodeForResponse(node))
 		return
 	}
 
@@ -240,6 +356,12 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 			return
 		}
 		res := s.clusterSync.SyncNode(r.Context(), node, payload)
+		if res.Success {
+			if err := s.refreshClusterRouter(r.Context()); err != nil {
+				writeInternal(w, err)
+				return
+			}
+		}
 		detail := node.Name
 		if res.Error != "" {
 			detail += ": " + res.Error
@@ -255,8 +377,9 @@ func (s *Server) clusterNodeAction(w http.ResponseWriter, r *http.Request, sessi
 			writeInternal(w, err)
 			return
 		}
-		if all, err := s.store.ListClusterNodes(r.Context()); err == nil && s.clusterRouter != nil {
-			s.clusterRouter.SetNodes(all)
+		if err := s.refreshClusterRouter(r.Context()); err != nil {
+			writeInternal(w, err)
+			return
 		}
 		_ = s.audit(r, session.Username, parts[1]+"_cluster_node", "cluster_node", node.Name, true)
 		writeJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
@@ -277,6 +400,11 @@ func (s *Server) syncAllClusterNodes(w http.ResponseWriter, r *http.Request, ses
 		return
 	}
 	results := s.clusterSync.BroadcastSync(r.Context(), payload)
+	if err := s.refreshClusterRouter(r.Context()); err != nil {
+		_ = s.audit(r, session.Username, "broadcast_cluster_sync", "cluster", err.Error(), false)
+		writeInternal(w, err)
+		return
+	}
 	succeeded := 0
 	failures := make([]string, 0)
 	for _, result := range results {
@@ -297,8 +425,13 @@ func (s *Server) syncAllClusterNodes(w http.ResponseWriter, r *http.Request, ses
 
 func (s *Server) resetClusterFingerprint(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	if s.clusterChecker != nil {
-		fingerprint := cluster.CanonicalFingerprint(s.registry.List())
-		if err := s.clusterChecker.SetClusterFingerprint(r.Context(), fingerprint); err != nil {
+		repositories, custom, available := s.activeClusterConfiguration()
+		if !available {
+			writeError(w, http.StatusConflict, "active configuration snapshot is unavailable")
+			return
+		}
+		manifest := s.clusterManifestForConfiguration(repositories, custom)
+		if err := s.clusterChecker.SetExpectedConfiguration(r.Context(), manifest); err != nil {
 			_ = s.audit(r, session.Username, "reset_cluster_fingerprint", "cluster", err.Error(), false)
 			writeInternal(w, err)
 			return
@@ -325,6 +458,7 @@ func (s *Server) clusterSyncPayload() (model.ClusterSyncRequest, error) {
 	if generation <= 0 {
 		generation = 1
 	}
-	manifest := cluster.GenerateManifest(s.cfg, repositories, s.build, generation)
+	manifest := cluster.GenerateManifest(s.cfg, repositories, custom, s.build, generation,
+		strings.TrimSpace(s.cfg.Distributed.Node.Name), s.clusterEpoch)
 	return model.ClusterSyncRequest{Manifest: manifest, Repositories: repositories, CustomConfigs: custom}, nil
 }

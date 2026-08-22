@@ -30,11 +30,12 @@ When a repository or redirect target is evaluated:
 
 ## 3. Authentication & Session Management
 
-- **Password Hashing**: Administrative passwords are hashed using **Argon2id** (memory: 64 MB, iterations: 3, parallelism: 2).
+- **First-Use Enrollment**: No default or environment-provisioned administrator password exists. While the user table is empty, one registration may create the initial Admin through the configured administration host/path and CIDR boundary. The database condition is atomic, so only one concurrent request can succeed.
+- **Password Hashing**: Administrative passwords are hashed using **Argon2id** (memory: 64 MB, iterations: 3, up to 4 threads).
 - **Concurrency Rate Limiting**: Password verification is protected by a concurrency semaphore to mitigate CPU-exhaustion DoS attacks.
 - **Session Tokens**: 256-bit cryptographically secure random tokens (`crypto/rand`). Stored in SQLite as SHA-256 hashes (plaintext tokens are never stored in the database).
 - **Cookie Security**: Session cookies enforce `HttpOnly`, `Secure`, and `SameSite=Strict`.
-- **CSRF Protection**: All state-modifying requests (`POST`, `PUT`, `DELETE`) require a valid session CSRF token passed via `X-CSRF-Token` verified in constant time (`crypto/subtle.ConstantTimeCompare`).
+- **CSRF Protection**: Authenticated state-modifying requests (`POST`, `PUT`, `DELETE`) require a valid session CSRF token passed via `X-CSRF-Token` and verified in constant time (`crypto/subtle.ConstantTimeCompare`). The unauthenticated one-time enrollment request is instead constrained by the empty-database condition, atomic insertion and administration network boundary.
 
 ---
 
@@ -42,6 +43,7 @@ When a repository or redirect target is evaluated:
 
 - **SQL Injection**: 100% of SQLite database queries in `internal/database/store.go` use parameterized `?` placeholders with `PRAGMA foreign_keys = ON`.
 - **Path Traversal**: Repository paths are sanitized to reject NUL (`\0`), carriage return, newline, backslashes, directory traversal (`.` / `..`), and encoded URL separators (`%2f`, `%5c`). Cache storage keys use SHA-256 hashes of cleaned canonical paths.
+- **Signed Auxiliary HTML Routes**: Same-origin targets outside a repository base are exposed only through HMAC-scoped URLs bound to the repository, exact selected upstream/Host policy, escaped path, and query. A client-modified upstream, path, or query is rejected before the request reaches Managed Upstream Nginx.
 - **JSON Deserialization**: All API request parsers enforce `DisallowUnknownFields()` and `http.MaxBytesReader` limits (1 MB maximum).
 
 ---
@@ -91,7 +93,9 @@ MirrorRelay includes built-in supply chain poisoning and dependency confusion de
 MirrorRelay supports a three-tier permission model:
 - **`admin` (Administrator)**: Full operational control, user management, system settings override, service restart, and webhook test execution.
 - **`operator` (Operator)**: Repository configuration CRUD, cache purge, health check triggering, and Nginx reload/rollback. Cannot manage user accounts or alter system-level settings.
-- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, logs, redacted mirror details, and health status. Static authentication/cookie/token headers and credential-bearing token URLs are removed from viewer responses. Effective, per-repository and custom Managed Upstream Nginx configurations require `admin` or `operator`. All mutating API calls are denied with HTTP `403 Forbidden`.
+- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, the audit log, redacted mirror details, and health status. The token endpoint is omitted entirely, and static authentication/cookie/token headers are removed from viewer responses. Managed Upstream Nginx access records and effective/per-repository/custom configurations require `admin` or `operator`. All mutating API calls are denied with HTTP `403 Forbidden`.
+
+Managed Upstream Nginx records `$uri` rather than `$request_uri`, so access logs never retain query values such as tokens or signatures. The management API applies the same Admin/Operator boundary to those records.
 
 ---
 

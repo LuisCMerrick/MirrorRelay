@@ -34,7 +34,7 @@ func mirrorForRole(value model.Mirror, role string) model.Mirror {
 	for index := range value.Upstreams {
 		value.Upstreams[index].URL = redactURLQuery(value.Upstreams[index].URL)
 	}
-	value.TokenUpstream = redactURLQuery(value.TokenUpstream)
+	value.TokenUpstream = ""
 	return value
 }
 

@@ -69,7 +69,7 @@ The Go process (`/usr/bin/mirrorrelay`) owns all business logic, policy enforcem
 ### B. Bounded Metadata & HTML URL Rewriting
 For repository types that embed upstream URLs inside response payloads (such as PyPI Simple HTML index pages or browsable package trees):
 - Go buffers only bounded metadata (enforcing strict byte limits, e.g. 10 MB maximum).
-- Rewrites internal upstream links to point back to MirrorRelay's public namespace or scoped upstream endpoints (`/_mirrorrelay/upstream/<id>/`).
+- Rewrites internal upstream links to point back to MirrorRelay's public namespace or HMAC-scoped endpoints bound to the selected upstream, path, and query (`/_mirrorrelay/upstream/<repository-id>/<upstream-id>/<signature>/<target>`).
 - Large binary artifacts (e.g. `.deb`, `.rpm`, `.whl`, `.tar.gz`, Docker layer blobs) are streamed directly with fixed-size buffers, never buffered into Go memory.
 
 ### C. Token Broker & Redirect Broker

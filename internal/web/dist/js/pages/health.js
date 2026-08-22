@@ -1,6 +1,7 @@
-// Health page: component status cards and per-repository health.
+// Health page: primary service health first, with component endpoints disclosed
+// separately from the per-repository health list.
 import { api } from '../api.js';
-import { card } from '../components.js';
+import { card, disclosure, kv } from '../components.js';
 import { $, esc } from '../dom.js';
 import { stateLabel } from '../format.js';
 import { icon } from '../icons.js';
@@ -8,22 +9,35 @@ import { L } from '../i18n.js';
 
 export async function loadHealth() {
   const health = await api('/health');
+  const repositories = health.repositories || [];
+  const enabledRepositories = repositories.filter(repository => repository.health_state !== 'disabled');
+  const healthyRepositories = enabledRepositories.filter(repository => repository.health_state === 'healthy').length;
+  const repositoryHealthOK = healthyRepositories === enabledRepositories.length;
   const endpointLabel = `${health.upstream_network || 'unix'} · ${health.upstream_address || ''}`;
   const frontendLabel = `${health.frontend_network || 'unix'} · ${health.frontend_address || ''}`;
+  const nginxRunning = health.managed_upstream_nginx === 'running';
+
+  const componentDetails = [
+    kv(L('Frontend endpoint'), `${stateLabel(health.frontend_endpoint || health.frontend_socket)} · ${frontendLabel}`),
+    kv(L('External Shared Nginx'), stateLabel(health.external_shared_nginx)),
+    kv('Go Router', stateLabel(health.go_router)),
+    kv(L('Upstream endpoint'), `${stateLabel(health.upstream_endpoint || health.upstream_socket)} · ${endpointLabel}`)
+  ].join('');
 
   $('#page-health').innerHTML = `
-    <div class="cards">
-      ${card('MirrorRelay', health.mirrorrelay, health.mirrorrelay === 'healthy', 'activity')}
-      ${card(`${L('Frontend endpoint')}`, health.frontend_endpoint || health.frontend_socket, health.frontend_endpoint === 'healthy', 'network', frontendLabel)}
-      ${card(L('External Shared Nginx'), health.external_shared_nginx, health.external_shared_nginx === 'healthy', 'server')}
-      ${card('Go Router', health.go_router, health.go_router === 'healthy', 'layers')}
-      ${card(L('Managed Upstream Nginx'), stateLabel(health.managed_upstream_nginx), health.managed_upstream_nginx === 'running', 'server')}
-      ${card(`${L('Upstream endpoint')}`, health.upstream_endpoint || health.upstream_socket, health.upstream_endpoint === 'healthy', 'globe', endpointLabel)}
+    <div class="cards compact-cards">
+      ${card('MirrorRelay', stateLabel(health.mirrorrelay), health.mirrorrelay === 'healthy', 'activity')}
+      ${card(L('Managed Upstream Nginx'), stateLabel(health.managed_upstream_nginx), nginxRunning, 'server')}
+      ${card(L('Repositories'), `${healthyRepositories} / ${enabledRepositories.length}`, repositoryHealthOK, 'layers', L('healthy / enabled'))}
     </div>
+    ${disclosure(L('Component and endpoint details'), componentDetails, {
+      iconName: 'network',
+      description: L('Local transports and request-path component health')
+    })}
     <div class="panel">
       <h2>${icon('layers', 18)} ${L('Repositories')}</h2>
       <div class="health-repo-list">
-        ${(health.repositories || []).map(repository => {
+        ${repositories.map(repository => {
           const isHealthy = repository.health_state === 'healthy';
           const isDisabled = repository.health_state === 'disabled';
           return `<div class="kv">
@@ -33,7 +47,7 @@ export async function loadHealth() {
               ${esc(stateLabel(repository.health_state))}
             </span>
           </div>`;
-        }).join('')}
+        }).join('') || `<p class="muted">${L('No repositories yet.')}</p>`}
       </div>
     </div>`;
 }
