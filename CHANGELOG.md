@@ -22,6 +22,10 @@
     binaries already verified by its architecture package job, byte-verifies
     the published arm64 filesystem, and runs both images on native hosted
     runners. Both target binaries are cross-compiled without QEMU.
+  - Made the Nginx configure phase genuinely cross-compilation-safe by using
+    explicit Linux/musl runtime-probe results and target-compiler checks for
+    sizes, endianness and `sys_nerr`; the release build no longer executes
+    target binaries and records the patch-set checksum in `BUILD-INFO`.
 
 ## v0.0.16
 

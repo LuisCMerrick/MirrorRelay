@@ -21,8 +21,12 @@ The exact source URLs and SHA-256 values are pinned in
 ```
 
 The build definitions cover `linux/amd64` and `linux/arm64`. Hosted release jobs
-use a pinned xx/Clang musl cross toolchain and emit both architectures. Arm64
-compilation runs natively on the build platform; QEMU is limited to configure
-probes and executable tests. The checked-in `sbin/nginx` file is an amd64
-development and CI fixture; the release pipeline always rebuilds and tests the
-version-bound binary for every enabled architecture.
+use a pinned xx/Clang musl cross toolchain and emit both architectures. Nginx's
+runtime configure probes are replaced by explicit cross-build results, while
+type sizes, byte order and `sys_nerr` are determined at compile time. Neither
+the build nor its configure phase uses QEMU or another target emulator. The
+exact patch-set checksum is recorded in `BUILD-INFO`; the patch files preserve
+their nginx-devel/Buildroot contributor attribution. The checked-in
+`sbin/nginx` file is an amd64 development and CI fixture; the release pipeline
+always rebuilds and tests the version-bound binary for every enabled
+architecture.

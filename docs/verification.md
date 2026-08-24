@@ -68,7 +68,7 @@ docker run --rm --platform linux/arm64 \
 
 The amd64 artifact must be ELF x86-64 and the arm64 artifact must be ELF AArch64. Neither may have an ELF interpreter or an unexpected runtime shared-library dependency. A release must not contain source-code comments written in Chinese; Chinese UI strings and Chinese documentation are intentional content, not comments.
 
-Managed Upstream Nginx is compiled on the amd64 build runner with a pinned `xx`/Clang musl cross toolchain for both targets. The exact arm64 package binary is then exercised on GitHub's native `ubuntu-24.04-arm` runner. Neither compilation, integration testing nor container-image assembly uses QEMU or other target emulation.
+Managed Upstream Nginx is compiled on the amd64 build runner with a pinned `xx`/Clang musl cross toolchain for both targets. Nginx runtime configure probes are supplied as explicit Linux/musl cross-build results; type sizes, endianness and `sys_nerr` are derived with target-compiler checks. The patch-set checksum is retained in `BUILD-INFO`. The exact arm64 package binary is then exercised on GitHub's native `ubuntu-24.04-arm` runner. Neither configuration, compilation, integration testing nor container-image assembly uses QEMU or other target emulation.
 
 The pinned OpenSSL build uses `no-quic`, and Managed Upstream Nginx is built without the Nginx HTTP/3 module. This excludes the unused OpenSSL QUIC server implementation from the formal binary while retaining HTTPS upstream support.
 

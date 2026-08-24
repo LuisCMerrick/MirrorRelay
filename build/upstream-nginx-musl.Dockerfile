@@ -21,7 +21,7 @@ ENV TZ=UTC
 COPY --from=xx / /
 COPY --chmod=0755 build/target-uname.sh /opt/mirrorrelay-cross/bin/uname
 
-RUN apk add --no-cache bash binutils build-base ca-certificates clang curl file lld llvm perl
+RUN apk add --no-cache bash binutils build-base ca-certificates clang curl file lld llvm patch perl
 RUN case "${TARGETARCH}" in amd64|arm64) ;; *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; esac
 RUN xx-apk add --no-cache gcc linux-headers musl-dev \
  && xx-clang --setup-target-triple
@@ -40,19 +40,48 @@ RUN curl -fL --retry 3 -o nginx.tar.gz "https://nginx.org/download/nginx-${NGINX
  && tar -xzf pcre2.tar.gz \
  && tar -xzf zlib.tar.gz
 
+COPY build/nginx-cross-patches/ /opt/mirrorrelay-cross/nginx-patches/
+
+RUN set -eu; \
+    for patch_file in /opt/mirrorrelay-cross/nginx-patches/*.patch; do \
+      patch --batch -d "/build/nginx-${NGINX_VERSION}" -p1 < "${patch_file}"; \
+    done; \
+    sha256sum /opt/mirrorrelay-cross/nginx-patches/*.patch \
+      | sha256sum \
+      | cut -d ' ' -f 1 > /tmp/nginx-cross-patches.sha256
+
 WORKDIR /build/nginx-${NGINX_VERSION}
 RUN set -eu; \
     target_triple="$(xx-info triple)"; \
+    target_cc="${target_triple}-clang -static"; \
     pcre_build_triple="$(/build/pcre2-${PCRE2_VERSION}/config.guess)"; \
     case "${TARGETARCH}" in \
       amd64) openssl_target=linux-x86_64 ;; \
       arm64) openssl_target=linux-aarch64 ;; \
     esac; \
-    export CC="${target_triple}-clang -static"; \
-    export AR="${target_triple}-ar"; \
-    export RANLIB="${target_triple}-ranlib"; \
-    export STRIP="${target_triple}-strip"; \
-    MIRRORRELAY_TARGETARCH="${TARGETARCH}" PATH="/opt/mirrorrelay-cross/bin:${PATH}" ./configure \
+    export CC="${target_cc}"; \
+    export CPP="${target_cc} -E"; \
+    MIRRORRELAY_TARGETARCH="${TARGETARCH}" \
+    PATH="/opt/mirrorrelay-cross/bin:${PATH}" \
+    ngx_force_c_compiler=yes \
+    ngx_force_c99_have_variadic_macros=yes \
+    ngx_force_gcc_have_variadic_macros=yes \
+    ngx_force_gcc_have_atomic=yes \
+    ngx_force_have_epoll=yes \
+    ngx_force_have_sendfile=yes \
+    ngx_force_have_sendfile64=yes \
+    ngx_force_have_pr_set_dumpable=yes \
+    ngx_force_have_pr_set_keepcaps=yes \
+    ngx_force_have_timer_event=yes \
+    ngx_force_have_map_anon=yes \
+    ngx_force_have_map_devzero=yes \
+    ngx_force_have_sysvshm=yes \
+    ngx_force_have_posix_sem=yes \
+    ngx_force_cross_compile=yes \
+    ./configure \
+      --with-cc="${target_cc}" \
+      --with-cpp="${target_cc} -E" \
+      --force-endianness=little \
       --prefix=/usr/lib/mirrorrelay/nginx \
       --sbin-path=nginx \
       --conf-path=conf/nginx.conf \
@@ -98,9 +127,15 @@ RUN set -eu; \
  && sed -i \
       "s#./configure --disable-shared#./configure --build=${pcre_build_triple} --host=${target_triple} --disable-shared#" \
       objs/Makefile \
+ && grep -F 'CC =' objs/Makefile | head -n 1 | grep -F -- "${target_cc}" \
+ && grep -F 'CPP =' objs/Makefile | head -n 1 | grep -F -- "${target_cc} -E" \
+ && grep -F 'LINK =' objs/Makefile | head -n 1 | grep -F '$(CC)' \
  && grep -F "./configure --build=${pcre_build_triple} --host=${target_triple} --disable-shared" objs/Makefile \
  && make -j"$(getconf _NPROCESSORS_ONLN)" \
- && "${STRIP}" objs/nginx \
+      CC="${target_cc}" \
+      AR="${target_triple}-ar" \
+      RANLIB="${target_triple}-ranlib" \
+ && "${target_triple}-strip" objs/nginx \
  && install -D -m 0755 objs/nginx /out/nginx \
  && xx-verify --static /out/nginx \
  && sed -n 's/^#define NGX_CONFIGURE "\(.*\)"$/\1/p' \
@@ -118,11 +153,13 @@ RUN set -eu; \
     esac; \
     nginx_checksum="$(sha256sum /out/nginx | cut -d ' ' -f 1)"; \
     configure_arguments="$(cat /tmp/nginx-configure-arguments)"; \
+    cross_patch_checksum="$(cat /tmp/nginx-cross-patches.sha256)"; \
     musl_version="$(apk info -v 2>/dev/null | grep '^musl-' | head -n 1)"; \
     build_id="nginx-${NGINX_VERSION}-linux-${TARGETARCH}-$(printf '%s' "${nginx_checksum}" | cut -c 1-12)"; \
     { \
       printf 'Managed Upstream Nginx Version: %s\n' "${NGINX_VERSION}"; \
       printf 'Nginx Source SHA256: %s\n' "${NGINX_SHA256}"; \
+      printf 'Cross-Compilation Patch Set SHA256: %s\n' "${cross_patch_checksum}"; \
       printf 'Configure Arguments: %s\n' "${configure_arguments}"; \
       printf 'musl Version: %s\n' "${musl_version}"; \
       printf 'TLS Library Version: OpenSSL %s\n' "${OPENSSL_VERSION}"; \

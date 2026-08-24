@@ -93,6 +93,7 @@ check_payload() {
     'MirrorRelay Build ID:' \
     'Managed Upstream Nginx Version:' \
     'Nginx Source SHA256:' \
+    'Cross-Compilation Patch Set SHA256:' \
     'Configure Arguments:' \
     'musl Version:' \
     'TLS Library Version:' \

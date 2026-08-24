@@ -1,0 +1,118 @@
+From 08617a8d29ee22831175697555558fec8f52772c Mon Sep 17 00:00:00 2001
+From: Samuel Martin <s.martin49@gmail.com>
+Date: Sun, 1 Jun 2014 16:05:04 +0200
+Subject: [PATCH] auto/unix: make sys_nerr guessing cross-friendly
+
+This is the Buildroot compile-time sys_nerr probe, refreshed for Nginx 1.30.
+The older patch context no longer wrapped the current two runtime probes
+correctly. Select it explicitly for a cross build and mark the value found so
+neither target executable is attempted.
+
+Signed-off-by: Samuel Martin <s.martin49@gmail.com>
+---
+ auto/os/sys_nerr | 78 ++++++++++++++++++++++++++++++++++++++++++++++++
+ auto/unix        |  6 +++++
+ 2 files changed, 84 insertions(+)
+ create mode 100644 auto/os/sys_nerr
+
+diff --git a/auto/os/sys_nerr b/auto/os/sys_nerr
+new file mode 100644
+--- /dev/null
++++ b/auto/os/sys_nerr
+@@ -0,0 +1,78 @@
++
++# Copyright (C) Samuel Martin <s.martin49@gmail.com>
++
++
++echo $ngx_n "checking for sys_nerr value...$ngx_c"
++
++# sys_nerr guessing is done using a (very) poor (but working)
++# heuristic, by checking for the value of ERR_MAX if defined, or
++# EHWPOISON otherwise.
++
++cat << END >> $NGX_AUTOCONF_ERR
++
++----------------------------------------
++checking for sys_nerr value
++
++END
++
++ngx_sys_nerr=
++
++cat << _EOF > $NGX_AUTOTEST.c
++
++#include <stdio.h>
++#include <errno.h>
++
++static char sys_nerr_test[ERR_MAX];
++int main(void)
++{
++    return 0;
++}
++
++_EOF
++
++if $CC $CC_TEST_FLAGS $CC_AUX_FLAGS \
++        $NGX_AUTOTEST.c -o $NGX_AUTOTEST \
++        $NGX_LD_OPT $ngx_feature_libs >/dev/null 2>&1 ; then
++    _ngx_max_err_macro=ERR_MAX
++else
++    # The +2 has been empirically found.
++    _ngx_max_err_macro="EHWPOISON + 2"
++fi
++
++cat << _EOF > $NGX_AUTOTEST.c
++
++#include <stdio.h>
++#include <errno.h>
++
++static char sys_nerr_test[(TEST_ERR_MAX == $_ngx_max_err_macro) ? 1 : -1];
++int main(void)
++{
++    return 0;
++}
++
++_EOF
++
++ngx_sys_nerr=`for i in $(seq 0 2000) ; do \
++    $CC $CC_TEST_FLAGS $CC_AUX_FLAGS \
++    -DTEST_ERR_MAX="$i" \
++    $NGX_AUTOTEST.c -o $NGX_AUTOTEST \
++    $NGX_LD_OPT $ngx_feature_libs >/dev/null 2>&1 || continue ;\
++    echo $i ; break ; done`
++
++rm -rf $NGX_AUTOTEST*
++
++if test -z $ngx_sys_nerr ; then
++    ngx_size=0
++    ngx_sys_nerr=0
++fi
++
++cat << END >> $NGX_AUTO_CONFIG_H
++
++#ifndef $ngx_feature_name
++#define $ngx_feature_name $ngx_sys_nerr
++#endif
++
++END
++
++ngx_found=yes
++echo " $ngx_sys_nerr"
+diff --git a/auto/unix b/auto/unix
+--- a/auto/unix
++++ b/auto/unix
+@@ -744,6 +744,12 @@ ngx_feature_test="char *p; p = strerrordesc_np(0);
+ . auto/feature
+
+
++if [ $ngx_found = no -a "${ngx_force_cross_compile:-}" = yes ]; then
++    ngx_feature_name="NGX_SYS_NERR"
++    . auto/os/sys_nerr
++fi
++
++
+ if [ $ngx_found = no ]; then
+
+     ngx_feature="sys_nerr"
+--
+2.39.5

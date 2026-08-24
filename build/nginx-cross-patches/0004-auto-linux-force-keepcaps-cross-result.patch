@@ -1,0 +1,22 @@
+From: MirrorRelay maintainers
+Subject: [PATCH] auto/os/linux: allow forcing PR_SET_KEEPCAPS result
+
+Nginx 1.30 added a second prctl run probe after the upstream-derived
+cross-compilation patch set was last refreshed.  Give it the same explicit
+cross result mechanism so configure never tries to execute a target binary.
+
+---
+ auto/os/linux | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/auto/os/linux b/auto/os/linux
+--- a/auto/os/linux
++++ b/auto/os/linux
+@@ -186,6 +186,7 @@ ngx_include="sys/prctl.h"; . auto/include
+ ngx_feature="prctl(PR_SET_KEEPCAPS)"
+ ngx_feature_name="NGX_HAVE_PR_SET_KEEPCAPS"
+ ngx_feature_run=yes
++ngx_feature_run_force_result="$ngx_force_have_pr_set_keepcaps"
+ ngx_feature_incs="#include <sys/prctl.h>"
+ ngx_feature_path=
+ ngx_feature_libs=

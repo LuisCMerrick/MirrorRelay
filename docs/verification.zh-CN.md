@@ -66,7 +66,7 @@ docker run --rm --platform linux/arm64 \
 
 amd64 Artifact 必须是 ELF x86-64，arm64 Artifact 必须是 ELF AArch64；两者都不能包含 ELF Interpreter 或非预期的运行时共享库依赖。发行版源码注释不得使用中文；中文 UI 字符串和中文文档是内容，不属于代码注释。
 
-Managed Upstream Nginx 在 amd64 构建 Runner 上使用固定版本的 `xx`/Clang musl 交叉工具链构建两个目标；随后由 GitHub 原生 `ubuntu-24.04-arm` Runner 执行精确的 arm64 软件包二进制。编译、集成测试和容器镜像组装均不使用 QEMU 或其它目标架构模拟器。
+Managed Upstream Nginx 在 amd64 构建 Runner 上使用固定版本的 `xx`/Clang musl 交叉工具链构建两个目标。Nginx 的运行期 Configure Probe 使用明确的 Linux/musl 交叉构建结果，类型尺寸、大小端与 `sys_nerr` 则由目标编译器在编译期判断；补丁集校验值会写入 `BUILD-INFO`。随后由 GitHub 原生 `ubuntu-24.04-arm` Runner 执行精确的 arm64 软件包二进制。配置、编译、集成测试和容器镜像组装均不使用 QEMU 或其它目标架构模拟器。
 
 固定的 OpenSSL 构建启用 `no-quic`，Managed Upstream Nginx 也不构建 Nginx HTTP/3 模块。因此正式二进制会排除未使用的 OpenSSL QUIC 服务端实现，同时保留 HTTPS 上游能力。
 
