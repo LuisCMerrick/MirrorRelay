@@ -135,7 +135,7 @@ Set `server.unix_socket_enabled: true` only to replace the default frontend TCP 
 
 Package upgrades replace MirrorRelay, its version-bound Managed Upstream Nginx binary, the unit and built-in files while preserving `/etc/mirrorrelay/config.yaml`, `/var/lib/mirrorrelay/mirrorrelay.db`, configuration history and `/var/cache/mirrorrelay`.
 
-Manually dispatched development builds use `0.0.1.git.<commit-epoch>.<commit>` versions so DEB and RPM package managers can order snapshots chronologically. Published releases and explicitly requested workflow versions keep their supplied version. Direct pushes do not start remote builds, and manual workflow dispatches do not publish Docker Hub images.
+Manually dispatched development builds use `0.0.1.git.<commit-epoch>.<commit>` versions so DEB and RPM package managers can order snapshots chronologically. Published releases and explicitly requested workflow versions keep their supplied version. Direct pushes do not start remote release builds. A manual Release Build does not publish a container by default; explicitly selecting `publish_container` pushes the immutable development-version tag plus `edge`, while leaving the stable-release `latest` tag unchanged.
 
 A normal DEB or RPM removal also preserves configuration, database, cache, certificates and audit data. On Debian-family systems, only an explicit purge removes those persistent paths:
 

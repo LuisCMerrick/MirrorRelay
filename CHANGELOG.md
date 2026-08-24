@@ -26,6 +26,9 @@
     explicit Linux/musl runtime-probe results and target-compiler checks for
     sizes, endianness and `sys_nerr`; the release build no longer executes
     target binaries and records the patch-set checksum in `BUILD-INFO`.
+  - Added an explicit manual container-publication switch for development
+    snapshots. Opt-in runs publish the immutable snapshot version and `edge`
+    without replacing the stable-release `latest` tag.
 
 ## v0.0.16
 

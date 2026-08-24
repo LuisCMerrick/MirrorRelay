@@ -7,6 +7,11 @@ on:
         description: Optional package version without a leading v
         required: false
         type: string
+      publish_container:
+        description: Publish the validated development image to Docker Hub
+        required: false
+        default: false
+        type: boolean
   release:
     types: [published]
 
@@ -302,7 +307,7 @@ jobs:
 
   container-image:
     name: Publish Docker Hub image
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.publish_container
     needs: [metadata, package, arm64-runtime]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -358,6 +363,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           VERSION: ${{ needs.metadata.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
@@ -367,9 +373,13 @@ jobs:
             printf 'name=%s\n' "${image}"
             echo 'tags<<MIRRORRELAY_TAGS'
             printf '%s:%s\n' "${image}" "${VERSION}"
-            printf '%s:v%s\n' "${image}" "${VERSION}"
-            if [[ "${PRERELEASE}" != 'true' ]]; then
-              printf '%s:latest\n' "${image}"
+            if [[ "${EVENT_NAME}" == 'release' ]]; then
+              printf '%s:v%s\n' "${image}" "${VERSION}"
+              if [[ "${PRERELEASE}" != 'true' ]]; then
+                printf '%s:latest\n' "${image}"
+              fi
+            else
+              printf '%s:edge\n' "${image}"
             fi
             echo 'MIRRORRELAY_TAGS'
           } >> "${GITHUB_OUTPUT}"
@@ -399,6 +409,7 @@ jobs:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.push.outputs.digest }}
           VERSION: ${{ needs.metadata.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
           GIT_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -491,12 +502,16 @@ jobs:
             echo "- Image: \`${IMAGE}:${VERSION}\`"
             echo "- Digest: \`${DIGEST}\`"
             echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
-            echo "- Tags: version and v-prefixed version; \`latest\` only for stable releases"
+            if [[ "${EVENT_NAME}" == 'release' ]]; then
+              echo "- Tags: version and v-prefixed version; \`latest\` only for stable releases"
+            else
+              echo "- Tags: immutable development version and \`edge\`; \`latest\` unchanged"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
   container-arm64-runtime:
     name: Verify Docker image on native arm64
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.publish_container
     needs: [metadata, container-image]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -616,7 +631,7 @@ jobs:
             echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
             echo "- Formats: DEB, RPM, tar.gz"
             echo "- Vendored source: \`mirrorrelay-${VERSION}-source-with-vendor.tar.gz\`"
-            echo "- Container image: Docker Hub multi-platform manifest on published releases"
+            echo "- Container image: Docker Hub multi-platform manifest on published releases or explicit manual opt-in"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   github-release:
