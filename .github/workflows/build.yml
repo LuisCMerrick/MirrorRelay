@@ -460,6 +460,11 @@ jobs:
           ' >/dev/null
           docker rm "${arm64_container}" >/dev/null
 
+          # The classic Docker image store cannot retain two platform variants
+          # of one index digest under the same reference. Drop the inspected
+          # arm64 variant before pulling and running the amd64 variant.
+          docker image rm "${reference}" >/dev/null
+          docker pull --platform linux/amd64 "${reference}" >/dev/null
           version_output="$(docker run --rm --platform linux/amd64 "${reference}" version --verbose)"
           printf '%s\n' "${version_output}"
           grep -Fx "MirrorRelay Version: ${VERSION}" <<< "${version_output}"
