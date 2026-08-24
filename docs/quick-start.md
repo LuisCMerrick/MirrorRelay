@@ -29,7 +29,9 @@ sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
 
-# Authorize External Shared Nginx user to access the Unix domain socket:
+# The frontend uses 127.0.0.1:9081 by default. Authorize the confirmed ingress
+# worker for the private upstream socket used by zero-copy bypass (and for the
+# frontend socket only if you explicitly enable it):
 sudo usermod -aG mirrorrelay www-data
 ```
 Include `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in your External Shared Nginx `server` configuration block (serving e.g. `https://mirror.example.com`) and reload Nginx. See [Installation Guide](installation.md) for full production details.

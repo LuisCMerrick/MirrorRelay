@@ -237,9 +237,9 @@ func runProduct(
 	metric *stats.Stats,
 	restartChannel <-chan struct{},
 ) error {
-	listener, err := ipc.ListenLocal(cfg.Server.UnixSocketEnabled, cfg.Server.FrontendSocket, cfg.Server.FrontendSocketMode, cfg.Server.LocalPort)
+	listener, err := ipc.ListenLocal(cfg.Server.UnixSocketEnabled, cfg.Server.FrontendSocket, cfg.Server.FrontendSocketMode, cfg.Server.LocalAddress, cfg.Server.LocalPort)
 	if err != nil {
-		return fmt.Errorf("create frontend socket: %w", err)
+		return fmt.Errorf("create frontend endpoint: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{

@@ -63,11 +63,11 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 		}},
 		"localeEn": {content: string(localeEn), expected: []string{
 			"export default", "Linux repository reverse-proxy gateway",
-			"Local endpoints and ingress", "Frontend Unix socket",
+			"Local endpoints and ingress", "Enable frontend Unix socket", "Frontend listen IP",
 		}},
 		"localeZh": {content: string(localeZh), expected: []string{
 			"export default", "Linux 软件仓库反向代理网关",
-			"本地端点与入口", "前端 Unix Socket",
+			"本地端点与入口", "启用前端 Unix Socket", "前端监听 IP",
 		}},
 		"mainScript": {content: string(mainScript), expected: []string{
 			"import", "boot()", "applyLanguage", "triggerRestart", "initThemeControls", "/auth/bootstrap",

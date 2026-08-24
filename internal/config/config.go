@@ -79,7 +79,15 @@ func (c Config) FrontendEndpoint() (network, address string) {
 	if c.Server.UnixSocketEnabled {
 		return "unix", c.Server.FrontendSocket
 	}
-	return "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(c.Server.LocalPort))
+	connectAddress := c.Server.LocalAddress
+	if ip := net.ParseIP(connectAddress); ip != nil && ip.IsUnspecified() {
+		if ip.To4() == nil {
+			connectAddress = "::1"
+		} else {
+			connectAddress = "127.0.0.1"
+		}
+	}
+	return "tcp", net.JoinHostPort(connectAddress, strconv.Itoa(c.Server.LocalPort))
 }
 
 func (c Config) UpstreamEndpoint() (network, address string) {

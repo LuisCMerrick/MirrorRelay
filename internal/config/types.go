@@ -37,6 +37,7 @@ type ServerConfig struct {
 	FrontendSocket         string      `yaml:"frontend_socket"`
 	FrontendSocketMode     os.FileMode `yaml:"-"`
 	FrontendSocketModeText string      `yaml:"frontend_socket_mode"`
+	LocalAddress           string      `yaml:"local_address"`
 	LocalPort              int         `yaml:"local_port"`
 }
 

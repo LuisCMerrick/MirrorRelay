@@ -32,7 +32,7 @@ documented environment variables -> saved Web UI operational values -> YAML
 
 Saving or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the change. Repository Desired/Active changes use a separate immediate validation and activation path.
 
-The Web UI covers endpoint enablement and loopback ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for trust-boundary locations:
+The Web UI covers endpoint enablement, the frontend listen IP and local ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for trust-boundary locations:
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -50,16 +50,19 @@ Use **Reset to YAML after restart** to delete the stored override. Invalid store
 
 | Key | Default | Description |
 |---|---:|---|
-| `server.unix_socket_enabled` | `true` | Listen for External Shared Nginx on a Unix socket |
+| `server.unix_socket_enabled` | `false` | Explicitly replace the default frontend TCP listener with a Unix socket |
 | `server.frontend_socket` | `/run/mirrorrelay/frontend.sock` | Frontend socket path |
 | `server.frontend_socket_mode` | `0660` | Required socket mode |
-| `server.local_port` | `9081` | Loopback port used only when the frontend Unix socket is explicitly disabled |
-| `upstream_nginx.upstream_unix_socket_enabled` | `true` | Use a Unix socket from Go to Managed Upstream Nginx |
+| `server.local_address` | `127.0.0.1` | Frontend TCP listen IP used while the frontend Unix socket is disabled |
+| `server.local_port` | `9081` | Frontend TCP listen port used while the frontend Unix socket is disabled |
+| `upstream_nginx.upstream_unix_socket_enabled` | `true` | Use a Unix socket from Go to Managed Upstream Nginx; explicitly set `false` to use TCP |
 | `upstream_nginx.upstream_socket` | `/run/mirrorrelay/upstream.sock` | Managed Upstream Nginx socket path |
 | `upstream_nginx.upstream_socket_mode` | `0660` | Required socket mode |
 | `upstream_nginx.upstream_local_port` | `9082` | Loopback port used only when the upstream Unix socket is explicitly disabled |
 
-TCP fallback endpoints always bind `127.0.0.1`. If both sockets are disabled, the two local ports must differ. There is no implicit fallback from a failed Unix socket to TCP. Loopback TCP does not provide Unix filesystem ownership/mode isolation, so use it only when local-process trust is acceptable.
+External Shared Nginx reaches the Go frontend over `127.0.0.1:9081` by default. Set `server.unix_socket_enabled: true` only when that ingress should use `server.frontend_socket` instead. `server.local_address` accepts a literal IPv4 or IPv6 listen address; `0.0.0.0` and `::` are valid explicit wildcard binds and are represented as the corresponding loopback address in generated same-host Nginx configuration. A wildcard or non-loopback bind expands the trusted-ingress surface: protect it with a firewall or, for Docker, publish the container port only on host loopback. Never expose it directly to an untrusted network.
+
+Go reaches Managed Upstream Nginx over its Unix socket by default. Only an explicit `upstream_nginx.upstream_unix_socket_enabled: false` selects the fixed `127.0.0.1` upstream TCP endpoint. If the frontend bind overlaps loopback and both links use TCP, the two local ports must differ. Neither endpoint silently falls back after a Unix socket failure, and every enabled Unix socket must use mode `0660`.
 
 ## Runtime and ingress
 
@@ -144,7 +147,7 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | `warmup.retry_count` | Maximum retry attempts per failed item (default `2`) |
 | `warmup.metadata_depth` | Metadata package extraction depth (default `1` = extract packages from APT/RPM/PyPI metadata) |
 
-Warm-up jobs accept either a five-field numeric cron expression evaluated in UTC or one of `@hourly`, `@daily`, and `@every <duration>` (minimum interval `30s`). Numeric fields support `*`, lists, ranges and steps. MirrorRelay validates expressions on create/update, persists the calculated `next_run_at`, and never runs an invalid or unknown expression as a fallback. Metadata-discovered package URLs reuse the configured frontend endpoint, including `server.local_port` when Unix sockets are disabled.
+Warm-up jobs accept either a five-field numeric cron expression evaluated in UTC or one of `@hourly`, `@daily`, and `@every <duration>` (minimum interval `30s`). Numeric fields support `*`, lists, ranges and steps. MirrorRelay validates expressions on create/update, persists the calculated `next_run_at`, and never runs an invalid or unknown expression as a fallback. Metadata-discovered package URLs reuse the configured frontend endpoint, including `server.local_address` and `server.local_port` while the frontend Unix socket is disabled.
 
 ## Webhook delivery
 
@@ -176,7 +179,7 @@ MirrorRelay delivers each event to one configured Webhook destination; DingTalk,
 | `limits.max_ip_concurrency` | Per-client concurrency; `0` is unlimited |
 | `limits.bandwidth_limit_bps` | Global Managed Upstream Nginx upstream bandwidth ceiling; `0` is unlimited |
 
-MirrorRelay trusts forwarded client IP headers only when the immediate peer is the local Unix socket or loopback listener. Private and HTTP upstream use also requires the matching per-repository switch. Upstream TLS verification cannot be disabled.
+The frontend endpoint is a trusted-ingress boundary: MirrorRelay accepts the forwarded client IP supplied there by External Shared Nginx. Keep the default loopback bind, use a private Unix socket, or enforce an equivalent container/firewall boundary when configuring another listen IP. Private and HTTP upstream use also requires the matching per-repository switch. Upstream TLS verification cannot be disabled.
 
 ## Health, logs and shutdown
 

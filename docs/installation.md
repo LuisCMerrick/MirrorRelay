@@ -2,7 +2,7 @@
 
 [English](installation.md) | [简体中文](installation.zh-CN.md)
 
-DEB and RPM are the recommended production formats. Each architecture-specific package contains MirrorRelay and the exact statically linked Managed Upstream Nginx binary tested by the release workflow. No Nginx package is installed from the target operating system, and nothing is compiled on the target host.
+DEB and RPM are the recommended formats for host-integrated production deployments. Published releases also provide one Docker Hub image for `linux/amd64` and `linux/arm64`. Every format contains the exact statically linked Managed Upstream Nginx binary tested by the matching release job. No Nginx package is installed from the target operating system, and nothing is compiled during package installation or container startup.
 
 ## Verify a release
 
@@ -17,6 +17,15 @@ The package `BUILD-INFO` records the MirrorRelay version, commit, build ID, Go v
 ```sh
 mirrorrelay version
 mirrorrelay version --verbose
+```
+
+For the container image, prefer an immutable digest or a version tag and inspect
+its multi-platform manifest before deployment:
+
+```sh
+export DOCKERHUB_USERNAME=<dockerhub-namespace>
+docker buildx imagetools inspect \
+  "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
 ```
 
 ## Install a DEB
@@ -34,6 +43,58 @@ sudo dnf install ./mirrorrelay-<version>.x86_64.rpm
 ```
 
 On arm64, use `sudo dnf install ./mirrorrelay-<version>.aarch64.rpm` instead.
+
+## Run the Docker image
+
+The release workflow publishes these Docker Hub tags:
+
+- `<version>` and `v<version>` for every published release;
+- `latest` only for a stable, non-prerelease release.
+
+All tags resolve to one OCI manifest containing exactly `linux/amd64` and
+`linux/arm64` application images, plus attached SBOM/provenance attestations.
+Docker selects the matching host architecture automatically. Prefer the version
+tag or the immutable digest reported by the release workflow instead of
+`latest` for production rollouts.
+
+The image runs as numeric UID/GID `65532`, stores its default configuration at
+`/etc/mirrorrelay/config.yaml`, and uses the same binary paths as packages:
+
+```text
+/usr/bin/mirrorrelay
+/usr/lib/mirrorrelay/nginx/nginx
+```
+
+Review and mount `configs/config.docker.yaml` rather than treating the bundled
+example as production-ready. In particular, set the public URL, TLS paths and
+exact administration CIDRs. The Docker-specific file explicitly listens on
+`0.0.0.0:9081` inside the container; publish that port only on host loopback so
+administrator-owned External Shared Nginx can reach it without exposing the
+trusted frontend endpoint. Persist state, cache and logs. The runtime directory
+is also shared for the optional zero-copy path to the private upstream socket:
+
+```sh
+docker run -d \
+  --name mirrorrelay \
+  --restart unless-stopped \
+  --publish 127.0.0.1:9081:9081 \
+  --mount type=bind,src=/absolute/config.yaml,dst=/etc/mirrorrelay/config.yaml,readonly \
+  --mount type=volume,src=mirrorrelay-data,dst=/var/lib/mirrorrelay \
+  --mount type=volume,src=mirrorrelay-cache,dst=/var/cache/mirrorrelay \
+  --mount type=volume,src=mirrorrelay-logs,dst=/var/log/mirrorrelay \
+  --mount type=bind,src=/run/mirrorrelay,dst=/run/mirrorrelay \
+  "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
+```
+
+Create the bind-mounted paths with ownership and permissions suitable for UID
+`65532` before starting the container. The image does not install, reconfigure
+or restart host Nginx and does not alter its service user. The generated ingress
+snippet connects to host `127.0.0.1:9081`; when zero-copy bypass is enabled it
+also uses the shared private `upstream.sock`. Grant only the confirmed ingress
+worker access through the host's normal group or ACL management, and never make
+the runtime directory world-writable. If the container port is published on a
+non-loopback host address, a network firewall must restrict it to trusted
+ingress peers.
 
 The packages install these fixed paths:
 
@@ -58,9 +119,9 @@ The systemd unit creates `/run/mirrorrelay` with mode `0750` and preserves it ac
 
 ## Connect External Shared Nginx
 
-MirrorRelay generates a reviewed integration snippet under `ingress.snippet_path`. The package never installs, removes, edits, reloads or restarts External Shared Nginx and never claims public ports 80 or 443.
+MirrorRelay generates a reviewed integration snippet under `ingress.snippet_path`. The package never installs, removes, edits, reloads or restarts External Shared Nginx and never claims public ports 80 or 443. By default the Go frontend listens on `127.0.0.1:9081`; both the listen IP and port are configurable with `server.local_address` and `server.local_port`.
 
-Both local sockets default to mode `0660`; world-writable `0666` or `0777` modes are rejected. To let an existing Nginx worker read `frontend.sock`, explicitly grant its service user membership in the `mirrorrelay` group. For example, after confirming that the worker runs as `www-data`:
+The Go-to-Managed-Upstream-Nginx Unix socket remains enabled by default, and zero-copy bypass lets External Shared Nginx use that private endpoint after Go authorizes a request. To grant an existing Nginx worker access to `upstream.sock`—and to `frontend.sock` if the frontend Unix socket is explicitly enabled—add its confirmed service user to the `mirrorrelay` group. For example, after confirming that the worker runs as `www-data`:
 
 ```sh
 sudo usermod -aG mirrorrelay www-data
@@ -68,13 +129,13 @@ sudo usermod -aG mirrorrelay www-data
 
 Apply the group change and generated snippet using that ingress installation's normal maintenance procedure. Do not run this command for a guessed user. MirrorRelay does not alter an existing ingress account on your behalf.
 
-If Unix sockets cannot be used, explicitly set `server.unix_socket_enabled: false` and/or `upstream_nginx.upstream_unix_socket_enabled: false`, then choose distinct loopback ports with `server.local_port` and `upstream_nginx.upstream_local_port`.
+Set `server.unix_socket_enabled: true` only to replace the default frontend TCP listener with `frontend.sock`. Every enabled Unix socket must use mode `0660`; world-writable `0666` or `0777` modes are rejected. To replace the default Go-to-Managed-Upstream-Nginx Unix socket with loopback TCP, explicitly set `upstream_nginx.upstream_unix_socket_enabled: false` and choose `upstream_nginx.upstream_local_port` distinct from the frontend port.
 
 ## Upgrade and remove
 
 Package upgrades replace MirrorRelay, its version-bound Managed Upstream Nginx binary, the unit and built-in files while preserving `/etc/mirrorrelay/config.yaml`, `/var/lib/mirrorrelay/mirrorrelay.db`, configuration history and `/var/cache/mirrorrelay`.
 
-Manually dispatched development builds use `0.0.1.git.<commit-epoch>.<commit>` versions so DEB and RPM package managers can order snapshots chronologically. Published releases and explicitly requested workflow versions keep their supplied version. Direct pushes do not start remote builds.
+Manually dispatched development builds use `0.0.1.git.<commit-epoch>.<commit>` versions so DEB and RPM package managers can order snapshots chronologically. Published releases and explicitly requested workflow versions keep their supplied version. Direct pushes do not start remote builds, and manual workflow dispatches do not publish Docker Hub images.
 
 A normal DEB or RPM removal also preserves configuration, database, cache, certificates and audit data. On Debian-family systems, only an explicit purge removes those persistent paths:
 

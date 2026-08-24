@@ -36,6 +36,7 @@ func TestGeneratePinsValidatedConfiguredAndDynamicTargets(t *testing.T) {
 	cfg.UpstreamNginx.PID = "/run/mm/upstream-nginx.pid"
 	cfg.UpstreamNginx.UpstreamSocket = "/run/mm/upstream.sock"
 	cfg.Cache.Path = "/var/cache/mm"
+	cfg.Server.UnixSocketEnabled = true
 	cfg.Server.FrontendSocket = "/run/mm/frontend.sock"
 	resolver := fixedResolver{
 		"repo.example":     {netip.MustParseAddr("2606:4700:4700::1111"), netip.MustParseAddr("8.8.8.8")},
@@ -83,9 +84,9 @@ func TestGeneratePinsValidatedConfiguredAndDynamicTargets(t *testing.T) {
 	}
 }
 
-func TestGenerateUsesLoopbackEndpointsWhenUnixSocketsAreDisabled(t *testing.T) {
+func TestGenerateUsesWildcardFrontendConnectAddressAndExplicitUpstreamTCP(t *testing.T) {
 	cfg := config.Default()
-	cfg.Server.UnixSocketEnabled = false
+	cfg.Server.LocalAddress = "0.0.0.0"
 	cfg.Server.LocalPort = 19081
 	cfg.UpstreamNginx.UpstreamSocketEnabled = false
 	cfg.UpstreamNginx.UpstreamLocalPort = 19082
@@ -104,8 +105,9 @@ func TestGenerateUsesLoopbackEndpointsWhenUnixSocketsAreDisabled(t *testing.T) {
 	if !strings.Contains(generated.Main, "listen 127.0.0.1:19082;") {
 		t.Fatalf("Managed Upstream Nginx loopback listener missing:\n%s", generated.Main)
 	}
-	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "proxy_pass http://127.0.0.1:19081;") {
-		t.Fatalf("frontend loopback endpoint missing:\n%s", generated.Files["external-nginx-integration.conf"])
+	if !strings.Contains(generated.Files["external-nginx-integration.conf"], "proxy_pass http://127.0.0.1:19081;") ||
+		strings.Contains(generated.Files["external-nginx-integration.conf"], "proxy_pass http://0.0.0.0:19081;") {
+		t.Fatalf("safe frontend TCP connect endpoint missing:\n%s", generated.Files["external-nginx-integration.conf"])
 	}
 }
 

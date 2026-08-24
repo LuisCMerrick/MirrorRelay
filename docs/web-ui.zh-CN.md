@@ -16,7 +16,7 @@ https://repo.example.com/admin/
 
 只能在 `config.yaml` 中修改 `admin.path`，修改后应重启 MirrorRelay，并更新已审核的 External Shared Nginx 片段。路径会自动补齐末尾 `/`，也可以包含多个安全路径段。非默认路径可以减少无目的扫描发现，但不能替代身份验证；HTTPS、管理员凭据与 `security.admin_cidrs` 仍是必要控制。
 
-Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因此生产登录必须使用 HTTPS，UI 与 API 也必须保持同源。非回环主机上的明文 HTTP 地址可能接受登录请求，但浏览器不会保留 Session Cookie。不要把私有前端 Socket 或回环备用端口直接暴露到网络。
+Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因此生产登录必须使用 HTTPS，UI 与 API 也必须保持同源。非回环主机上的明文 HTTP 地址可能接受登录请求，但浏览器不会保留 Session Cookie。不要把受信的前端 TCP Listener 或可选 Unix Socket 直接暴露到不受信任网络。
 
 数据库没有任何用户时，登录页会切换为一次性的初始管理员注册页。第一个成功注册的账号会成为唯一初始 Admin 并立即登录；数据库原子条件可防止两个并发请求同时注册成功。该端点仍受 `admin.host` 与 `security.admin_cidrs` 保护。请先限制管理面访问范围并完成注册，再向不受信任网络开放。只要已有任意用户，注册入口就会永久关闭，除非管理员显式清除持久数据库。
 

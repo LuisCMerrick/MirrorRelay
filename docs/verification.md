@@ -6,7 +6,7 @@ MirrorRelay's local test suite covers routing isolation, Desired/Active publicat
 
 ## Release checks
 
-Run from the repository root. The hosted release builds and validates complete amd64 and arm64 DEB, RPM and tar.gz packages, plus an architecture-neutral source archive containing `vendor/`. The local commands below cross-build both Go binaries and validate the checked-in amd64 Managed Upstream Nginx fixture:
+Run from the repository root. The hosted release builds and validates complete amd64 and arm64 DEB, RPM and tar.gz packages, an architecture-neutral source archive containing `vendor/`, and one Docker Hub multi-platform image. The local commands below cross-build both Go binaries and validate the checked-in amd64 Managed Upstream Nginx fixture:
 
 ```sh
 go mod verify
@@ -33,9 +33,42 @@ tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.16-source-with-vendor.tar.gz \
 
 The vendored source archive is generated from the exact Git commit being released, then `go mod vendor` is run inside that exported tree. The hosted workflow extracts the result and runs `go list -mod=vendor ./...` before adding it to the GitHub Release and `SHA256SUMS`.
 
+For a container release, `scripts/prepare-container-context.sh` extracts both
+verified tar packages and checks each internal `SHA256SUMS` before staging the
+image context. The Docker job must not compile MirrorRelay or Managed Upstream
+Nginx. After pushing, it inspects the OCI index, requires exactly
+`linux/amd64` and `linux/arm64` application manifests. It starts the native
+amd64 image with the bundled configuration and probes the loopback-published
+HTTP endpoint. Without target emulation, it then extracts the published arm64
+filesystem and byte-compares both binaries, `BUILD-INFO` and the configuration
+against the already verified arm64 package payload. A separate native arm64
+hosted runner executes the exact cross-compiled package payload and assembles
+and probes the formal arm64 image before publication, then pulls and probes the
+published digest again. The workflow does not configure or use QEMU. SBOM and
+provenance attestations may appear as additional `unknown/unknown` manifests.
+
+Before publishing a release, configure the GitHub Actions repository variable
+`DOCKERHUB_USERNAME` and repository secret `DOCKERHUB_TOKEN`. The workflow
+fails before login when either value is absent; credentials are never accepted
+as workflow inputs or committed configuration.
+
+Inspect the published result with the version tag or recorded digest, and run
+each probe on a host with the matching native architecture:
+
+```sh
+docker buildx imagetools inspect \
+  "<dockerhub-namespace>/mirrorrelay:<version>"
+# On a native amd64 host:
+docker run --rm --platform linux/amd64 \
+  "<dockerhub-namespace>/mirrorrelay:<version>" version --verbose
+# On a native arm64 host:
+docker run --rm --platform linux/arm64 \
+  "<dockerhub-namespace>/mirrorrelay:<version>" version --verbose
+```
+
 The amd64 artifact must be ELF x86-64 and the arm64 artifact must be ELF AArch64. Neither may have an ELF interpreter or an unexpected runtime shared-library dependency. A release must not contain source-code comments written in Chinese; Chinese UI strings and Chinese documentation are intentional content, not comments.
 
-Managed Upstream Nginx is compiled in a native-build-platform container with a pinned `xx`/Clang musl cross toolchain. The arm64 job uses QEMU only for the small configure-time runtime probes and the final executable integration checks; compilation itself does not run under emulation.
+Managed Upstream Nginx is compiled on the amd64 build runner with a pinned `xx`/Clang musl cross toolchain for both targets. The exact arm64 package binary is then exercised on GitHub's native `ubuntu-24.04-arm` runner. Neither compilation, integration testing nor container-image assembly uses QEMU or other target emulation.
 
 The pinned OpenSSL build uses `no-quic`, and Managed Upstream Nginx is built without the Nginx HTTP/3 module. This excludes the unused OpenSSL QUIC server implementation from the formal binary while retaining HTTPS upstream support.
 
@@ -58,9 +91,11 @@ Use isolated test hostnames and repositories. Record the client version, MirrorR
 | Redirects | Same-host and allowlisted CDN redirects; reject private, loopback, link-local, CGNAT and mixed DNS results |
 | Cache | MISS then HIT, concurrent first fill, global/repository/object logical purge, truthful reclaim states |
 | Configuration | Invalid candidate leaves Active state unchanged; valid change and rollback use graceful reload |
+| Local endpoints | Package defaults use frontend `127.0.0.1:9081` TCP and the private upstream Unix socket; frontend Unix requires explicit enablement, upstream TCP requires explicit disablement, and Docker publishes its wildcard container listener only on host loopback |
 | Web UI | Every repository action reaches its API, `/` lists enabled visible repositories, and saved Settings apply after restart |
 | Browsable HTML | With the repository switch on, relative/root URLs resolve correctly, in-base links stay in the public namespace, same-origin out-of-base assets use upstream-bound HMAC URLs, forged path/query/upstream values fail, mixed data/normal `srcset` candidates work, and cross-origin URLs stay unchanged |
 | Ingress | Multiple existing External Shared Nginx sites continue serving while MirrorRelay is installed/restarted |
+| Release image | Docker Hub index contains amd64/arm64, version metadata matches the release commit, both embedded Nginx binaries run, and mounted state survives replacement |
 
 ## Large-object and continuity test
 
@@ -79,7 +114,7 @@ For each object size, retain a report containing peak/baseline RSS and heap, all
 ## Security acceptance
 
 - Submit forged `X-Mirror-Internal-*` headers and confirm they never reach Managed Upstream Nginx unchanged.
-- Send forwarded IP headers over a nonlocal peer and confirm they are ignored; confirm local External Shared Nginx `X-Real-IP` drives admin CIDR, audit and per-IP limits.
+- Confirm the trusted frontend endpoint is unreachable from untrusted peers. For an explicit wildcard/non-loopback bind, verify the container port mapping or firewall admits only External Shared Nginx; then confirm its `X-Real-IP` drives admin CIDR, audit and per-IP limits.
 - Verify malformed or missing-realm Registry Bearer challenges return 502 and never fall back to a direct token endpoint.
 - Attempt redirect/token targets using userinfo, unsupported schemes, forbidden ports/addresses, DNS rebinding and non-allowlisted hosts.
 - Verify HTTP/private upstream access requires both global and repository permission.

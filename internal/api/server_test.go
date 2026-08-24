@@ -96,6 +96,7 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
 	settings := config.WebSettingsFrom(cfg)
 	settings.Server.UnixSocketEnabled = false
+	settings.Server.LocalAddress = "127.0.0.2"
 	settings.Server.LocalPort = 19081
 	encoded, err := json.Marshal(settings)
 	if err != nil {
@@ -108,7 +109,7 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 		t.Fatalf("settings update: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	stored, found, err := store.Setting(request.Context(), config.WebSettingsKey)
-	if err != nil || !found || !strings.Contains(stored, `"local_port":19081`) {
+	if err != nil || !found || !strings.Contains(stored, `"local_address":"127.0.0.2"`) || !strings.Contains(stored, `"local_port":19081`) {
 		t.Fatalf("stored settings: found=%v value=%s err=%v", found, stored, err)
 	}
 

@@ -29,7 +29,8 @@ sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
 
-# 授权外部共享 Nginx 运行用户访问 Unix Domain Socket：
+# 前端默认使用 127.0.0.1:9081。为零拷贝旁路使用的私有上游 Socket
+# 授权已确认的入口 Worker（只有显式启用前端 Socket 时才会一并使用它）：
 sudo usermod -aG mirrorrelay www-data
 ```
 在外部共享 Nginx 的 `server` 块（例如服务域名 `https://mirror.example.com`）中引入自动生成的集成片段 `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 并平滑重载 Nginx。完整生产部署细节请参见 [安装说明](installation.zh-CN.md)。

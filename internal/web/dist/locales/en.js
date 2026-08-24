@@ -246,12 +246,18 @@ export default {
         "fields": [
             {
                 "path": "server.unix_socket_enabled",
-                "label": "Frontend Unix socket",
+                "label": "Enable frontend Unix socket",
                 "type": "boolean"
             },
             {
+                "path": "server.local_address",
+                "label": "Frontend listen IP",
+                "type": "text",
+                "placeholder": "127.0.0.1"
+            },
+            {
                 "path": "server.local_port",
-                "label": "Frontend loopback port",
+                "label": "Frontend listen port",
                 "type": "number",
                 "min": 1,
                 "max": 65535

@@ -23,8 +23,13 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(c.Server.FrontendSocket) == "" {
 			return errors.New("server.frontend_socket is required when Unix sockets are enabled")
 		}
-	} else if !validPort(c.Server.LocalPort) {
-		return errors.New("server.local_port must be 1..65535 when Unix sockets are disabled")
+	} else {
+		if !validLocalAddress(c.Server.LocalAddress) {
+			return errors.New("server.local_address must be a valid IP listen address when the frontend Unix socket is disabled")
+		}
+		if !validPort(c.Server.LocalPort) {
+			return errors.New("server.local_port must be 1..65535 when the frontend Unix socket is disabled")
+		}
 	}
 	if c.UpstreamNginx.UpstreamSocketEnabled {
 		upstreamMode, err := parseSocketMode(c.UpstreamNginx.UpstreamSocketModeText)
@@ -40,7 +45,8 @@ func (c Config) Validate() error {
 	if c.Server.UnixSocketEnabled && c.UpstreamNginx.UpstreamSocketEnabled && c.Server.FrontendSocket == c.UpstreamNginx.UpstreamSocket {
 		return errors.New("distinct frontend and upstream Unix sockets are required")
 	}
-	if !c.Server.UnixSocketEnabled && !c.UpstreamNginx.UpstreamSocketEnabled && c.Server.LocalPort == c.UpstreamNginx.UpstreamLocalPort {
+	if !c.Server.UnixSocketEnabled && !c.UpstreamNginx.UpstreamSocketEnabled &&
+		c.Server.LocalPort == c.UpstreamNginx.UpstreamLocalPort && frontendAddressConflictsWithUpstreamLoopback(c.Server.LocalAddress) {
 		return errors.New("server.local_port and upstream_nginx.upstream_local_port must be distinct")
 	}
 	if c.Ingress.Mode != "external" && c.Ingress.Mode != "managed-standalone" {
@@ -361,6 +367,19 @@ func parseSocketMode(value string) (os.FileMode, error) {
 }
 
 func validPort(port int) bool { return port >= 1 && port <= 65535 }
+
+func validLocalAddress(address string) bool {
+	if address == "" || strings.TrimSpace(address) != address {
+		return false
+	}
+	ip := net.ParseIP(address)
+	return ip != nil && !ip.IsMulticast() && !ip.IsLinkLocalUnicast() && !ip.Equal(net.IPv4bcast)
+}
+
+func frontendAddressConflictsWithUpstreamLoopback(address string) bool {
+	ip := net.ParseIP(address)
+	return ip != nil && (ip.IsUnspecified() || ip.Equal(net.IPv4(127, 0, 0, 1)))
+}
 
 func validListenAddress(address string) bool {
 	host, rawPort, err := net.SplitHostPort(address)

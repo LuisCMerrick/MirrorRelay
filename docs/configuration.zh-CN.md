@@ -32,7 +32,7 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 保存或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
-Web UI 覆盖端点启用状态与回环端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。信任边界路径仍以 YAML 为准：
+Web UI 覆盖端点启用状态、前端监听 IP 与本地端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。信任边界路径仍以 YAML 为准：
 
 ```text
 server.frontend_socket, server.frontend_socket_mode, runtime.*,
@@ -50,16 +50,19 @@ upstream_nginx.ca_bundle
 
 | 配置 | 默认值 | 说明 |
 |---|---:|---|
-| `server.unix_socket_enabled` | `true` | External Shared Nginx 通过 Unix Socket 连接 Go |
+| `server.unix_socket_enabled` | `false` | 显式以 Unix Socket 替换默认的前端 TCP Listener |
 | `server.frontend_socket` | `/run/mirrorrelay/frontend.sock` | 前端 Socket 路径 |
 | `server.frontend_socket_mode` | `0660` | 固定要求的 Socket 权限 |
-| `server.local_port` | `9081` | 只有显式关闭前端 Unix Socket 后才使用的回环端口 |
-| `upstream_nginx.upstream_unix_socket_enabled` | `true` | Go 到 Managed Upstream Nginx 使用 Unix Socket |
+| `server.local_address` | `127.0.0.1` | 前端 Unix Socket 关闭时使用的 TCP 监听 IP |
+| `server.local_port` | `9081` | 前端 Unix Socket 关闭时使用的 TCP 监听端口 |
+| `upstream_nginx.upstream_unix_socket_enabled` | `true` | Go 到 Managed Upstream Nginx 默认使用 Unix Socket；显式设为 `false` 才改用 TCP |
 | `upstream_nginx.upstream_socket` | `/run/mirrorrelay/upstream.sock` | Managed Upstream Nginx Socket 路径 |
 | `upstream_nginx.upstream_socket_mode` | `0660` | 固定要求的 Socket 权限 |
 | `upstream_nginx.upstream_local_port` | `9082` | 只有显式关闭上游 Unix Socket 后才使用的回环端口 |
 
-TCP 回退端点始终绑定 `127.0.0.1`。如果两个 Socket 都关闭，两个端口必须不同。Unix Socket 失败时不会隐式回退到 TCP。回环 TCP 不具备 Unix 文件属主与权限模式隔离，因此只能在信任本机进程的环境中使用。
+External Shared Nginx 默认通过 `127.0.0.1:9081` 连接 Go 前端。只有需要入口改用 `server.frontend_socket` 时，才设置 `server.unix_socket_enabled: true`。`server.local_address` 接受明确的 IPv4 或 IPv6 监听地址；`0.0.0.0` 与 `::` 是有效的显式通配绑定，生成的同宿主机 Nginx 配置会使用相应回环地址连接。通配或非回环绑定会扩大受信入口范围，必须通过防火墙保护；Docker 中只能把容器端口发布到宿主机回环，绝不能直接暴露给不受信任网络。
+
+Go 默认通过 Unix Socket 连接 Managed Upstream Nginx。只有显式设置 `upstream_nginx.upstream_unix_socket_enabled: false` 才会选择固定的 `127.0.0.1` 上游 TCP 端点。当前端绑定覆盖回环且两段连接均使用 TCP 时，两个本地端口必须不同。Unix Socket 失败后不会隐式回退；任何已启用 Socket 都必须使用 `0660`。
 
 ## Runtime 与入口
 
@@ -144,7 +147,7 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | `warmup.retry_count` | 预热对象失败重试次数（默认 `2`） |
 | `warmup.metadata_depth` | 元数据软件包递归解析深度（默认 `1` 自动提取 APT/RPM/PyPI 元数据中的软件包并预热） |
 
-预热任务接受按 UTC 求值的五字段数字 Cron 表达式，或 `@hourly`、`@daily`、`@every <duration>`（最短间隔 `30s`）。数字字段支持 `*`、列表、范围和步长。MirrorRelay 在创建/更新时校验表达式，持久化计算出的 `next_run_at`，绝不会把非法或未知表达式作为兜底任务反复执行。由 Metadata 发现的软件包 URL 会复用已配置的 Frontend 端点；关闭 Unix Socket 时会保留 `server.local_port`。
+预热任务接受按 UTC 求值的五字段数字 Cron 表达式，或 `@hourly`、`@daily`、`@every <duration>`（最短间隔 `30s`）。数字字段支持 `*`、列表、范围和步长。MirrorRelay 在创建/更新时校验表达式，持久化计算出的 `next_run_at`，绝不会把非法或未知表达式作为兜底任务反复执行。由 Metadata 发现的软件包 URL 会复用已配置的 Frontend 端点；前端 Unix Socket 关闭时会保留 `server.local_address` 与 `server.local_port`。
 
 ## Webhook 投递
 
@@ -176,7 +179,7 @@ MirrorRelay 会把每个事件投递到一个已配置的 Webhook 目标；钉�
 | `limits.max_ip_concurrency` | 单客户端并发请求上限；`0` 表示无限制 |
 | `limits.bandwidth_limit_bps` | 全局 Managed Upstream Nginx 上游带宽上限；`0` 表示无限制 |
 
-只有直接 Peer 是本地 Unix Socket 或回环 Listener 时，MirrorRelay 才信任转发的客户端 IP Header。使用私网或 HTTP 上游还必须开启相应仓库开关。上游 TLS 验证不能关闭。
+前端端点属于受信入口边界：MirrorRelay 会接受 External Shared Nginx 在该端点提供的转发客户端 IP。应保持默认回环绑定、使用私有 Unix Socket，或在配置其他监听 IP 时建立等效的容器/防火墙边界。使用私网或 HTTP 上游还必须开启相应仓库开关。上游 TLS 验证不能关闭。
 
 ## 健康、日志与退出
 

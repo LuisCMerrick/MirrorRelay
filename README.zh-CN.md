@@ -20,7 +20,7 @@ APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy 
    │
    ▼
 外部共享 Nginx (入口接入: 80 / 443)
-   │ (Unix Socket 0660 / 回环 TCP)
+   │ (默认 TCP 127.0.0.1:9081 / 显式启用后使用 Unix Socket 0660)
    ▼
 MirrorRelay (Go 控制平面与路由器)
    ├── Web UI 与管理 API (/admin/)
@@ -28,7 +28,7 @@ MirrorRelay (Go 控制平面与路由器)
    ├── 有界元数据与 HTML 重写器
    ├── SQLite 持久化期望状态
    └── 候选配置生成与原子发布
-   │ (Unix Socket 0660 / 回环 TCP)
+   │ (默认 Unix Socket 0660 / 显式关闭后使用回环 TCP)
    ▼
 受管上游 Nginx (独立静态链接 Musl 数据平面)
    ├── 代理缓存与本地内容存储
@@ -117,12 +117,29 @@ go run ./cmd/mirrorrelay -dev
    sudo systemctl enable --now mirrorrelay.service
    ```
 3. **对接外部共享 Nginx**（详见 [安装说明](docs/installation.zh-CN.md)）：
-   将宿主机 Web 运行用户（如 `www-data` 或 `nginx`）加入 `mirrorrelay` 用户组以获取 Unix Socket 访问权限：
+   生成的片段默认连接 `127.0.0.1:9081` 前端。零拷贝旁路需要访问私有上游
+   Socket，或显式启用前端 Unix Socket 时，请将宿主机 Web 运行用户（如
+   `www-data` 或 `nginx`）加入 `mirrorrelay` 用户组：
    ```bash
    sudo usermod -aG mirrorrelay www-data
    ```
    在外部 Nginx 的 `server` 块中引入自动生成的集成配置 `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 并平滑重载 Nginx。
 4. 打开 HTTPS 管理地址并完成一次性的初始管理员注册，再向不受信任网络开放管理面。
+
+### 方式 3：官方多架构 Docker 镜像
+
+正式 Release 还会向 Docker Hub 推送一个同时支持 `linux/amd64` 与
+`linux/arm64` 的镜像；Docker 会自动选择宿主机架构：
+
+```bash
+export DOCKERHUB_USERNAME=<dockerhub-namespace>
+docker pull "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
+```
+
+版本号、带 `v` 前缀的版本号以及稳定 Release 的 `latest` 标签指向同一个
+已验证的多平台 Manifest。镜像包含对应软件包任务实际测试的同一份
+MirrorRelay 与 Managed Upstream Nginx 二进制。配置、持久目录挂载和
+External Shared Nginx 接入方式请阅读[安装说明](docs/installation.zh-CN.md)。
 
 ### 仓库添加与客户端配置示例
 
@@ -156,13 +173,13 @@ MirrorRelay 采用清晰的双平面架构，将管理控制与高吞吐数据�
 
 ```text
 外部共享 Nginx (系统管理员维护)
-         ↓  (Unix Socket 0660)
+         ↓  (默认 TCP 127.0.0.1:9081；Unix Socket 0660 需显式启用)
 MirrorRelay 前端 (Go 核心服务)
   - 访问策略与身份认证
   - 动态路由与 URL 路径重写
   - 容器镜像 Token Broker 鉴权中继
   - 配置生命周期管理 (SQLite 持久化期望状态)
-         ↓  (Unix Socket 0660)
+         ↓  (默认 Unix Socket 0660；回环 TCP 需显式关闭 Socket)
 受管上游 Nginx (专用 Musl 隔离进程)
   - 本地磁盘高速缓存 (/var/cache/mirrorrelay)
   - 连接池复用与 SSL 证书链严格验证
@@ -191,7 +208,7 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 
 ---
 
-## 软件包与发行布局
+## 软件包、容器镜像与发行布局
 
 为 `linux/amd64` 与 `linux/arm64` 平台提供静态编译的标准发行包：
 
@@ -201,6 +218,10 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 | **arm64** | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
 
 每个 GitHub Release 还会提供与架构无关的 `mirrorrelay-<version>-source-with-vendor.tar.gz`，其中包含 Git 跟踪的源码树以及生成的 Go `vendor/` 目录，便于离线和可复现的源码构建。
+
+同一 Release 还会将 `<dockerhub-namespace>/mirrorrelay:<version>` 发布为覆盖
+两个架构的 Docker Hub OCI Manifest，并提供 `v<version>`；稳定 Release
+同时更新 `latest`。发布工作流记录的 Digest 是其不可变身份。
 
 标准文件系统布局：
 ```text
@@ -220,7 +241,7 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 
 - **入门使用**：
   - [快速上手指南](docs/quick-start.zh-CN.md) ([English](docs/quick-start.md)) — 5 分钟上手实操教程。
-  - [安装说明](docs/installation.zh-CN.md) ([English](docs/installation.md)) — 生产环境 DEB、RPM 及绿色归档部署。
+  - [安装说明](docs/installation.zh-CN.md) ([English](docs/installation.md)) — 生产软件包、绿色归档与 Docker 镜像部署。
   - [Web UI 使用指南](docs/web-ui.zh-CN.md) ([English](docs/web-ui.md)) — 双语管理后台与仓库操作指南。
 - **核心架构与深度剖析**：
   - [架构设计指南](docs/architecture.zh-CN.md) ([English](docs/architecture.md)) — 双平面架构设计、生命周期与数据流。

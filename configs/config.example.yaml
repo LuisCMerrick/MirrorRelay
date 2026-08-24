@@ -1,7 +1,8 @@
 server:
-  unix_socket_enabled: true
+  unix_socket_enabled: false
   frontend_socket: "/run/mirrorrelay/frontend.sock"
   frontend_socket_mode: "0660"
+  local_address: "127.0.0.1"
   local_port: 9081
 runtime:
   root: "/var/lib/mirrorrelay/runtime"

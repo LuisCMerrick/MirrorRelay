@@ -103,8 +103,9 @@ RUN set -eu; \
  && "${STRIP}" objs/nginx \
  && install -D -m 0755 objs/nginx /out/nginx \
  && xx-verify --static /out/nginx \
- && /out/nginx -V > /tmp/nginx-version 2>&1 \
- && grep -F "nginx/${NGINX_VERSION}" /tmp/nginx-version
+ && sed -n 's/^#define NGX_CONFIGURE "\(.*\)"$/\1/p' \
+      objs/ngx_auto_config.h > /tmp/nginx-configure-arguments \
+ && test -s /tmp/nginx-configure-arguments
 
 RUN ldd /out/nginx > /tmp/nginx-ldd 2>&1 || true
 
@@ -116,7 +117,7 @@ RUN set -eu; \
       arm64) file /out/nginx | grep -F 'ARM aarch64' ;; \
     esac; \
     nginx_checksum="$(sha256sum /out/nginx | cut -d ' ' -f 1)"; \
-    configure_arguments="$(sed -n 's/^configure arguments: //p' /tmp/nginx-version)"; \
+    configure_arguments="$(cat /tmp/nginx-configure-arguments)"; \
     musl_version="$(apk info -v 2>/dev/null | grep '^musl-' | head -n 1)"; \
     build_id="nginx-${NGINX_VERSION}-linux-${TARGETARCH}-$(printf '%s' "${nginx_checksum}" | cut -c 1-12)"; \
     { \

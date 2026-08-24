@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Explicit local endpoint defaults**:
+  - External Shared Nginx now reaches the Go frontend over configurable
+    IP+port TCP by default (`127.0.0.1:9081`); the frontend Unix socket is
+    created only when `server.unix_socket_enabled` is explicitly enabled.
+  - Added strict `server.local_address` validation, including explicit wildcard
+    binding for containers, while Docker examples publish port 9081 only on the
+    host loopback interface.
+  - Kept the Go-to-Managed-Upstream-Nginx Unix socket enabled by default; only
+    an explicit disable selects its loopback TCP port.
+
+- **Multi-architecture Docker Hub release image**:
+  - Added automatic Docker Hub publication for every published release using
+    `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository settings.
+  - Publishes one OCI manifest for `linux/amd64` and `linux/arm64` with version,
+    v-prefixed version and stable-release `latest` tags, plus SBOM and provenance
+    attestations.
+  - Assembles each image from the exact MirrorRelay and Managed Upstream Nginx
+    binaries already verified by its architecture package job, byte-verifies
+    the published arm64 filesystem, and runs both images on native hosted
+    runners. Both target binaries are cross-compiled without QEMU.
+
 ## v0.0.16
 
 - **Release security baseline**:

@@ -12,6 +12,8 @@ services:
         hard: 1048576
     environment:
       MIRRORRELAY_ADMIN_HOST: ${MIRRORRELAY_ADMIN_HOST:-}
+    ports:
+      - "127.0.0.1:${MIRRORRELAY_FRONTEND_PORT:-9081}:9081"
     volumes:
       - ./configs/config.docker.yaml:/etc/mirrorrelay/config.yaml:ro
       - /run/mirrorrelay:/run/mirrorrelay

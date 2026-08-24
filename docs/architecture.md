@@ -15,7 +15,7 @@ Client (apt / dnf / pip / npm / docker)
    │ (HTTP / HTTPS on port 80 / 443)
    ▼
 External Shared Nginx (Administrator-Owned)
-   │ (Unix Domain Socket /run/mirrorrelay/frontend.sock, mode 0660)
+   │ (TCP 127.0.0.1:9081 by default; frontend Unix socket is explicit opt-in)
    ▼
 MirrorRelay Frontend (Go Service)
    ├── Routing Engine & Authentication
@@ -43,7 +43,7 @@ A unique design choice in MirrorRelay is the separation between **External Share
 
 ### External Shared Nginx (Ingress Plane)
 - **Ownership**: Owned by the system administrator.
-- **Role**: Terminates public TLS, handles domain certificates (e.g. Let's Encrypt / Certbot), and proxies requests to MirrorRelay's frontend Unix socket.
+- **Role**: Terminates public TLS, handles domain certificates (e.g. Let's Encrypt / Certbot), and proxies requests to MirrorRelay's frontend TCP endpoint by default or its explicitly enabled frontend Unix socket.
 - **Isolation**: MirrorRelay packages **never** install, modify, restart, or reload External Shared Nginx. MirrorRelay generates a scoped integration snippet (e.g. `mirrorrelay.conf`) that the administrator can include.
 
 ### Managed Upstream Nginx (Data Plane)
@@ -89,7 +89,8 @@ For large immutable package artifacts (`.deb`, `.rpm`, `.whl`, `.tar.gz`, `.iso`
 - **SSRF Defense**: Upstream URLs and redirect hops are resolved and validated against a comprehensive blacklist of private, loopback, link-local, and reserved CIDRs before connection.
 - **IP Pinning**: Upstream DNS lookups are pinned to resolved numeric IPs during dialing while preserving TLS SNI (`server_name`) verification.
 - **Header Sanitization**: Inbound client headers with `X-Mirror-Internal-*` prefixes are unconditionally stripped to prevent spoofing of internal routing state.
-- **Socket Permissions**: Unix domain sockets default to mode `0660` owned by `root:mirrorrelay`.
+- **Local Endpoint Boundary**: External Shared Nginx reaches the Go frontend over configurable IP+port TCP (`127.0.0.1:9081` by default). A frontend Unix socket is used only when explicitly enabled. The Go-to-Managed-Upstream-Nginx Unix socket remains enabled by default and must be explicitly disabled to use loopback TCP.
+- **Socket Permissions**: Every enabled Unix domain socket uses mode `0660` owned by `root:mirrorrelay`.
 
 ---
 
@@ -101,7 +102,7 @@ For large immutable package artifacts (`.deb`, `.rpm`, `.whl`, `.tar.gz`, `.iso`
 /var/lib/mirrorrelay/runtime/upstream-nginx/ # Active nginx.conf and configuration history
 /var/cache/mirrorrelay/                      # Nginx proxy_cache data directory
 /var/log/mirrorrelay/upstream-nginx/         # Access and error log files
-/run/mirrorrelay/frontend.sock               # Ingress socket from External Shared Nginx
+/run/mirrorrelay/frontend.sock               # Optional frontend socket, created only when enabled
 /run/mirrorrelay/upstream.sock               # Internal socket to Managed Upstream Nginx
 /run/mirrorrelay/upstream-nginx.pid          # Nginx master process PID
 ```

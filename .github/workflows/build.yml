@@ -60,7 +60,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
   package:
-    name: Package linux/${{ matrix.architecture }}
+    name: Cross-build packages for linux/${{ matrix.architecture }}
     needs: metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -79,12 +79,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Enable arm64 runtime probes
-        if: matrix.architecture == 'arm64'
-        uses: docker/setup-qemu-action@v4.2.0
-        with:
-          platforms: arm64
-
       - name: Configure Buildx
         uses: docker/setup-buildx-action@v4.2.0
 
@@ -101,7 +95,7 @@ jobs:
           go vet ./...
           go test -count=1 ./...
 
-      - name: Build pinned musl Managed Upstream Nginx
+      - name: Cross-compile pinned musl Managed Upstream Nginx
         run: |
           ./scripts/build-upstream-nginx-musl.sh \
             "${{ matrix.architecture }}" \
@@ -109,6 +103,7 @@ jobs:
 
       - name: Verify static dependencies and generated configuration
         env:
+          ARCHITECTURE: ${{ matrix.architecture }}
           MIRRORRELAY_TEST_UPSTREAM_NGINX: ${{ github.workspace }}/dist/upstream-nginx-linux-${{ matrix.architecture }}/nginx
         run: |
           set -euo pipefail
@@ -123,9 +118,11 @@ jobs:
             echo 'Managed Upstream Nginx has a dynamic interpreter.' >&2
             exit 1
           fi
-          go test ./internal/upstreamnginx \
-            -run '^TestRealManagedUpstreamNginx' \
-            -count=1
+          if [[ "${ARCHITECTURE}" == 'amd64' ]]; then
+            go test ./internal/upstreamnginx \
+              -run '^TestRealManagedUpstreamNginx' \
+              -count=1
+          fi
 
       - name: Run repository, registry and streaming checks
         run: |
@@ -153,6 +150,117 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  arm64-runtime:
+    name: Verify linux/arm64 on native hardware
+    needs: [metadata, package]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install binary inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends binutils file
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "release-a*64"
+          path: dist/native-packages
+          merge-multiple: true
+
+      - name: Run the cross-compiled arm64 package payload natively
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = 'aarch64'
+          temporary_directory="$(mktemp -d)"
+          trap 'rm -rf -- "${temporary_directory}"' EXIT
+          archive="dist/native-packages/mirrorrelay-${VERSION}-linux-arm64.tar.gz"
+          test -f "${archive}"
+          tar -xzf "${archive}" -C "${temporary_directory}"
+          payload="${temporary_directory}/mirrorrelay-${VERSION}"
+          (
+            cd "${payload}"
+            sha256sum -c SHA256SUMS
+          )
+          file "${payload}/mirrorrelay" "${payload}/nginx/nginx" | grep -F 'ARM aarch64'
+          if readelf -l "${payload}/mirrorrelay" | grep -q INTERP || \
+             readelf -l "${payload}/nginx/nginx" | grep -q INTERP; then
+            echo 'A packaged arm64 binary has a dynamic interpreter.' >&2
+            exit 1
+          fi
+          version_output="$("${payload}/mirrorrelay" version --verbose)"
+          printf '%s\n' "${version_output}"
+          grep -Fx "MirrorRelay Version: ${VERSION}" <<< "${version_output}"
+          grep -Fx 'Target Architecture: arm64' <<< "${version_output}"
+          "${payload}/nginx/nginx" -V 2>&1 | grep -F 'no-quic' >/dev/null
+          MIRRORRELAY_TEST_UPSTREAM_NGINX="${payload}/nginx/nginx" \
+            go test ./internal/upstreamnginx \
+              -run '^TestRealManagedUpstreamNginx' \
+              -count=1
+
+      - name: Assemble and probe the release image natively
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_TIMESTAMP: ${{ needs.metadata.outputs.build_timestamp }}
+        run: |
+          set -euo pipefail
+          ./scripts/prepare-container-context.sh \
+            "${VERSION}" \
+            dist/native-packages \
+            dist/native-container
+          docker version >/dev/null
+          docker build \
+            --platform linux/arm64 \
+            --file build/release-image.Dockerfile \
+            --build-arg "VERSION=${VERSION}" \
+            --build-arg "GIT_COMMIT=${GIT_COMMIT}" \
+            --build-arg "BUILD_TIMESTAMP=${BUILD_TIMESTAMP}" \
+            --tag mirrorrelay:native-arm64-smoke \
+            dist/native-container
+          container='mirrorrelay-native-arm64-smoke'
+          cleanup() {
+            docker rm --force "${container}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+          version_output="$(docker run --rm mirrorrelay:native-arm64-smoke version --verbose)"
+          printf '%s\n' "${version_output}"
+          grep -Fx "MirrorRelay Version: ${VERSION}" <<< "${version_output}"
+          grep -Fx "Git Commit: ${GIT_COMMIT}" <<< "${version_output}"
+          grep -Fx 'Target Architecture: arm64' <<< "${version_output}"
+          docker run --rm \
+            --entrypoint /usr/lib/mirrorrelay/nginx/nginx \
+            mirrorrelay:native-arm64-smoke \
+            -V 2>&1 | grep -F 'no-quic' >/dev/null
+          docker run --detach \
+            --name "${container}" \
+            --publish 127.0.0.1:19081:9081 \
+            mirrorrelay:native-arm64-smoke >/dev/null
+          healthy=false
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:19081/healthz >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${healthy}" != 'true' ]]; then
+            docker logs "${container}" >&2 || true
+            echo 'Pre-publication image health probe failed on native linux/arm64.' >&2
+            exit 1
+          fi
+          docker rm --force "${container}" >/dev/null
 
   source:
     name: Package vendored source
@@ -192,9 +300,261 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  container-image:
+    name: Publish Docker Hub image
+    if: github.event_name == 'release'
+    needs: [metadata, package, arm64-runtime]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Validate Docker Hub publication settings
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DOCKERHUB_USERNAME}" ]]; then
+            echo 'Repository variable DOCKERHUB_USERNAME is required.' >&2
+            exit 1
+          fi
+          if [[ -z "${DOCKERHUB_TOKEN}" ]]; then
+            echo 'Repository secret DOCKERHUB_TOKEN is required.' >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-*
+          path: dist/staging
+          merge-multiple: true
+
+      - name: Prepare exact verified container payloads
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          ./scripts/prepare-container-context.sh \
+            "${VERSION}" \
+            dist/staging \
+            dist/container
+
+      - name: Configure Buildx
+        uses: docker/setup-buildx-action@v4.3.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve image references
+        id: image
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          namespace="${DOCKERHUB_USERNAME,,}"
+          image="docker.io/${namespace}/mirrorrelay"
+          {
+            printf 'name=%s\n' "${image}"
+            echo 'tags<<MIRRORRELAY_TAGS'
+            printf '%s:%s\n' "${image}" "${VERSION}"
+            printf '%s:v%s\n' "${image}" "${VERSION}"
+            if [[ "${PRERELEASE}" != 'true' ]]; then
+              printf '%s:latest\n' "${image}"
+            fi
+            echo 'MIRRORRELAY_TAGS'
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push linux/amd64 and linux/arm64
+        id: push
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: dist/container
+          file: build/release-image.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          tags: ${{ steps.image.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.metadata.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIMESTAMP=${{ needs.metadata.outputs.build_timestamp }}
+          cache-from: type=gha,scope=mirrorrelay-release-image
+          cache-to: type=gha,mode=max,scope=mirrorrelay-release-image
+          provenance: mode=max
+          sbom: true
+
+      - name: Verify published manifest and binaries
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          manifest_file="$(mktemp)"
+          arm64_container='mirrorrelay-release-inspect-arm64'
+          amd64_container='mirrorrelay-release-probe-amd64'
+          cleanup() {
+            docker rm --force "${arm64_container}" "${amd64_container}" >/dev/null 2>&1 || true
+            rm -f -- "${manifest_file}"
+          }
+          trap cleanup EXIT INT TERM
+          reference="${IMAGE}@${DIGEST}"
+          docker buildx imagetools inspect --raw "${reference}" > "${manifest_file}"
+          jq -e '
+            [
+              .manifests[]
+              | select(.platform.os == "linux" and .platform.architecture != "unknown")
+              | .platform.architecture
+            ]
+            | sort == ["amd64", "arm64"]
+          ' "${manifest_file}" >/dev/null
+
+          # Inspect the published arm64 filesystem without target execution.
+          # The package job has already run the exact arm64 binaries under its
+          # post-build runtime-probe phase.
+          docker pull --platform linux/arm64 "${reference}" >/dev/null
+          docker create \
+            --name "${arm64_container}" \
+            --platform linux/arm64 \
+            --entrypoint /bin/true \
+            "${reference}" >/dev/null
+          docker cp "${arm64_container}:/usr/bin/mirrorrelay" "${RUNNER_TEMP}/mirrorrelay-arm64"
+          docker cp "${arm64_container}:/usr/lib/mirrorrelay/nginx/nginx" "${RUNNER_TEMP}/nginx-arm64"
+          docker cp "${arm64_container}:/usr/share/doc/mirrorrelay/BUILD-INFO" "${RUNNER_TEMP}/BUILD-INFO-arm64"
+          docker cp "${arm64_container}:/etc/mirrorrelay/config.yaml" "${RUNNER_TEMP}/config-arm64.yaml"
+          docker cp "${arm64_container}:/etc/ssl/certs/ca-certificates.crt" "${RUNNER_TEMP}/ca-certificates.crt"
+          cmp dist/container/linux-arm64/mirrorrelay "${RUNNER_TEMP}/mirrorrelay-arm64"
+          cmp dist/container/linux-arm64/nginx "${RUNNER_TEMP}/nginx-arm64"
+          cmp dist/container/linux-arm64/BUILD-INFO "${RUNNER_TEMP}/BUILD-INFO-arm64"
+          cmp dist/container/config.yaml "${RUNNER_TEMP}/config-arm64.yaml"
+          test -s "${RUNNER_TEMP}/ca-certificates.crt"
+          grep -Fx "MirrorRelay Version: ${VERSION}" "${RUNNER_TEMP}/BUILD-INFO-arm64"
+          grep -Fx "Git Commit: ${GIT_COMMIT}" "${RUNNER_TEMP}/BUILD-INFO-arm64"
+          grep -Fx 'Target Architecture: arm64' "${RUNNER_TEMP}/BUILD-INFO-arm64"
+          docker inspect "${arm64_container}" | jq -e '
+            .[0].Config.User == "65532:65532"
+            and (.[0].Config.ExposedPorts | has("9081/tcp"))
+          ' >/dev/null
+          docker rm "${arm64_container}" >/dev/null
+
+          version_output="$(docker run --rm --platform linux/amd64 "${reference}" version --verbose)"
+          printf '%s\n' "${version_output}"
+          grep -Fx "MirrorRelay Version: ${VERSION}" <<< "${version_output}"
+          grep -Fx "Git Commit: ${GIT_COMMIT}" <<< "${version_output}"
+          grep -Fx 'Target Architecture: amd64' <<< "${version_output}"
+          docker run --rm \
+            --platform linux/amd64 \
+            --entrypoint /usr/lib/mirrorrelay/nginx/nginx \
+            "${reference}" \
+            -V 2>&1 | grep -F 'no-quic' >/dev/null
+          docker run --detach \
+            --name "${amd64_container}" \
+            --platform linux/amd64 \
+            --publish 127.0.0.1:19081:9081 \
+            "${reference}" >/dev/null
+          healthy=false
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:19081/healthz >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${healthy}" != 'true' ]]; then
+            docker logs "${amd64_container}" >&2 || true
+            echo 'Container health probe failed for linux/amd64.' >&2
+            exit 1
+          fi
+          docker rm --force "${amd64_container}" >/dev/null
+
+      - name: Write container publication summary
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          {
+            echo '## Docker Hub image'
+            echo
+            echo "- Image: \`${IMAGE}:${VERSION}\`"
+            echo "- Digest: \`${DIGEST}\`"
+            echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
+            echo "- Tags: version and v-prefixed version; \`latest\` only for stable releases"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  container-arm64-runtime:
+    name: Verify Docker image on native arm64
+    if: github.event_name == 'release'
+    needs: [metadata, container-image]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run the published arm64 image natively
+        shell: bash
+        env:
+          IMAGE: ${{ needs.container-image.outputs.image }}
+          DIGEST: ${{ needs.container-image.outputs.digest }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = 'aarch64'
+          container='mirrorrelay-release-probe-arm64'
+          cleanup() {
+            docker rm --force "${container}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+          reference="${IMAGE}@${DIGEST}"
+          docker pull "${reference}" >/dev/null
+          version_output="$(docker run --rm "${reference}" version --verbose)"
+          printf '%s\n' "${version_output}"
+          grep -Fx "MirrorRelay Version: ${VERSION}" <<< "${version_output}"
+          grep -Fx "Git Commit: ${GIT_COMMIT}" <<< "${version_output}"
+          grep -Fx 'Target Architecture: arm64' <<< "${version_output}"
+          docker run --rm \
+            --entrypoint /usr/lib/mirrorrelay/nginx/nginx \
+            "${reference}" \
+            -V 2>&1 | grep -F 'no-quic' >/dev/null
+          docker run --detach \
+            --name "${container}" \
+            --publish 127.0.0.1:19081:9081 \
+            "${reference}" >/dev/null
+          healthy=false
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:19081/healthz >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "${healthy}" != 'true' ]]; then
+            docker logs "${container}" >&2 || true
+            echo 'Container health probe failed on native linux/arm64.' >&2
+            exit 1
+          fi
+          docker rm --force "${container}" >/dev/null
+
   release-bundle:
     name: Assemble release bundle
-    needs: [metadata, package, source]
+    needs: [metadata, package, arm64-runtime, source]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -256,13 +616,13 @@ jobs:
             echo "- Architectures: \`linux/amd64\`, \`linux/arm64\`"
             echo "- Formats: DEB, RPM, tar.gz"
             echo "- Vendored source: \`mirrorrelay-${VERSION}-source-with-vendor.tar.gz\`"
-            echo "- Container images: none"
+            echo "- Container image: Docker Hub multi-platform manifest on published releases"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   github-release:
     name: Publish release assets
     if: github.event_name == 'release'
-    needs: [metadata, release-bundle]
+    needs: [metadata, release-bundle, container-arm64-runtime]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

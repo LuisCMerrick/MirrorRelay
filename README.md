@@ -20,7 +20,7 @@ Client (apt / dnf / pip / npm / docker)
    │
    ▼
 External Shared Nginx (Ingress: 80 / 443)
-   │ (Unix socket 0660 / Loopback TCP)
+   │ (TCP 127.0.0.1:9081 by default / Unix socket 0660 when enabled)
    ▼
 MirrorRelay (Go Control Plane & Router)
    ├── Web UI & Management API (/admin/)
@@ -28,7 +28,7 @@ MirrorRelay (Go Control Plane & Router)
    ├── Bounded Metadata & HTML Rewriter
    ├── SQLite Persistent Desired State
    └── Candidate Generator & Atomic Publication
-   │ (Unix socket 0660 / Loopback TCP)
+   │ (Unix socket 0660 by default / Loopback TCP when disabled)
    ▼
 Managed Upstream Nginx (Dedicated Musl Data Plane)
    ├── Proxy Cache & Content Store
@@ -117,12 +117,31 @@ Open `https://127.0.0.1:8443/admin/` and register the initial administrator. Mir
    sudo systemctl enable --now mirrorrelay.service
    ```
 3. **Connect External Shared Nginx** (see [Installation Guide](docs/installation.md)):
-   Add your web server user (e.g. `www-data` or `nginx`) to the `mirrorrelay` group to access the Unix domain socket:
+   The generated snippet connects to the default frontend at `127.0.0.1:9081`.
+   Add your web server user (e.g. `www-data` or `nginx`) to the
+   `mirrorrelay` group when zero-copy bypass needs the private upstream socket,
+   or when you explicitly enable the frontend Unix socket:
    ```bash
    sudo usermod -aG mirrorrelay www-data
    ```
    Include the generated snippet `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in your Nginx `server` block and reload Nginx.
 4. Open the HTTPS administration URL and complete the one-time initial-administrator registration before exposing it to untrusted networks.
+
+### Option 3: Official Multi-Architecture Docker Image
+
+Published releases also push one Docker Hub image for both `linux/amd64` and
+`linux/arm64`; Docker selects the host architecture automatically:
+
+```bash
+export DOCKERHUB_USERNAME=<dockerhub-namespace>
+docker pull "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
+```
+
+Versioned, v-prefixed and stable-release `latest` tags refer to the same verified
+multi-platform manifest. The image contains the exact MirrorRelay and Managed
+Upstream Nginx binaries tested by the matching package jobs. See the
+[Installation Guide](docs/installation.md) for configuration, persistent mounts
+and External Shared Nginx integration.
 
 ### Example Repository & Client Setup
 
@@ -156,13 +175,13 @@ MirrorRelay uses a clean two-plane architecture separating administrative contro
 
 ```text
 External Shared Nginx (Administrator-Owned)
-         ↓  (Unix Socket 0660)
+         ↓  (TCP 127.0.0.1:9081 by default; Unix Socket 0660 is opt-in)
 MirrorRelay Frontend (Go Service)
   - Policy enforcement & Authentication
   - Dynamic routing & URL rewriting
   - Token brokerage for OCI registries
   - Configuration lifecycle (Desired state in SQLite)
-         ↓  (Unix Socket 0660)
+         ↓  (Unix Socket 0660 by default; Loopback TCP is opt-out)
 Managed Upstream Nginx (Isolated Musl Process)
   - Proxy caching on local disk (/var/cache/mirrorrelay)
   - Connection pooling & SSL verification
@@ -191,7 +210,7 @@ Read more in the [Distributed Deployment Guide](docs/distributed.md).
 
 ---
 
-## Release Packages
+## Release Packages and Container Image
 
 Pre-compiled, statically linked packages are produced for `linux/amd64` and `linux/arm64`:
 
@@ -201,6 +220,11 @@ Pre-compiled, statically linked packages are produced for `linux/amd64` and `lin
 | **arm64** | `mirrorrelay_<version>_arm64.deb` | `mirrorrelay-<version>.aarch64.rpm` | `mirrorrelay-<version>-linux-arm64.tar.gz` |
 
 Every GitHub Release also includes the architecture-neutral `mirrorrelay-<version>-source-with-vendor.tar.gz`, containing the tracked source tree plus a generated Go `vendor/` directory for offline and reproducible source builds.
+
+The same release publishes `<dockerhub-namespace>/mirrorrelay:<version>` as one
+Docker Hub OCI manifest covering both architectures. It also publishes
+`v<version>` and, for stable releases, `latest`; the digest recorded by the
+release workflow is the immutable identity.
 
 Standard file layout:
 ```text
@@ -220,7 +244,7 @@ Standard file layout:
 
 - **Getting Started**:
   - [Quick Start Guide](docs/quick-start.md) ([中文](docs/quick-start.zh-CN.md)) — 5-minute onboarding walkthrough.
-  - [Installation Guide](docs/installation.md) ([中文](docs/installation.zh-CN.md)) — Production DEB, RPM, and tarball deployment.
+  - [Installation Guide](docs/installation.md) ([中文](docs/installation.zh-CN.md)) — Production packages, tarballs, and Docker image deployment.
   - [Web UI Guide](docs/web-ui.md) ([中文](docs/web-ui.zh-CN.md)) — Bilingual dashboard, settings, and repository actions.
 - **Architecture & Deep Dives**:
   - [Architecture Guide](docs/architecture.md) ([中文](docs/architecture.zh-CN.md)) — Two-plane design, lifecycle, and data flow.

@@ -69,7 +69,7 @@ func TestListenUnixRefusesRegularFile(t *testing.T) {
 	}
 }
 
-func TestListenLocalUsesLoopbackTCPWhenUnixIsDisabled(t *testing.T) {
+func TestListenLocalUsesConfiguredTCPAddressWhenUnixIsDisabled(t *testing.T) {
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestListenLocalUsesLoopbackTCPWhenUnixIsDisabled(t *testing.T) {
 	port := probe.Addr().(*net.TCPAddr).Port
 	_ = probe.Close()
 
-	listener, err := ListenLocal(false, "", 0, port)
+	listener, err := ListenLocal(false, "", 0, "127.0.0.1", port)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,5 +85,37 @@ func TestListenLocalUsesLoopbackTCPWhenUnixIsDisabled(t *testing.T) {
 	address := listener.Addr().(*net.TCPAddr)
 	if !address.IP.IsLoopback() || address.Port != port {
 		t.Fatalf("listener address = %s, want loopback port %d", address, port)
+	}
+}
+
+func TestListenLocalRejectsUnsafeTCPAddresses(t *testing.T) {
+	for _, address := range []string{"", "localhost", "169.254.1.2", "224.0.0.1", "255.255.255.255", " 127.0.0.1"} {
+		if listener, err := ListenLocal(false, "", 0, address, 9081); err == nil {
+			_ = listener.Close()
+			t.Fatalf("unsafe TCP address %q was accepted", address)
+		}
+	}
+}
+
+func TestListenLocalAcceptsExplicitIPv4Wildcard(t *testing.T) {
+	listener, err := ListenLocal(false, "", 0, "0.0.0.0", 0)
+	if err == nil {
+		_ = listener.Close()
+		t.Fatal("zero port was unexpectedly accepted")
+	}
+
+	probe, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Skipf("execution environment cannot bind an IPv4 wildcard listener: %v", err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+	listener, err = ListenLocal(false, "", 0, "0.0.0.0", port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if !listener.Addr().(*net.TCPAddr).IP.IsUnspecified() {
+		t.Fatalf("listener address = %s, want IPv4 wildcard", listener.Addr())
 	}
 }

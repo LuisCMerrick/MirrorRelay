@@ -13,10 +13,11 @@ import (
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
-			UnixSocketEnabled:      true,
+			UnixSocketEnabled:      false,
 			FrontendSocket:         "/run/mirrorrelay/frontend.sock",
 			FrontendSocketModeText: "0660",
 			FrontendSocketMode:     0o660,
+			LocalAddress:           "127.0.0.1",
 			LocalPort:              9081,
 		},
 		Runtime: RuntimeConfig{

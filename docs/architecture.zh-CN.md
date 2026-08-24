@@ -15,7 +15,7 @@ MirrorRelay 采用严格的双平面设计，将对外接入/策略控制与高�
    │ (HTTP / HTTPS 监听端口 80 / 443)
    ▼
 外部共享 Nginx (管理员拥有)
-   │ (Unix Domain Socket /run/mirrorrelay/frontend.sock, 权限 0660)
+   │ (默认 TCP 127.0.0.1:9081；前端 Unix Socket 需显式启用)
    ▼
 MirrorRelay 前端 (Go 核心服务)
    ├── 路由引擎与身份认证
@@ -43,7 +43,7 @@ MirrorRelay 最具特色的设计之一是 **External Shared Nginx** 与 **Manag
 
 ### 外部共享 Nginx (入口平面 Ingress Plane)
 - **归属**：归宿主机系统管理员统一管理。
-- **职责**：负责公网 TLS 终结、域名证书管理（如 Let's Encrypt / Certbot）并将请求反向代理到 MirrorRelay 前端 Unix Socket。
+- **职责**：负责公网 TLS 终结、域名证书管理（如 Let's Encrypt / Certbot），并默认把请求反向代理到 MirrorRelay 前端 TCP 端点，或代理到显式启用的前端 Unix Socket。
 - **隔离性**：MirrorRelay 软件包**绝不**安装、修改、重启或重载外部共享 Nginx，而是生成一份干净、局部的配置集成片段（如 `mirrorrelay.conf`）供管理员自由引用。
 
 ### Managed Upstream Nginx (数据平面 Data Plane)
@@ -89,7 +89,8 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 - **SSRF 防御**：所有上游地址与重定向目标在连接前均解析并比对私有网络、环回地址及保留 CIDR 黑名单。
 - **IP 锁定与 SNI 保持**：DNS 解析后的 IP 固定用于底层 TCP 拨号，同时完整保留 TLS SNI（`server_name`）证书链验证。
 - **内部 Header 净化**：客户端请求中的 `X-Mirror-Internal-*` 请求头一律被强制剥离，防止伪造内部路由上下文。
-- **Socket 权限约束**：Unix Domain Socket 默认权限严格为 `0660`，属主为 `root:mirrorrelay`。
+- **本地端点边界**：External Shared Nginx 默认通过可配置 IP+端口 TCP（默认 `127.0.0.1:9081`）连接 Go 前端；前端 Unix Socket 只有显式启用后才使用。Go 到 Managed Upstream Nginx 的 Unix Socket 仍默认启用，只有显式关闭后才改用回环 TCP。
+- **Socket 权限约束**：任何启用的 Unix Domain Socket 权限都严格为 `0660`，属主为 `root:mirrorrelay`。
 
 ---
 
@@ -101,7 +102,7 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 /var/lib/mirrorrelay/runtime/upstream-nginx/ # 生效的 nginx.conf 与历史版本
 /var/cache/mirrorrelay/                      # Nginx 代理缓存目录
 /var/log/mirrorrelay/upstream-nginx/         # 访问与错误日志目录
-/run/mirrorrelay/frontend.sock               # 接收外部 Nginx 流量的前端 Socket
+/run/mirrorrelay/frontend.sock               # 可选前端 Socket，仅启用后创建
 /run/mirrorrelay/upstream.sock               # 转发至受管 Nginx 的内部 Socket
 /run/mirrorrelay/upstream-nginx.pid          # Nginx 主进程 PID
 ```

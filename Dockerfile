@@ -18,7 +18,7 @@ RUN apk add --no-cache ca-certificates \
     && addgroup -S -g 65532 mirrorrelay \
     && adduser -S -D -H -u 65532 -G mirrorrelay mirrorrelay \
     && mkdir -p \
-        /opt/mirrorrelay/nginx/sbin \
+        /usr/lib/mirrorrelay/nginx \
         /var/lib/mirrorrelay/runtime \
         /var/lib/mirrorrelay/integration/external-nginx \
         /var/cache/mirrorrelay \
@@ -30,7 +30,8 @@ RUN apk add --no-cache ca-certificates \
         /var/log/mirrorrelay \
         /run/mirrorrelay
 COPY --from=build /out/mirrorrelay /usr/local/bin/mirrorrelay
-COPY --chmod=0755 nginx/sbin/nginx /opt/mirrorrelay/nginx/sbin/nginx
+COPY --chmod=0755 nginx/sbin/nginx /usr/lib/mirrorrelay/nginx/nginx
 USER 65532:65532
+EXPOSE 9081/tcp
 ENTRYPOINT ["/usr/local/bin/mirrorrelay"]
 CMD ["-config", "/etc/mirrorrelay/config.yaml"]

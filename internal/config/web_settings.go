@@ -35,8 +35,9 @@ type WebSettings struct {
 }
 
 type WebServerSettings struct {
-	UnixSocketEnabled bool `json:"unix_socket_enabled"`
-	LocalPort         int  `json:"local_port"`
+	UnixSocketEnabled bool   `json:"unix_socket_enabled"`
+	LocalAddress      string `json:"local_address"`
+	LocalPort         int    `json:"local_port"`
 }
 
 type WebIngressSettings struct {
@@ -157,7 +158,7 @@ type WebWebhookSettings struct {
 
 func WebSettingsFrom(c Config) WebSettings {
 	return WebSettings{
-		Server:      WebServerSettings{UnixSocketEnabled: c.Server.UnixSocketEnabled, LocalPort: c.Server.LocalPort},
+		Server:      WebServerSettings{UnixSocketEnabled: c.Server.UnixSocketEnabled, LocalAddress: c.Server.LocalAddress, LocalPort: c.Server.LocalPort},
 		Ingress:     WebIngressSettings{Mode: c.Ingress.Mode, GenerateSnippet: c.Ingress.GenerateSnippet},
 		Performance: WebPerformanceSettings{StreamBufferSize: c.Performance.StreamBufferSize, GoMemoryLimit: c.Performance.GoMemoryLimit, GOGC: c.Performance.GOGC, ZeroCopyBypass: c.Performance.ZeroCopyBypass},
 		Metadata: WebMetadataSettings{RewriteBufferLimit: c.Metadata.RewriteBufferLimit, OutputCompression: c.Metadata.OutputCompression,
@@ -197,6 +198,9 @@ func WebSettingsFrom(c Config) WebSettings {
 func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate := base
 	candidate.Server.UnixSocketEnabled, candidate.Server.LocalPort = w.Server.UnixSocketEnabled, w.Server.LocalPort
+	if w.Server.LocalAddress != "" {
+		candidate.Server.LocalAddress = w.Server.LocalAddress
+	}
 	candidate.Ingress.Mode, candidate.Ingress.GenerateSnippet = w.Ingress.Mode, w.Ingress.GenerateSnippet
 	candidate.Performance.StreamBufferSize, candidate.Performance.GoMemoryLimit, candidate.Performance.GOGC, candidate.Performance.ZeroCopyBypass = w.Performance.StreamBufferSize, w.Performance.GoMemoryLimit, w.Performance.GOGC, w.Performance.ZeroCopyBypass
 	candidate.Metadata.RewriteBufferLimit, candidate.Metadata.OutputCompression = w.Metadata.RewriteBufferLimit, w.Metadata.OutputCompression

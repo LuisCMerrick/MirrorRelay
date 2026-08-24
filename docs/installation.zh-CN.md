@@ -2,7 +2,7 @@
 
 [English](installation.md) | [简体中文](installation.zh-CN.md)
 
-生产环境推荐使用 DEB 或 RPM。每个架构的软件包都包含 MirrorRelay，以及发布流水线实际测试过的同一个静态链接 Managed Upstream Nginx 二进制。目标主机不会通过系统包管理器安装 Nginx，也不会现场编译。
+与宿主机深度集成的生产部署推荐使用 DEB 或 RPM。正式 Release 同时提供一个覆盖 `linux/amd64` 和 `linux/arm64` 的 Docker Hub 镜像。每种格式都包含对应发布任务实际测试过的同一个静态链接 Managed Upstream Nginx 二进制。目标主机不会通过系统包管理器安装 Nginx，软件包安装和容器启动时也不会现场编译。
 
 ## 校验 Release
 
@@ -17,6 +17,14 @@ sha256sum -c SHA256SUMS
 ```sh
 mirrorrelay version
 mirrorrelay version --verbose
+```
+
+对于容器镜像，生产环境应优先使用不可变 Digest 或版本标签，并在部署前检查其多平台 Manifest：
+
+```sh
+export DOCKERHUB_USERNAME=<dockerhub-namespace>
+docker buildx imagetools inspect \
+  "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
 ```
 
 ## 安装 DEB
@@ -34,6 +42,54 @@ sudo dnf install ./mirrorrelay-<version>.x86_64.rpm
 ```
 
 arm64 请改用 `sudo dnf install ./mirrorrelay-<version>.aarch64.rpm`。
+
+## 运行 Docker 镜像
+
+发布工作流会向 Docker Hub 推送以下标签：
+
+- 每个已发布 Release 都有 `<version>` 和 `v<version>`；
+- 只有稳定、非预发布 Release 才更新 `latest`。
+
+所有标签都指向同一个 OCI Manifest，其中只有
+`linux/amd64` 和 `linux/arm64` 两个应用镜像，另附 SBOM/来源
+Attestation。Docker 会自动选择与宿主机匹配的架构。生产发布应
+优先使用版本标签或发布工作流记录的不可变 Digest，而不是
+`latest`。
+
+镜像以数字 UID/GID `65532` 运行，默认配置位于
+`/etc/mirrorrelay/config.yaml`，二进制路径与软件包一致：
+
+```text
+/usr/bin/mirrorrelay
+/usr/lib/mirrorrelay/nginx/nginx
+```
+
+应审核并挂载 `configs/config.docker.yaml`，不要把镜像内的示例值直接当作
+生产配置。特别要设置公开 URL、TLS 路径和精确的管理网段。Docker 专用
+配置会在容器内显式监听 `0.0.0.0:9081`；只能把该端口发布到宿主机回环，
+供管理员维护的 External Shared Nginx 使用，不能暴露受信前端端点。状态、
+缓存和日志必须持久化；可选零拷贝路径还需要共享私有上游 Socket 所在的
+Runtime 目录：
+
+```sh
+docker run -d \
+  --name mirrorrelay \
+  --restart unless-stopped \
+  --publish 127.0.0.1:9081:9081 \
+  --mount type=bind,src=/absolute/config.yaml,dst=/etc/mirrorrelay/config.yaml,readonly \
+  --mount type=volume,src=mirrorrelay-data,dst=/var/lib/mirrorrelay \
+  --mount type=volume,src=mirrorrelay-cache,dst=/var/cache/mirrorrelay \
+  --mount type=volume,src=mirrorrelay-logs,dst=/var/log/mirrorrelay \
+  --mount type=bind,src=/run/mirrorrelay,dst=/run/mirrorrelay \
+  "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
+```
+
+启动容器前，必须先按 UID `65532` 需要的属主和权限创建挂载路径。
+镜像不会安装、修改或重启宿主机 Nginx，也不会改动其服务用户。生成的
+入口片段连接宿主机 `127.0.0.1:9081`；启用零拷贝旁路时还会使用共享的
+私有 `upstream.sock`。应通过宿主机正常的 Group 或 ACL 管理，仅授权已
+确认的入口 Worker；不得把 Runtime 目录改成全局可写。若把容器端口发布到
+非回环宿主机地址，必须再用网络防火墙限制为可信入口 Peer。
 
 软件包安装到以下固定路径：
 
@@ -58,9 +114,9 @@ systemd Unit 会以 `0750` 创建 `/run/mirrorrelay`，并在 MirrorRelay 重启
 
 ## 接入 External Shared Nginx
 
-MirrorRelay 只在 `ingress.snippet_path` 下生成供审核的接入片段。软件包不会安装、卸载、修改、Reload 或 Restart External Shared Nginx，也不会占用公网 80/443 端口。
+MirrorRelay 只在 `ingress.snippet_path` 下生成供审核的接入片段。软件包不会安装、卸载、修改、Reload 或 Restart External Shared Nginx，也不会占用公网 80/443 端口。Go 前端默认监听 `127.0.0.1:9081`；监听 IP 与端口分别通过 `server.local_address`、`server.local_port` 配置。
 
-两个本地 Socket 默认权限都是 `0660`，配置会拒绝全局可写的 `0666` 或 `0777`。如需让现有 Nginx Worker 访问 `frontend.sock`，必须显式把其服务用户加入 `mirrorrelay` 组。例如，确认 Worker 用户确实是 `www-data` 后执行：
+Go 到 Managed Upstream Nginx 的 Unix Socket 默认保持启用；Go 授权请求后，零拷贝旁路也会让 External Shared Nginx 使用该私有端点。如需让现有 Nginx Worker 访问 `upstream.sock`，或在显式启用前端 Unix Socket 后访问 `frontend.sock`，必须把已确认的服务用户加入 `mirrorrelay` 组。例如，确认 Worker 用户确实是 `www-data` 后执行：
 
 ```sh
 sudo usermod -aG mirrorrelay www-data
@@ -68,13 +124,13 @@ sudo usermod -aG mirrorrelay www-data
 
 再按照该入口服务原有的维护流程应用组变更与生成的片段。不要对猜测出来的用户执行该命令；MirrorRelay 不会擅自修改现有入口账户。
 
-如果无法使用 Unix Socket，可显式设置 `server.unix_socket_enabled: false` 和/或 `upstream_nginx.upstream_unix_socket_enabled: false`，并通过 `server.local_port`、`upstream_nginx.upstream_local_port` 配置两个不同的回环端口。
+只有需要用 `frontend.sock` 替换默认前端 TCP Listener 时，才设置 `server.unix_socket_enabled: true`。任何启用的 Unix Socket 都必须使用 `0660`，配置会拒绝全局可写的 `0666` 或 `0777`。如需用回环 TCP 替换默认的 Go 到 Managed Upstream Nginx Unix Socket，应显式设置 `upstream_nginx.upstream_unix_socket_enabled: false`，并选择与前端不同的 `upstream_nginx.upstream_local_port`。
 
 ## 升级与卸载
 
 升级会替换 MirrorRelay、与其版本绑定的 Managed Upstream Nginx、systemd Unit 和内置文件，但保留 `/etc/mirrorrelay/config.yaml`、`/var/lib/mirrorrelay/mirrorrelay.db`、配置历史和 `/var/cache/mirrorrelay`。
 
-手动触发的开发构建使用 `0.0.1.git.<提交时间戳>.<提交>` 版本，使 DEB 与 RPM 包管理器能够按时间顺序比较快照。已发布 Release 与 Workflow 中显式指定的版本保持原值；直接 Push 不会触发远程构建。
+手动触发的开发构建使用 `0.0.1.git.<提交时间戳>.<提交>` 版本，使 DEB 与 RPM 包管理器能够按时间顺序比较快照。已发布 Release 与 Workflow 中显式指定的版本保持原值；直接 Push 不会触发远程构建，手动调度 Workflow 也不会发布 Docker Hub 镜像。
 
 普通 DEB/RPM 卸载也会保留配置、数据库、缓存、证书与审计数据。在 Debian 系系统上，只有显式 purge 才删除这些持久路径：
 

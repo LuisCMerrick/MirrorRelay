@@ -1,4 +1,4 @@
-server: {unix_socket_enabled: true, frontend_socket: "/run/mirrorrelay/frontend.sock", frontend_socket_mode: "0660", local_port: 9081}
+server: {unix_socket_enabled: false, frontend_socket: "/run/mirrorrelay/frontend.sock", frontend_socket_mode: "0660", local_address: "0.0.0.0", local_port: 9081}
 runtime: {root: "/var/lib/mirrorrelay/runtime", run_dir: "/run/mirrorrelay"}
 ingress: {mode: external, generate_snippet: true, snippet_path: "/var/lib/mirrorrelay/integration/external-nginx"}
 performance: {stream_buffer_size_bytes: 65536, go_memory_limit_bytes: 0, gogc: 100}
@@ -34,7 +34,7 @@ admin: {host: "", path: /admin/}
 shutdown: {grace_period: 30m}
 upstream_nginx:
   mode: managed
-  binary: /opt/mirrorrelay/nginx/sbin/nginx
+  binary: /usr/lib/mirrorrelay/nginx/nginx
   prefix: /var/lib/mirrorrelay/runtime/upstream-nginx
   pid: /run/mirrorrelay/upstream-nginx.pid
   log_path: /var/log/mirrorrelay/upstream-nginx

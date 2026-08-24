@@ -223,7 +223,11 @@ for service_root in "$deb_root" "$rpm_root"; do
   grep -Fx 'UMask=0007' "$service_file" >/dev/null
   grep -Fx 'ExecStart=/usr/bin/mirrorrelay -config /etc/mirrorrelay/config.yaml' "$service_file" >/dev/null
   package_config="$service_root/etc/mirrorrelay/config.yaml"
+  grep -Fx '  unix_socket_enabled: false' "$package_config" >/dev/null
   grep -Fx '  frontend_socket_mode: "0660"' "$package_config" >/dev/null
+  grep -Fx '  local_address: "127.0.0.1"' "$package_config" >/dev/null
+  grep -Fx '  local_port: 9081' "$package_config" >/dev/null
+  grep -Fx '  upstream_unix_socket_enabled: true' "$package_config" >/dev/null
   grep -Fx '  upstream_socket_mode: "0660"' "$package_config" >/dev/null
   grep -Fx '  binary: /usr/lib/mirrorrelay/nginx/nginx' "$package_config" >/dev/null
   grep -Fx '  prefix: /var/lib/mirrorrelay/runtime/upstream-nginx' "$package_config" >/dev/null

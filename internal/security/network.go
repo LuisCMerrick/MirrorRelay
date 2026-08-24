@@ -308,9 +308,10 @@ func ClientIP(remoteAddr string) string {
 	return remoteAddr
 }
 
-// RequestClientIP returns the client address supplied by the trusted local
-// ingress. The manager listener is reachable only through a Unix socket or a
-// loopback TCP endpoint, so external clients cannot connect to it directly.
+// RequestClientIP returns the client address supplied by the trusted ingress.
+// Deployments must keep the frontend listener private to that ingress; the
+// packaged default uses loopback and the Docker example publishes only on host
+// loopback.
 func RequestClientIP(request *http.Request) string {
 	if request != nil {
 		if value := strings.TrimSpace(request.Header.Get("X-Real-IP")); net.ParseIP(value) != nil {

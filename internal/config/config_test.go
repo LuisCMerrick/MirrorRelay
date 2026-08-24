@@ -43,7 +43,10 @@ func TestLegacyBootstrapCredentialsAreRejectedAsUnknownConfiguration(t *testing.
 
 func TestValidateRequires0660ForBothUnixSockets(t *testing.T) {
 	for _, mutate := range []func(*Config){
-		func(cfg *Config) { cfg.Server.FrontendSocketModeText = "0600" },
+		func(cfg *Config) {
+			cfg.Server.UnixSocketEnabled = true
+			cfg.Server.FrontendSocketModeText = "0600"
+		},
 		func(cfg *Config) { cfg.UpstreamNginx.UpstreamSocketModeText = "0600" },
 	} {
 		cfg := Default()
@@ -58,6 +61,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	base := Default()
 	settings := WebSettingsFrom(base)
 	settings.Server.UnixSocketEnabled = false
+	settings.Server.LocalAddress = "127.0.0.2"
 	settings.Server.LocalPort = 19081
 	settings.Ingress.Mode = "managed-standalone"
 	settings.Ingress.GenerateSnippet = false
@@ -134,7 +138,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if network, address := applied.FrontendEndpoint(); network != "tcp" || address != "127.0.0.1:19081" {
+	if network, address := applied.FrontendEndpoint(); network != "tcp" || address != "127.0.0.2:19081" {
 		t.Fatalf("frontend endpoint = %s %s", network, address)
 	}
 	if applied.Cache.MaxSizeBytes != 64<<30 || applied.Cache.Inactive != 48*time.Hour || applied.HTTP.PublicBaseURL != "https://mirror.example.com" {
@@ -200,6 +204,14 @@ func TestWebSettingsRejectUnknownFieldsAndInvalidValues(t *testing.T) {
 	applied, err := legacy.Apply(Default())
 	if err != nil || applied.Webhook.Timeout != Default().Webhook.Timeout || !reflect.DeepEqual(applied.Webhook.Events, Default().Webhook.Events) {
 		t.Fatalf("legacy settings document did not inherit the new webhook section: webhook=%+v err=%v", applied.Webhook, err)
+	}
+	legacy = WebSettingsFrom(Default())
+	legacy.Server.LocalAddress = ""
+	base := Default()
+	base.Server.LocalAddress = "127.0.0.2"
+	applied, err = legacy.Apply(base)
+	if err != nil || applied.Server.LocalAddress != base.Server.LocalAddress {
+		t.Fatalf("legacy settings document did not inherit server.local_address: address=%q err=%v", applied.Server.LocalAddress, err)
 	}
 }
 
@@ -283,10 +295,10 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 	}
 }
 
-func TestUnixSocketsCanBeDisabledWithConfigurableLoopbackPorts(t *testing.T) {
+func TestFrontendTCPAddressAndExplicitUpstreamTCPAreConfigurable(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	data := []byte("server:\n  unix_socket_enabled: false\n  local_port: 19081\nupstream_nginx:\n  upstream_unix_socket_enabled: false\n  upstream_local_port: 19082\n")
+	data := []byte("server:\n  local_address: ::1\n  local_port: 19081\nupstream_nginx:\n  upstream_unix_socket_enabled: false\n  upstream_local_port: 19082\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -294,11 +306,79 @@ func TestUnixSocketsCanBeDisabledWithConfigurableLoopbackPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if network, address := cfg.FrontendEndpoint(); network != "tcp" || address != "127.0.0.1:19081" {
+	if network, address := cfg.FrontendEndpoint(); network != "tcp" || address != "[::1]:19081" {
 		t.Fatalf("frontend endpoint = %s %s", network, address)
 	}
 	if network, address := cfg.UpstreamEndpoint(); network != "tcp" || address != "127.0.0.1:19082" {
 		t.Fatalf("upstream endpoint = %s %s", network, address)
+	}
+}
+
+func TestEndpointDefaultsUseFrontendTCPAndUpstreamUnixSocket(t *testing.T) {
+	cfg := Default()
+	if cfg.Server.UnixSocketEnabled {
+		t.Fatal("frontend Unix socket is enabled by default")
+	}
+	if network, address := cfg.FrontendEndpoint(); network != "tcp" || address != "127.0.0.1:9081" {
+		t.Fatalf("default frontend endpoint = %s %s", network, address)
+	}
+	if !cfg.UpstreamNginx.UpstreamSocketEnabled {
+		t.Fatal("Managed Upstream Nginx Unix socket is disabled by default")
+	}
+	if network, address := cfg.UpstreamEndpoint(); network != "unix" || address != "/run/mirrorrelay/upstream.sock" {
+		t.Fatalf("default upstream endpoint = %s %s", network, address)
+	}
+}
+
+func TestFrontendTCPAddressMustBeExplicitValidIP(t *testing.T) {
+	for _, address := range []string{"", "localhost", "169.254.1.2", "224.0.0.1", "255.255.255.255", " 127.0.0.1"} {
+		cfg := Default()
+		cfg.Server.LocalAddress = address
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("invalid frontend TCP address %q was accepted", address)
+		}
+	}
+
+	for _, address := range []string{"127.0.0.1", "127.0.0.2", "::1", "0.0.0.0", "::", "192.168.10.8", "2001:db8::8"} {
+		cfg := Default()
+		cfg.Server.LocalAddress = address
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("valid frontend TCP address %q was rejected: %v", address, err)
+		}
+	}
+}
+
+func TestWildcardFrontendListenAddressUsesLoopbackConnectEndpoint(t *testing.T) {
+	cfg := Default()
+	cfg.Server.LocalAddress = "0.0.0.0"
+	if network, address := cfg.FrontendEndpoint(); network != "tcp" || address != "127.0.0.1:9081" {
+		t.Fatalf("IPv4 wildcard frontend endpoint = %s %s", network, address)
+	}
+	cfg.Server.LocalAddress = "::"
+	if network, address := cfg.FrontendEndpoint(); network != "tcp" || address != "[::1]:9081" {
+		t.Fatalf("IPv6 wildcard frontend endpoint = %s %s", network, address)
+	}
+}
+
+func TestWildcardFrontendTCPCannotReuseExplicitUpstreamTCPPort(t *testing.T) {
+	cfg := Default()
+	cfg.Server.LocalAddress = "0.0.0.0"
+	cfg.UpstreamNginx.UpstreamSocketEnabled = false
+	cfg.UpstreamNginx.UpstreamLocalPort = cfg.Server.LocalPort
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("overlapping frontend wildcard and upstream loopback TCP ports were accepted")
+	}
+}
+
+func TestDistinctFrontendIPCanReuseExplicitUpstreamTCPPort(t *testing.T) {
+	for _, address := range []string{"127.0.0.2", "::1"} {
+		cfg := Default()
+		cfg.Server.LocalAddress = address
+		cfg.UpstreamNginx.UpstreamSocketEnabled = false
+		cfg.UpstreamNginx.UpstreamLocalPort = cfg.Server.LocalPort
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("distinct frontend address %q was rejected: %v", address, err)
+		}
 	}
 }
 
@@ -349,6 +429,7 @@ func TestValidateRejectsGeneratedNginxInjectionAndInvalidRuntimeLimits(t *testin
 		},
 		func(cfg *Config) {
 			cfg.UpstreamNginx.Mode = "disabled"
+			cfg.Server.UnixSocketEnabled = true
 			cfg.Server.FrontendSocket = "/run/frontend.sock; include evil"
 		},
 		func(cfg *Config) {

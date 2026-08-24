@@ -8,20 +8,28 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
 
-// ListenLocal selects the private Unix listener or its loopback-only TCP
-// endpoint. TCP is never bound to a wildcard address.
-func ListenLocal(unixEnabled bool, path string, mode os.FileMode, port int) (net.Listener, error) {
+// ListenLocal selects the private Unix listener or a configured IP TCP
+// endpoint. Wildcard binding is accepted only when explicitly configured.
+func ListenLocal(unixEnabled bool, path string, mode os.FileMode, localAddress string, port int) (net.Listener, error) {
 	if unixEnabled {
 		return ListenUnix(path, mode)
+	}
+	if localAddress == "" || strings.TrimSpace(localAddress) != localAddress {
+		return nil, errors.New("local TCP address must be a valid IP listen address")
+	}
+	ip := net.ParseIP(localAddress)
+	if ip == nil || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.Equal(net.IPv4bcast) {
+		return nil, errors.New("local TCP address must be a valid IP listen address")
 	}
 	if port < 1 || port > 65535 {
 		return nil, errors.New("local TCP port must be 1..65535")
 	}
-	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	address := net.JoinHostPort(localAddress, strconv.Itoa(port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen on local TCP endpoint %s: %w", address, err)

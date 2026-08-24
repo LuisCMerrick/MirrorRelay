@@ -246,12 +246,18 @@ export default {
         "fields": [
             {
                 "path": "server.unix_socket_enabled",
-                "label": "前端 Unix Socket",
+                "label": "启用前端 Unix Socket",
                 "type": "boolean"
             },
             {
+                "path": "server.local_address",
+                "label": "前端监听 IP",
+                "type": "text",
+                "placeholder": "127.0.0.1"
+            },
+            {
                 "path": "server.local_port",
-                "label": "前端回环端口",
+                "label": "前端监听端口",
                 "type": "number",
                 "min": 1,
                 "max": 65535
