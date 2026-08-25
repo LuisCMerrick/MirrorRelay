@@ -89,9 +89,69 @@ MirrorRelay (Go 控制平面与路由器)
 
 ---
 
-## 5 分钟快速上手
+## 快速上手
 
-### 方式 1：本地快速开发与评估体验（无需任何外部依赖）
+最新多架构镜像为 `luiscmerrick/mirrorrelay:latest`：
+[https://hub.docker.com/r/luiscmerrick/mirrorrelay:latest](https://hub.docker.com/r/luiscmerrick/mirrorrelay:latest)。
+生产请求仍必须遵循 External Shared Nginx → MirrorRelay Frontend →
+Managed Upstream Nginx 链路。
+
+### 方式 1：使用 Docker 直接启动最新镜像
+
+首次创建固定私有 Bridge，然后以非 root 容器启动，并挂载持久状态、缓存、
+日志 Volume 与限定 UID/GID 的 Runtime tmpfs：
+
+```bash
+docker network create --driver bridge --subnet 172.31.255.0/24 --gateway 172.31.255.1 mirrorrelay-net
+
+docker run -d \
+  --name mirrorrelay \
+  --restart unless-stopped \
+  --network mirrorrelay-net \
+  --publish 127.0.0.1:9081:9081 \
+  --volume mirrorrelay-data:/var/lib/mirrorrelay \
+  --volume mirrorrelay-cache:/var/cache/mirrorrelay \
+  --volume mirrorrelay-logs:/var/log/mirrorrelay \
+  --tmpfs /run/mirrorrelay:rw,nosuid,nodev,noexec,mode=0770,uid=65532,gid=65532 \
+  luiscmerrick/mirrorrelay:latest
+```
+
+镜像内置 Docker 配置已信任固定 Bridge Gateway；由于 Runtime Socket 只在
+容器内可见，默认关闭跨边界零拷贝。请让管理员维护的 External Shared Nginx
+连接宿主机 `127.0.0.1:9081`，审核生成的入口配置，并在开放服务前设置精确的
+管理 CIDR。完整说明见[安装文档](docs/installation.zh-CN.md)。
+
+### 方式 2：使用 `compose.yaml`
+
+```bash
+git clone https://github.com/LuisCMerrick/MirrorRelay.git
+cd MirrorRelay
+sudoedit configs/config.docker.yaml
+docker compose pull
+docker compose up -d
+```
+
+Compose 默认使用 `luiscmerrick/mirrorrelay:latest`。需要固定部署版本时，请把
+`MIRRORRELAY_IMAGE_TAG` 设置为不可变 Release Tag。
+
+### 方式 3：安装发行软件包（DEB / RPM）
+
+```bash
+# Debian / Ubuntu（amd64 示例）：
+sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+
+# RHEL / Rocky Linux / Fedora（amd64 示例）：
+sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+
+sudoedit /etc/mirrorrelay/config.yaml
+sudo systemctl enable --now mirrorrelay.service
+```
+
+发布同时提供 arm64/aarch64 软件包。请按现有入口的正常维护流程应用
+`/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 中生成的
+External Shared Nginx 片段。
+
+### 方式 4：使用源码开发模式运行
 
 ```bash
 git clone https://github.com/LuisCMerrick/MirrorRelay.git
@@ -99,47 +159,9 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-在浏览器打开 `https://127.0.0.1:8443/admin/` 并注册初始管理员。MirrorRelay 不提供默认账号密码。
-
-### 方式 2：生产环境发行版安装包部署 (DEB / RPM)
-
-1. **安装软件包**：
-   ```bash
-   # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
-
-   # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
-   ```
-2. **审核管理网络边界并启用服务**：
-   ```bash
-   sudoedit /etc/mirrorrelay/config.yaml   # 设置 security.admin_cidrs
-   sudo systemctl enable --now mirrorrelay.service
-   ```
-3. **对接外部共享 Nginx**（详见 [安装说明](docs/installation.zh-CN.md)）：
-   生成的片段默认连接 `127.0.0.1:9081` 前端。零拷贝旁路需要访问私有上游
-   Socket，或显式启用前端 Unix Socket 时，请将宿主机 Web 运行用户（如
-   `www-data` 或 `nginx`）加入 `mirrorrelay` 用户组：
-   ```bash
-   sudo usermod -aG mirrorrelay www-data
-   ```
-   在外部 Nginx 的 `server` 块中引入自动生成的集成配置 `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` 并平滑重载 Nginx。
-4. 打开 HTTPS 管理地址并完成一次性的初始管理员注册，再向不受信任网络开放管理面。
-
-### 方式 3：官方多架构 Docker 镜像
-
-正式 Release 还会向 Docker Hub 推送一个同时支持 `linux/amd64` 与
-`linux/arm64` 的镜像；Docker 会自动选择宿主机架构：
-
-```bash
-export DOCKERHUB_USERNAME=<dockerhub-namespace>
-docker pull "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
-```
-
-版本号、带 `v` 前缀的版本号以及稳定 Release 的 `latest` 标签指向同一个
-已验证的多平台 Manifest。镜像包含对应软件包任务实际测试的同一份
-MirrorRelay 与 Managed Upstream Nginx 二进制。配置、持久目录挂载和
-External Shared Nginx 接入方式请阅读[安装说明](docs/installation.zh-CN.md)。
+打开 `https://127.0.0.1:8443/admin/`，接受本地开发证书并注册初始管理员。
+仓库内置开发 Nginx Fixture 仅用于 Linux amd64；amd64/arm64 正式部署应使用
+已发布镜像或软件包。
 
 ### 仓库添加与客户端配置示例
 

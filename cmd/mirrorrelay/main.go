@@ -35,7 +35,7 @@ import (
 )
 
 var (
-	version        = "0.0.16"
+	version        = "0.0.17"
 	gitCommit      = "unknown"
 	buildTimestamp = "unknown"
 	buildID        = ""
@@ -80,7 +80,11 @@ func run() error {
 	if err := config.EnsureDirectories(cfg); err != nil {
 		return fmt.Errorf("create directories: %w", err)
 	}
-	store, err := database.Open(cfg.Database.Path)
+	clusterMutationTokenKeys, err := database.LoadClusterMutationTokenKeyFiles(cfg.Distributed.MutationTokenKeyFiles)
+	if err != nil {
+		return err
+	}
+	store, err := database.Open(cfg.Database.Path, database.WithClusterMutationTokenKeys(clusterMutationTokenKeys...))
 	if err != nil {
 		return err
 	}

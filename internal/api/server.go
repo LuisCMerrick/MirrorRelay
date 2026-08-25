@@ -94,6 +94,7 @@ type Server struct {
 	sessions       *auth.Sessions
 	loginLimiter   *auth.LoginLimiter
 	adminCIDRs     security.CIDRList
+	trustedProxies security.CIDRList
 	webhook        *webhook.Dispatcher
 	appearance     *appearance.Store
 	web            fs.FS
@@ -124,23 +125,28 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 	if err != nil {
 		return nil, err
 	}
+	trustedProxies, err := security.ParseCIDRs(cfg.Security.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
 	srv := &Server{
-		cfg:           cfg,
-		fileConfig:    fileConfig,
-		store:         store,
-		registry:      registry,
-		cache:         cacheManager,
-		stats:         metric,
-		checker:       checker,
-		sessions:      auth.NewSessionsWithPath(store, cfg.Security.SessionTimeout, cfg.Admin.Path),
-		loginLimiter:  auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures),
-		upstreamNginx: upstreamNginx,
-		adminCIDRs:    cidrs,
-		webhook:       webhook.New(cfg.Webhook),
-		appearance:    appearance.New(cfg.UIEnhancement),
-		web:           web,
-		build:         build,
-		started:       time.Now(),
+		cfg:            cfg,
+		fileConfig:     fileConfig,
+		store:          store,
+		registry:       registry,
+		cache:          cacheManager,
+		stats:          metric,
+		checker:        checker,
+		sessions:       auth.NewSessionsWithPath(store, cfg.Security.SessionTimeout, cfg.Admin.Path),
+		loginLimiter:   auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures),
+		upstreamNginx:  upstreamNginx,
+		adminCIDRs:     cidrs,
+		trustedProxies: trustedProxies,
+		webhook:        webhook.New(cfg.Webhook),
+		appearance:     appearance.New(cfg.UIEnhancement),
+		web:            web,
+		build:          build,
+		started:        time.Now(),
 	}
 	if store != nil {
 		srv.warmupEngine = warmup.NewEngine(cfg, store, &auditRecorderAdapter{server: srv})
@@ -170,6 +176,10 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		}
 	}
 	return srv, nil
+}
+
+func (s *Server) requestClientIP(request *http.Request) string {
+	return security.RequestClientIP(request, s.trustedProxies, s.cfg.Server.UnixSocketEnabled)
 }
 
 func (s *Server) SetAppearanceStore(store *appearance.Store) {

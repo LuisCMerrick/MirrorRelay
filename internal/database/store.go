@@ -17,9 +17,14 @@ const AppearanceSettingsKey = "appearance_settings_v1"
 
 const auxiliaryURLSigningKeySetting = "auxiliary_url_signing_key_v1"
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db                 *sql.DB
+	clusterTokenCipher *clusterMutationTokenCipher
+}
 
-func Open(path string) (*Store, error) {
+type OpenOption func(*Store) error
+
+func Open(path string, options ...OpenOption) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
@@ -35,7 +40,17 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	s := &Store{db: db}
+	for _, option := range options {
+		if err := option(s); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	if err := s.migrate(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrateClusterMutationTokens(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}

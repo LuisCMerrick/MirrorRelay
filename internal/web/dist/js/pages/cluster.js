@@ -19,7 +19,8 @@ export async function loadCluster() {
     kv(L('Routing mode'), overview.routing_mode || 'hybrid'),
     kv(L('Cluster Fingerprint'), overview.cluster_fingerprint || L('Not initialized'))
   ].join('');
-  const canManage = state.role === 'admin' || state.role === 'operator';
+  const canOperate = state.role === 'admin' || state.role === 'operator';
+  const canManageNodes = state.role === 'admin';
   const overviewHtml = `<div class="cards compact-cards">
     ${card(L('Cluster status'), overview.enabled ? L('Enabled') : L('Disabled'), overview.enabled, 'cluster', overview.role || 'standalone')}
     ${card(L('Healthy nodes'), `${overview.healthy_nodes || 0} / ${overview.total_nodes || 0}`, (overview.healthy_nodes || 0) > 0, 'activity', L('healthy / total'))}
@@ -42,13 +43,15 @@ export async function loadCluster() {
       <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(node.config_status || 'unknown')}</span></td>
       <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
-      ${canManage ? `<td>
+      ${canOperate ? `<td>
         <div class="actions">
           <button class="small secondary requires-operator" data-action="sync-node" data-id="${node.id}">${icon('refresh', 12)} ${L('Sync')}</button>
           <button class="small secondary requires-operator" data-action="check-node" data-id="${node.id}">${icon('play', 12)} ${L('Check')}</button>
-          <button class="small secondary requires-operator" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
-          <button class="small secondary requires-operator" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
-          <button class="small danger requires-operator" data-action="delete-node" data-id="${node.id}" title="${L('Delete')}" aria-label="${L('Delete')}">${icon('trash', 12)}</button>
+          ${canManageNodes ? `
+            <button class="small secondary requires-admin" data-action="edit-node" data-id="${node.id}">${icon('edit', 12)} ${L('Edit')}</button>
+            <button class="small secondary requires-admin" data-action="toggle-node" data-id="${node.id}" data-enabled="${node.enabled}">${node.enabled ? L('Disable') : L('Enable')}</button>
+            <button class="small danger requires-admin" data-action="delete-node" data-id="${node.id}" title="${L('Delete')}" aria-label="${L('Delete')}">${icon('trash', 12)}</button>
+          ` : ''}
         </div>
       </td>` : ''}
     </tr>`;
@@ -65,8 +68,8 @@ export async function loadCluster() {
       <th>${L('Config')}</th>
       <th>${L('Fingerprint')}</th>
       <th>${L('Last check')}</th>
-      ${canManage ? `<th>${L('Actions')}</th>` : ''}
-    </tr></thead><tbody>${nodeRows || `<tr><td colspan="${canManage ? 9 : 8}" class="empty">${L('No edge nodes registered yet.')}</td></tr>`}</tbody></table></div>
+      ${canOperate ? `<th>${L('Actions')}</th>` : ''}
+    </tr></thead><tbody>${nodeRows || `<tr><td colspan="${canOperate ? 9 : 8}" class="empty">${L('No edge nodes registered yet.')}</td></tr>`}</tbody></table></div>
   </div>`;
 
   $('#cluster-overview').innerHTML = overviewHtml;

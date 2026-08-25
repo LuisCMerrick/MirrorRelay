@@ -489,6 +489,11 @@ export default {
                 "type": "boolean"
             },
             {
+                "path": "security.trusted_proxy_cidrs",
+                "label": "受信入口 CIDR（每行一个）",
+                "type": "list"
+            },
+            {
                 "path": "security.session_timeout",
                 "label": "会话超时",
                 "type": "text"
@@ -926,6 +931,7 @@ export default {
     "Rollback repositories and custom configuration to v%s?": "将仓库和自定义配置回滚到 v%s？",
     "Rolled back through a validated graceful reload.": "已通过验证并 Graceful Reload 完成回滚。",
     "These directives apply only to Managed Upstream Nginx. Dangerous process, filesystem and context-escape directives are rejected.": "这些指令仅应用于受管上游 Nginx；危险的进程、文件系统和上下文逃逸指令会被拒绝。",
+    "Custom configuration is an administrator-only code-level change. Dangerous process, filesystem and context-escape directives are rejected.": "自定义配置属于仅管理员可执行的代码级变更；危险的进程、文件系统和上下文逃逸指令会被拒绝。",
     "Context": "上下文",
     "Last validation": "最后验证",
     "Global": "全局",

@@ -31,6 +31,7 @@ var webSettingsFileOnly = []string{
 	"upstream_nginx.upstream_socket",
 	"upstream_nginx.upstream_socket_mode",
 	"upstream_nginx.ca_bundle",
+	"distributed.mutation_token_key_files",
 }
 
 func normalizeForComparison(w config.WebSettings) config.WebSettings {
@@ -38,6 +39,9 @@ func normalizeForComparison(w config.WebSettings) config.WebSettings {
 	w.Warmup = model.WarmupConfig{}
 	if w.Security.AdminCIDRs == nil {
 		w.Security.AdminCIDRs = []string{}
+	}
+	if w.Security.TrustedProxyCIDRs == nil {
+		w.Security.TrustedProxyCIDRs = []string{}
 	}
 	normalizeDuration := func(s *string) {
 		if *s != "" {

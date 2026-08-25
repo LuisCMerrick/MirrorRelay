@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -79,7 +80,8 @@ func Default() Config {
 		Security: SecurityConfig{
 			AllowHTTPUpstream:    false,
 			AllowPrivateUpstream: false,
-			ExposeClientIP:       true,
+			ExposeClientIP:       false,
+			TrustedProxyCIDRs:    []string{"127.0.0.1/32", "::1/128"},
 			SessionTimeout:       12 * time.Hour,
 			LoginWindow:          10 * time.Minute,
 			LoginMaxFailures:     5,
@@ -227,7 +229,12 @@ func applyDevDefaults(cfg *Config) {
 		cfg.UpstreamNginx.Prefix = filepath.Join(devRoot, "runtime", "upstream-nginx")
 	}
 	if cfg.UpstreamNginx.Binary == "/usr/lib/mirrorrelay/nginx/nginx" {
-		cfg.UpstreamNginx.Binary = "nginx"
+		fixture := filepath.Join("nginx", "sbin", "nginx")
+		if info, statErr := os.Stat(fixture); runtime.GOOS == "linux" && runtime.GOARCH == "amd64" && statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			cfg.UpstreamNginx.Binary = fixture
+		} else if info, statErr := os.Stat(cfg.UpstreamNginx.Binary); statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			cfg.UpstreamNginx.Binary = "nginx"
+		}
 	}
 	if os.Geteuid() == 0 {
 		cfg.UpstreamNginx.WorkerUser = "root"
@@ -256,6 +263,9 @@ func applyEnvironment(cfg *Config) {
 	}
 	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN"); v != "" {
 		cfg.Distributed.MutationToken = v
+	}
+	if v := os.Getenv("MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN_KEY_FILES"); v != "" {
+		cfg.Distributed.MutationTokenKeyFiles = filepath.SplitList(v)
 	}
 	if v := os.Getenv("MIRRORRELAY_COORDINATOR_ID"); v != "" {
 		cfg.Distributed.CoordinatorID = v

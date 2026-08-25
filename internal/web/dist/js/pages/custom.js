@@ -10,7 +10,7 @@ export async function loadCustom() {
   state.customConfigs = (await api('/custom-configs')) || [];
   $('#custom-list').innerHTML = `
     <div class="panel">
-      <p class="muted">${L('These directives apply only to Managed Upstream Nginx. Dangerous process, filesystem and context-escape directives are rejected.')}</p>
+      <p class="muted">${L('Custom configuration is an administrator-only code-level change. Dangerous process, filesystem and context-escape directives are rejected.')}</p>
     </div>
     <div class="table-wrap">
       <table>
@@ -33,8 +33,8 @@ export async function loadCustom() {
             <td><code>${esc(value.last_validation_result || '—')}</code></td>
             <td>
               <div class="actions">
-                <button class="requires-operator" data-action="edit-custom" data-id="${value.id}">${icon('edit', 12)} ${L('Edit')}</button>
-                <button class="danger requires-operator" data-action="delete-custom" data-id="${value.id}">${icon('trash', 12)} ${L('Delete')}</button>
+                <button class="requires-admin" data-action="edit-custom" data-id="${value.id}">${icon('edit', 12)} ${L('Edit')}</button>
+                <button class="danger requires-admin" data-action="delete-custom" data-id="${value.id}">${icon('trash', 12)} ${L('Delete')}</button>
               </div>
             </td>
           </tr>`).join('')}

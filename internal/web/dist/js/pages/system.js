@@ -39,12 +39,12 @@ export async function loadSystem() {
 
   const ingressDetails = [
     kv(L('Ingress mode'), system.ingress_mode),
-    kv(L('HTTPS listen'), system.https_listen),
+    system.https_listen ? kv(L('HTTPS listen'), system.https_listen) : '',
     kv(L('Minimum TLS'), system.tls_min_version),
-    system.ingress_mode === 'managed-standalone' ? kv(L('Certificate'), system.tls_certificate) : '',
-    system.ingress_mode === 'managed-standalone' ? kv(L('Private key'), system.tls_private_key) : '',
-    kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`),
-    kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`),
+    system.ingress_mode === 'managed-standalone' && system.tls_certificate ? kv(L('Certificate'), system.tls_certificate) : '',
+    system.ingress_mode === 'managed-standalone' && system.tls_private_key ? kv(L('Private key'), system.tls_private_key) : '',
+    system.frontend_network && system.frontend_address ? kv(L('Frontend endpoint'), `${system.frontend_network} · ${system.frontend_address}`) : '',
+    system.upstream_network && system.upstream_address ? kv(L('Upstream endpoint'), `${system.upstream_network} · ${system.upstream_address}`) : '',
     kv(L('Zero-Copy Acceleration'), system.zero_copy_bypass ? `${L('Adaptive Active')} (X-Accel-Redirect)` : L('Disabled'))
   ].join('');
 

@@ -489,6 +489,11 @@ export default {
                 "type": "boolean"
             },
             {
+                "path": "security.trusted_proxy_cidrs",
+                "label": "Trusted ingress CIDRs (one per line)",
+                "type": "list"
+            },
+            {
                 "path": "security.session_timeout",
                 "label": "Session timeout",
                 "type": "text"
@@ -926,6 +931,7 @@ export default {
     "Rollback repositories and custom configuration to v%s?": "Rollback repositories and custom configuration to v%s?",
     "Rolled back through a validated graceful reload.": "Rolled back through a validated graceful reload.",
     "These directives apply only to Managed Upstream Nginx. Dangerous process, filesystem and context-escape directives are rejected.": "These directives apply only to Managed Upstream Nginx. Dangerous process, filesystem and context-escape directives are rejected.",
+    "Custom configuration is an administrator-only code-level change. Dangerous process, filesystem and context-escape directives are rejected.": "Custom configuration is an administrator-only code-level change. Dangerous process, filesystem and context-escape directives are rejected.",
     "Context": "Context",
     "Last validation": "Last validation",
     "Global": "Global",

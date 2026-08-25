@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,11 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid admin CIDR %q: %w", cidr, err)
 		}
 	}
+	for _, cidr := range c.Security.TrustedProxyCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("invalid trusted proxy CIDR %q: %w", cidr, err)
+		}
+	}
 	if c.TLS.MinVersion != "1.2" && c.TLS.MinVersion != "1.3" {
 		return errors.New("tls.min_version must be 1.2 or 1.3")
 	}
@@ -176,6 +182,17 @@ func (c Config) Validate() error {
 	if c.Distributed.Role != "" && c.Distributed.Role != "standalone" && c.Distributed.Role != "coordinator" && c.Distributed.Role != "edge" {
 		return errors.New("distributed.role must be standalone, coordinator or edge")
 	}
+	seenKeyFiles := make(map[string]bool, len(c.Distributed.MutationTokenKeyFiles))
+	for _, keyFile := range c.Distributed.MutationTokenKeyFiles {
+		if strings.TrimSpace(keyFile) != keyFile || !filepath.IsAbs(keyFile) {
+			return errors.New("distributed.mutation_token_key_files entries must be absolute paths without surrounding whitespace")
+		}
+		cleaned := filepath.Clean(keyFile)
+		if seenKeyFiles[cleaned] {
+			return fmt.Errorf("distributed.mutation_token_key_files contains duplicate path %q", cleaned)
+		}
+		seenKeyFiles[cleaned] = true
+	}
 	if c.Distributed.Enabled || c.Distributed.Role != "standalone" {
 		probeToken := strings.TrimSpace(c.Distributed.Token)
 		if c.Distributed.Enabled && probeToken == "" {
@@ -196,6 +213,9 @@ func (c Config) Validate() error {
 			}
 		}
 		if c.Distributed.Role == "coordinator" {
+			if len(c.Distributed.MutationTokenKeyFiles) == 0 {
+				return errors.New("distributed.mutation_token_key_files requires at least one key file for a coordinator")
+			}
 			if strings.TrimSpace(c.Distributed.Node.Name) == "" {
 				return errors.New("distributed.node.name is required for a coordinator")
 			}

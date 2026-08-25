@@ -48,6 +48,20 @@ func validationMessage(result string, err error) string {
 	return err.Error() + ": " + strings.TrimSpace(result)
 }
 
+func validationMessageForRole(result string, err error, role string) string {
+	if role != "admin" {
+		return "Managed Upstream Nginx validation failed; detailed diagnostics require an administrator"
+	}
+	return validationMessage(result, err)
+}
+
+func activationMessageForRole(summary string, err error, role string) string {
+	if role == "admin" && err != nil {
+		return summary + ": " + err.Error()
+	}
+	return summary
+}
+
 func (s *Server) createCustomConfig(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	var value model.CustomConfig
 	if decodeJSON(w, r, &value) != nil {

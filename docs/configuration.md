@@ -13,6 +13,7 @@ Environment variables override only the documented deployment/runtime values:
 | `MIRRORRELAY_DISTRIBUTED_ROLE` | `standalone`, `coordinator`, or `edge`; Coordinator/Edge also enable distributed mode |
 | `MIRRORRELAY_DISTRIBUTED_TOKEN` | Shared read-only cluster probe credential |
 | `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN` | This Edge's unique sync/purge credential |
+| `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN_KEY_FILES` | Coordinator encryption-key files in OS path-list order; the first key encrypts and later keys are decrypt-only during rotation |
 | `MIRRORRELAY_COORDINATOR_ID` | Coordinator identity trusted by this Edge |
 | `MIRRORRELAY_NODE_NAME` | Distributed node identifier |
 | `MIRRORRELAY_NODE_PUBLIC_BASE_URL` | Edge public redirect base URL |
@@ -41,7 +42,7 @@ tls.private_key, database.path,
 cache.path, logging.path, admin.*, upstream_nginx.binary,
 upstream_nginx.prefix, upstream_nginx.pid, upstream_nginx.log_path,
 upstream_nginx.upstream_socket, upstream_nginx.upstream_socket_mode,
-upstream_nginx.ca_bundle
+upstream_nginx.ca_bundle, distributed.mutation_token_key_files
 ```
 
 Use **Reset to YAML after restart** to delete the stored override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML.
@@ -125,6 +126,7 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | Key | Description |
 |---|---|
 | `performance.stream_buffer_size_bytes` | Fixed streaming buffer: `32768`, `65536`, or `131072` |
+| `performance.zero_copy_bypass` | Let External Shared Nginx consume the private Managed Upstream Nginx socket after Go authorization; default `true` for host packages, explicitly `false` in the Docker example with a container-private runtime tmpfs |
 | `performance.go_memory_limit_bytes` | Go soft memory limit; `0` leaves the runtime/environment unchanged |
 | `performance.gogc` | Applied only when `GOGC` is absent |
 | `metadata.rewrite_buffer_limit_bytes` | Default maximum buffered metadata entity |
@@ -169,7 +171,8 @@ MirrorRelay delivers each event to one configured Webhook destination; DingTalk,
 |---|---|
 | `security.allow_http_upstream` | Global half of the two-level HTTP upstream permission |
 | `security.allow_private_upstream` | Global half of the two-level private-address permission |
-| `security.expose_client_ip` | Permit the configured client context to be forwarded internally |
+| `security.expose_client_ip` | Forward the validated client address through the internal request path; default `false` |
+| `security.trusted_proxy_cidrs` | TCP peer CIDRs allowed to supply `X-Real-IP`; defaults to IPv4/IPv6 loopback, and an empty list trusts no TCP peers |
 | `security.admin_cidrs` | CIDRs allowed to access the UI and nested API under `admin.path`; empty means unrestricted at this layer |
 | `security.session_timeout` | Server-side session lifetime |
 | `security.login_window`, `security.login_max_failures` | Per-client login throttle |
@@ -179,7 +182,7 @@ MirrorRelay delivers each event to one configured Webhook destination; DingTalk,
 | `limits.max_ip_concurrency` | Per-client concurrency; `0` is unlimited |
 | `limits.bandwidth_limit_bps` | Global Managed Upstream Nginx upstream bandwidth ceiling; `0` is unlimited |
 
-The frontend endpoint is a trusted-ingress boundary: MirrorRelay accepts the forwarded client IP supplied there by External Shared Nginx. Keep the default loopback bind, use a private Unix socket, or enforce an equivalent container/firewall boundary when configuring another listen IP. Private and HTTP upstream use also requires the matching per-repository switch. Upstream TLS verification cannot be disabled.
+MirrorRelay uses the TCP peer address unless it belongs to `security.trusted_proxy_cidrs`; only then may a valid `X-Real-IP` replace it. The explicitly enabled, permission-controlled frontend Unix socket is trusted as an ingress peer. External Shared Nginx must overwrite, never append or pass through, the client-supplied `X-Real-IP` value. Generated snippets do this with `$remote_addr`. MirrorRelay does not trust `X-Forwarded-Proto` when producing public links: `http.public_base_url` takes precedence and every inferred public origin uses HTTPS. Keep the default loopback bind, use a private Unix socket, or enforce an equivalent container/firewall boundary when configuring another listen IP. Private and HTTP upstream use also requires the matching per-repository switch. Upstream TLS verification cannot be disabled.
 
 ## Health, logs and shutdown
 
@@ -228,6 +231,8 @@ MirrorRelay supports built-in and customized interactive client configuration do
 
 The Web UI and repository API expose profile/version, routing mode, multiple upstreams, strip/add prefixes, Host and request-header changes, connect/read/send timeouts, cache class TTLs, authenticated caching, metadata rewrite hosts/buffer limits, the per-repository `html_rewrite_enabled` switch, health policy, concurrency/bandwidth limits, access policy, client help documentation settings (`help.enabled`, `help.template`, `help.title`, `help.summary`), Registry auth/token/blob policy and the HTTP/private permission switches. Repository validation rejects root/system/administration/`/_mirrorrelay/` path conflicts, duplicate or overlapping repository paths, duplicate public hosts and a host-mode repository that claims the configured shared host.
 
+Each of `blocked_packages` and `allowed_packages` accepts at most 128 rules, and each rule is limited to 512 bytes. A rule must parse as a Go glob or RE2 regular expression. Rules are compiled when a repository candidate is validated and again when an Active routing snapshot is built; an invalid candidate is rejected, while unexpectedly invalid persisted state fails closed instead of silently skipping the policy.
+
 `html_rewrite_enabled` defaults to `false`. When enabled for a browsable repository response, MirrorRelay resolves same-origin HTML URLs against the selected upstream page. URLs below the effective upstream base (including `add_prefix`) return to the public repository namespace (including `strip_prefix`). Other same-origin paths receive an opaque `/_mirrorrelay/upstream/<repository-id>/<upstream-id>/<signature>/<target>` URL. The HMAC covers the repository, exact selected upstream/Host policy, escaped target path, and query, so clients cannot substitute another upstream, root path, or query. Only targets emitted by MirrorRelay are accepted; cross-origin URLs remain unchanged. The request still uses the repository's access policy, pinned address, TLS verification, cache policy, and limits through Managed Upstream Nginx. The generated shared-ingress snippet contains the required auxiliary location for path-mode repositories.
 
 Authenticated caching must be enabled only for content whose cache identity is public and does not vary by authorization. By default, requests carrying `Authorization` or `Cookie` bypass cache, and a configured static credential header disables cache. Nginx also does not cache responses with `Set-Cookie` unless that built-in protection is deliberately overridden; MirrorRelay's normal custom configuration cannot override it.
@@ -248,6 +253,7 @@ Client -> Coordinator -> (HTTP 307 Temporary Redirect) -> Edge Node -> Managed U
 | `distributed.role` | Node role: `standalone` (default), `coordinator`, or `edge` |
 | `distributed.token` | Required shared read-only credential for manifest and health probes |
 | `distributed.mutation_token` | Edge-only sync/purge credential; must differ from the probe token and every other Edge token |
+| `distributed.mutation_token_key_files` | Coordinator-only ordered AES-256 keyring used to encrypt stored per-Edge mutation tokens; at least one absolute path is required |
 | `distributed.coordinator_id` | Coordinator identity accepted by an Edge for protocol v2 mutation envelopes |
 | `distributed.allow_http` | Independent explicit opt-in for plaintext cluster-node origins; default `false` |
 | `distributed.node.name` | Unique node identifier; required for Coordinator/Edge roles and included in manifests |

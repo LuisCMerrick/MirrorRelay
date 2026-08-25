@@ -140,6 +140,7 @@ type SecurityConfig struct {
 	AllowHTTPUpstream    bool          `yaml:"allow_http_upstream"`
 	AllowPrivateUpstream bool          `yaml:"allow_private_upstream"`
 	ExposeClientIP       bool          `yaml:"expose_client_ip"`
+	TrustedProxyCIDRs    []string      `yaml:"trusted_proxy_cidrs"`
 	SessionTimeout       time.Duration `yaml:"session_timeout"`
 	LoginWindow          time.Duration `yaml:"login_window"`
 	LoginMaxFailures     int           `yaml:"login_max_failures"`
@@ -176,16 +177,17 @@ type ShutdownConfig struct {
 }
 
 type DistributedConfig struct {
-	Enabled       bool                     `yaml:"enabled"`
-	Role          string                   `yaml:"role"`
-	Token         string                   `yaml:"token"`
-	MutationToken string                   `yaml:"mutation_token"`
-	CoordinatorID string                   `yaml:"coordinator_id"`
-	AllowHTTP     bool                     `yaml:"allow_http"`
-	Node          DistributedNodeConfig    `yaml:"node"`
-	Routing       DistributedRoutingConfig `yaml:"routing"`
-	HealthCheck   DistributedHealthConfig  `yaml:"health_check"`
-	Nodes         []DistributedNodeSeed    `yaml:"nodes"`
+	Enabled               bool                     `yaml:"enabled"`
+	Role                  string                   `yaml:"role"`
+	Token                 string                   `yaml:"token"`
+	MutationToken         string                   `yaml:"mutation_token"`
+	MutationTokenKeyFiles []string                 `yaml:"mutation_token_key_files"`
+	CoordinatorID         string                   `yaml:"coordinator_id"`
+	AllowHTTP             bool                     `yaml:"allow_http"`
+	Node                  DistributedNodeConfig    `yaml:"node"`
+	Routing               DistributedRoutingConfig `yaml:"routing"`
+	HealthCheck           DistributedHealthConfig  `yaml:"health_check"`
+	Nodes                 []DistributedNodeSeed    `yaml:"nodes"`
 }
 
 type DistributedNodeConfig struct {

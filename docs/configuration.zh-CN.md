@@ -13,6 +13,7 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 | `MIRRORRELAY_DISTRIBUTED_ROLE` | `standalone`、`coordinator` 或 `edge`；Coordinator/Edge 同时启用分布式模式 |
 | `MIRRORRELAY_DISTRIBUTED_TOKEN` | 集群共享的只读探测凭据 |
 | `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN` | 当前 Edge 独立的同步/Purge 凭据 |
+| `MIRRORRELAY_DISTRIBUTED_MUTATION_TOKEN_KEY_FILES` | Coordinator 加密密钥文件的操作系统路径列表；首个密钥用于加密，后续密钥仅在轮换期间用于解密 |
 | `MIRRORRELAY_COORDINATOR_ID` | 当前 Edge 信任的 Coordinator 身份 |
 | `MIRRORRELAY_NODE_NAME` | 分布式节点标识 |
 | `MIRRORRELAY_NODE_PUBLIC_BASE_URL` | Edge 对外重定向 Base URL |
@@ -41,7 +42,7 @@ tls.private_key, database.path,
 cache.path, logging.path, admin.*, upstream_nginx.binary,
 upstream_nginx.prefix, upstream_nginx.pid, upstream_nginx.log_path,
 upstream_nginx.upstream_socket, upstream_nginx.upstream_socket_mode,
-upstream_nginx.ca_bundle
+upstream_nginx.ca_bundle, distributed.mutation_token_key_files
 ```
 
 使用 **重启后恢复 YAML** 删除保存的覆盖值。保存数据无效时，启动会明确失败，不会静默回退到 YAML。
@@ -125,6 +126,7 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | 配置 | 说明 |
 |---|---|
 | `performance.stream_buffer_size_bytes` | 固定流式 Buffer：`32768`、`65536` 或 `131072` |
+| `performance.zero_copy_bypass` | Go 完成授权后允许 External Shared Nginx 使用私有 Managed Upstream Nginx Socket；宿主机软件包默认 `true`，使用容器私有 Runtime tmpfs 的 Docker 示例显式设为 `false` |
 | `performance.go_memory_limit_bytes` | Go 软内存上限；`0` 表示沿用 Runtime/环境 |
 | `performance.gogc` | 仅在环境未设置 `GOGC` 时应用 |
 | `metadata.rewrite_buffer_limit_bytes` | Metadata Entity 默认缓冲上限 |
@@ -169,7 +171,8 @@ MirrorRelay 会把每个事件投递到一个已配置的 Webhook 目标；钉�
 |---|---|
 | `security.allow_http_upstream` | HTTP 上游双重许可中的全局开关 |
 | `security.allow_private_upstream` | 私网地址双重许可中的全局开关 |
-| `security.expose_client_ip` | 允许按配置向内部转发客户端上下文 |
+| `security.expose_client_ip` | 在内部请求链路转发经过校验的客户端地址；默认 `false` |
+| `security.trusted_proxy_cidrs` | 允许提供 `X-Real-IP` 的 TCP Peer CIDR；默认仅 IPv4/IPv6 回环，空列表表示不信任任何 TCP Peer |
 | `security.admin_cidrs` | 允许访问 `admin.path` 下 Web UI 与管理 API 的 CIDR 列表；为空表示本层不作限制 |
 | `security.session_timeout` | 服务端 Session 会话生命周期 |
 | `security.login_window`、`security.login_max_failures` | 登录频次限制窗口与最大失败次数 |
@@ -179,7 +182,7 @@ MirrorRelay 会把每个事件投递到一个已配置的 Webhook 目标；钉�
 | `limits.max_ip_concurrency` | 单客户端并发请求上限；`0` 表示无限制 |
 | `limits.bandwidth_limit_bps` | 全局 Managed Upstream Nginx 上游带宽上限；`0` 表示无限制 |
 
-前端端点属于受信入口边界：MirrorRelay 会接受 External Shared Nginx 在该端点提供的转发客户端 IP。应保持默认回环绑定、使用私有 Unix Socket，或在配置其他监听 IP 时建立等效的容器/防火墙边界。使用私网或 HTTP 上游还必须开启相应仓库开关。上游 TLS 验证不能关闭。
+MirrorRelay 默认使用 TCP Peer 地址；只有 Peer 命中 `security.trusted_proxy_cidrs` 时，合法的 `X-Real-IP` 才能替换该地址。显式启用且受文件权限保护的前端 Unix Socket 视为可信入口 Peer。External Shared Nginx 必须覆盖客户端传入的 `X-Real-IP`，不得追加或透传；生成片段使用 `$remote_addr` 完成覆盖。MirrorRelay 生成公开链接时不信任 `X-Forwarded-Proto`：优先使用 `http.public_base_url`，否则推导出的公开 Origin 一律使用 HTTPS。应保持默认回环绑定、使用私有 Unix Socket，或在配置其他监听 IP 时建立等效的容器/防火墙边界。使用私网或 HTTP 上游还必须开启相应仓库开关。上游 TLS 验证不能关闭。
 
 ## 健康、日志与退出
 
@@ -228,6 +231,8 @@ MirrorRelay 提供常见 Linux 发行版与软件包管理器的开箱即用交�
 
 Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Strip/Add Prefix、Host 与请求 Header 改写、连接/读取/发送超时、Cache 类别 TTL、认证响应缓存、Metadata Rewrite Host/缓冲上限、逐仓库 `html_rewrite_enabled` 开关、健康策略、并发/带宽限制、访问策略、客户端帮助配置（`help.enabled`、`help.template`、`help.title`、`help.summary`）、Registry Auth/Token/Blob 策略，以及 HTTP/私网许可开关。仓库验证会拒绝根路径、系统路径、后台路径或 `/_mirrorrelay/` 冲突、重复或相互重叠的仓库路径、重复公开 Host，以及占用已配置共享 Host 的 Host Mode 仓库。
 
+`blocked_packages` 与 `allowed_packages` 各自最多接受 128 条规则，每条最多 512 字节。规则必须能够解析为 Go Glob 或 RE2 正则表达式；仓库 Candidate 校验及 Active 路由快照构建阶段都会编译规则。非法 Candidate 会被拒绝；若持久化状态意外包含非法规则，请求会按 Fail-Closed 策略拒绝，而不会静默跳过策略。
+
 `html_rewrite_enabled` 默认值为 `false`。为可浏览仓库响应启用后，MirrorRelay 会相对所选上游页面解析同源 HTML URL。位于有效上游 Base（包含 `add_prefix`）下的 URL 会返回公开仓库 Namespace（包含 `strip_prefix`）；同源 Base 外路径会获得不透明的 `/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>` URL。HMAC 覆盖仓库、生成页面时实际选中的上游/Host 策略、转义后的目标路径和 Query，因此客户端不能替换上游、根路径或 Query；只有 MirrorRelay 生成的目标会被接受，跨 Origin URL 保持不变。请求仍遵守仓库访问策略，并通过 Managed Upstream Nginx 复用 Pin 地址、TLS 校验、缓存策略与限制。生成的共享入口片段会为 Path Mode 仓库包含必需的辅助 Location。
 
 只有内容身份不随 Authorization 变化且实质公开时，才能启用认证响应缓存。默认情况下，携带 `Authorization` 或 `Cookie` 的请求绕过缓存；配置静态认证 Header 也会关闭缓存。Nginx 默认不会缓存带 `Set-Cookie` 的响应，MirrorRelay 的普通自定义配置不能覆盖这项内建保护。
@@ -248,6 +253,7 @@ MirrorRelay 支持由一个协调器（Coordinator）与多个边缘节点（Edg
 | `distributed.role` | 节点角色：`standalone`（默认单机）、`coordinator`（协调器）或 `edge`（边缘节点） |
 | `distributed.token` | Manifest 与 Health 探针必填的共享只读凭据 |
 | `distributed.mutation_token` | Edge 专用的同步/Purge 凭据；不得等于探测凭据，也不得与其他 Edge 共用 |
+| `distributed.mutation_token_key_files` | Coordinator 用于加密逐 Edge Mutation Token 的有序 AES-256 密钥环；至少需要一个绝对路径 |
 | `distributed.coordinator_id` | Edge 在 Protocol v2 变更 Envelope 中接受的 Coordinator 身份 |
 | `distributed.allow_http` | 集群节点 Origin 使用明文 HTTP 的独立显式许可；默认 `false` |
 | `distributed.node.name` | 节点唯一标识；Coordinator/Edge 角色必填并写入 Manifest |

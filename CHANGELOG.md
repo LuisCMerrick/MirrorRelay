@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## v0.0.17
+
+- **Control-plane credential and ingress hardening**:
+  - Redacted repository credentials for every non-Admin role, made generated,
+    effective, custom and ingress configuration plus operational settings
+    Admin-only, and separated Operator cluster checks/sync from Admin-only node
+    management.
+  - Restricted System and health endpoint details by role and aligned the Web
+    UI with the API so unavailable secret/configuration actions are not
+    rendered; raw failed validation, lifecycle, repository-check and audit
+    diagnostics are now Admin-only.
+  - Added a required file-backed AES-256-GCM keyring for Coordinator node
+    mutation tokens, including transactional plaintext migration and
+    first-key rotation.
+  - Added explicit trusted-proxy CIDRs for `X-Real-IP`, ignored
+    `X-Forwarded-Proto` during public-origin inference (including public help
+    pages), validated fallback request authorities, and changed client-IP
+    exposure to default off.
+  - Replaced the Compose host `/run` bind with a UID/GID-scoped tmpfs and a
+    deterministic bridge gateway used by the Docker trusted-proxy example.
+  - Validated and precompiled bounded package allow/block rules before
+    activation, with fail-closed routing for invalid persisted policy.
+  - Made development image builds verify the checked-in Nginx checksum and
+    formal images verify both packaged binaries against `BUILD-INFO`.
+  - Reworked the bilingual main README quick start around direct Docker,
+    Compose, release packages and the exact `go run ./cmd/mirrorrelay -dev`
+    development path; Compose now consumes the official multi-architecture
+    image by default.
+
 - **Explicit local endpoint defaults**:
   - External Shared Nginx now reaches the Go frontend over configurable
     IP+port TCP by default (`127.0.0.1:9081`); the frontend Unix socket is

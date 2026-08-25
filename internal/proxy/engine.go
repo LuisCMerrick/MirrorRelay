@@ -73,6 +73,7 @@ type Engine struct {
 	validators          *metadataValidators
 	compressors         gzipPool
 	adminCIDRs          security.CIDRList
+	trustedProxies      security.CIDRList
 	appearance          *appearance.Store
 	auxiliarySigningKey []byte
 
@@ -86,6 +87,7 @@ func New(cfg config.Config, registry *mirror.Registry, cacheKeys *cachectl.Manag
 
 func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyManager, metric *stats.Stats, logger *accesslog.Logger, resolver security.Resolver, auxiliarySigningKey []byte) *Engine {
 	adminCIDRs, _ := security.ParseCIDRs(cfg.Security.AdminCIDRs)
+	trustedProxies, _ := security.ParseCIDRs(cfg.Security.TrustedProxyCIDRs)
 	transport := newUpstreamNginxTransport(cfg, resolver)
 	engine := &Engine{
 		cfg:                 cfg,
@@ -98,6 +100,7 @@ func newEngine(cfg config.Config, registry *mirror.Registry, cacheKeys cacheKeyM
 		bufferPool:          newBufferPool(cfg.Performance.StreamBufferSize),
 		validators:          newMetadataValidators(cfg.Metadata.ValidatorEntries),
 		adminCIDRs:          adminCIDRs,
+		trustedProxies:      trustedProxies,
 		appearance:          appearance.New(cfg.UIEnhancement),
 		auxiliarySigningKey: append([]byte(nil), auxiliarySigningKey...),
 		tokenTargets:        make(map[int64]*url.URL),
@@ -133,7 +136,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	started := time.Now()
 	requestID := newRequestID()
 	w.Header().Set("X-Mirror-Request-ID", requestID)
-	clientIP := trustedClientIP(request)
+	clientIP := security.RequestClientIP(request, e.trustedProxies, e.cfg.Server.UnixSocketEnabled)
 
 	repository, relative, dynamic, auxiliary, routeErr := e.routeRequest(request)
 	if routeErr != nil {

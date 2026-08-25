@@ -100,7 +100,8 @@ func TestClusterSyncAndPurgeUseRealEdgeHandler(t *testing.T) {
 		t.Fatalf("valid probe credential was rejected: status=%d", validProbeResponse.StatusCode)
 	}
 
-	coordinatorStore, err := database.Open(filepath.Join(t.TempDir(), "coordinator.db"))
+	coordinatorStore, err := database.Open(filepath.Join(t.TempDir(), "coordinator.db"),
+		database.WithClusterMutationTokenKeys(bytes.Repeat([]byte{0x5a}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}

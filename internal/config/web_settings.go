@@ -98,6 +98,7 @@ type WebSecuritySettings struct {
 	AllowHTTPUpstream    bool     `json:"allow_http_upstream"`
 	AllowPrivateUpstream bool     `json:"allow_private_upstream"`
 	ExposeClientIP       bool     `json:"expose_client_ip"`
+	TrustedProxyCIDRs    []string `json:"trusted_proxy_cidrs"`
 	SessionTimeout       string   `json:"session_timeout"`
 	LoginWindow          string   `json:"login_window"`
 	LoginMaxFailures     int      `json:"login_max_failures"`
@@ -173,7 +174,8 @@ func WebSettingsFrom(c Config) WebSettings {
 		Logging: WebLoggingSettings{QueueSize: c.Logging.QueueSize, MaxSizeMB: c.Logging.MaxSizeMB, KeepDays: c.Logging.KeepDays},
 		Security: WebSecuritySettings{AllowHTTPUpstream: c.Security.AllowHTTPUpstream, AllowPrivateUpstream: c.Security.AllowPrivateUpstream,
 			ExposeClientIP: c.Security.ExposeClientIP, SessionTimeout: c.Security.SessionTimeout.String(), LoginWindow: c.Security.LoginWindow.String(),
-			LoginMaxFailures: c.Security.LoginMaxFailures, AdminCIDRs: append([]string{}, c.Security.AdminCIDRs...)},
+			LoginMaxFailures: c.Security.LoginMaxFailures, TrustedProxyCIDRs: append([]string{}, c.Security.TrustedProxyCIDRs...),
+			AdminCIDRs: append([]string{}, c.Security.AdminCIDRs...)},
 		Transport: WebTransportSettings{DialTimeout: c.Transport.DialTimeout.String(), KeepAlive: c.Transport.KeepAlive.String(),
 			TLSHandshakeTimeout: c.Transport.TLSHandshakeTimeout.String(), ResponseHeaderTimeout: c.Transport.ResponseHeaderTimeout.String(),
 			IdleConnTimeout: c.Transport.IdleConnTimeout.String(), MaxIdleConns: c.Transport.MaxIdleConns, MaxIdleConnsPerHost: c.Transport.MaxIdleConnsPerHost},
@@ -213,6 +215,9 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.Logging.QueueSize, candidate.Logging.MaxSizeMB, candidate.Logging.KeepDays = w.Logging.QueueSize, w.Logging.MaxSizeMB, w.Logging.KeepDays
 	candidate.Security.AllowHTTPUpstream, candidate.Security.AllowPrivateUpstream = w.Security.AllowHTTPUpstream, w.Security.AllowPrivateUpstream
 	candidate.Security.ExposeClientIP, candidate.Security.LoginMaxFailures = w.Security.ExposeClientIP, w.Security.LoginMaxFailures
+	if w.Security.TrustedProxyCIDRs != nil {
+		candidate.Security.TrustedProxyCIDRs = append([]string{}, w.Security.TrustedProxyCIDRs...)
+	}
 	candidate.Security.AdminCIDRs = append([]string{}, w.Security.AdminCIDRs...)
 	candidate.Transport.MaxIdleConns, candidate.Transport.MaxIdleConnsPerHost = w.Transport.MaxIdleConns, w.Transport.MaxIdleConnsPerHost
 	candidate.Limits.MaxTotalConcurrency, candidate.Limits.MaxIPConcurrency = w.Limits.MaxTotalConcurrency, w.Limits.MaxIPConcurrency

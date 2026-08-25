@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -136,44 +135,16 @@ func isTokenRoute(value string) bool {
 }
 
 func requestPublicBase(cfg config.Config, repository model.Mirror, request *http.Request) (string, error) {
-	scheme := strings.ToLower(strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")))
-	if scheme == "" {
-		scheme = "https"
-	}
-	if scheme != "https" && scheme != "http" {
-		return "", errors.New("invalid forwarded protocol")
-	}
 	if repository.PublicMode == "host" && repository.PublicHost != "" {
-		return scheme + "://" + repository.PublicHost, nil
+		return "https://" + repository.PublicHost, nil
 	}
 	if cfg.HTTP.PublicBaseURL != "" {
 		return strings.TrimRight(cfg.HTTP.PublicBaseURL, "/"), nil
 	}
-	if !validRequestAuthority(request.Host) {
+	if !security.ValidRequestAuthority(request.Host) {
 		return "", errors.New("invalid request host")
 	}
-	return scheme + "://" + request.Host, nil
-}
-
-func validRequestAuthority(value string) bool {
-	if value == "" || strings.ContainsAny(value, "\x00\r\n/\\ {};$\"") {
-		return false
-	}
-	parsed, err := url.Parse("https://" + value)
-	if err != nil || parsed.Host != value || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return false
-	}
-	if port := parsed.Port(); port != "" {
-		value, err := strconv.Atoi(port)
-		if err != nil || value < 1 || value > 65535 {
-			return false
-		}
-	}
-	return true
-}
-
-func trustedClientIP(request *http.Request) string {
-	return security.RequestClientIP(request)
+	return "https://" + request.Host, nil
 }
 
 func stripUntrustedHeaders(header http.Header) {
@@ -490,27 +461,23 @@ func isPackageBlocked(repository model.Mirror, relativePath string) (bool, strin
 	}
 	cleanPath := strings.TrimPrefix(relativePath, "/")
 	baseName := path.Base(cleanPath)
+	policy := repository.PackagePolicy
+	if policy == nil || policy.Invalid != "" {
+		return true, "repository package security policy is unavailable"
+	}
 
 	// Check blocked packages list (blacklist)
-	for _, pattern := range repository.BlockedPackages {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		if matchPattern(pattern, cleanPath, baseName) {
-			return true, "package is blocked by repository security policy (" + pattern + ")"
+	for _, pattern := range policy.Blocked {
+		if matchPackagePattern(pattern, cleanPath, baseName) {
+			return true, "package is blocked by repository security policy (" + pattern.Pattern + ")"
 		}
 	}
 
 	// Check allowed packages whitelist if configured
 	if len(repository.AllowedPackages) > 0 {
 		matched := false
-		for _, pattern := range repository.AllowedPackages {
-			pattern = strings.TrimSpace(pattern)
-			if pattern == "" {
-				continue
-			}
-			if matchPattern(pattern, cleanPath, baseName) {
+		for _, pattern := range policy.Allowed {
+			if matchPackagePattern(pattern, cleanPath, baseName) {
 				matched = true
 				break
 			}
@@ -523,20 +490,20 @@ func isPackageBlocked(repository model.Mirror, relativePath string) (bool, strin
 	return false, ""
 }
 
-func matchPattern(pattern, cleanPath, baseName string) bool {
-	if strings.EqualFold(pattern, baseName) || strings.EqualFold(pattern, cleanPath) {
+func matchPackagePattern(pattern model.PackagePattern, cleanPath, baseName string) bool {
+	if strings.EqualFold(pattern.Pattern, baseName) || strings.EqualFold(pattern.Pattern, cleanPath) {
 		return true
 	}
-	if ok, _ := path.Match(pattern, baseName); ok {
-		return true
-	}
-	if ok, _ := path.Match(pattern, cleanPath); ok {
-		return true
-	}
-	if re, err := regexp.Compile(pattern); err == nil {
-		if re.MatchString(baseName) || re.MatchString(cleanPath) {
+	if pattern.Glob {
+		if ok, _ := path.Match(pattern.Pattern, baseName); ok {
 			return true
 		}
+		if ok, _ := path.Match(pattern.Pattern, cleanPath); ok {
+			return true
+		}
+	}
+	if pattern.Regexp != nil && (pattern.Regexp.MatchString(baseName) || pattern.Regexp.MatchString(cleanPath)) {
+		return true
 	}
 	return false
 }

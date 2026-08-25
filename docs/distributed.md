@@ -86,6 +86,8 @@ distributed:
   enabled: true
   role: coordinator           # standalone, coordinator, edge
   token: "read-only-probe-token-at-least-32bytes"
+  mutation_token_key_files:
+    - /etc/mirrorrelay/cluster-mutation-token.key
   allow_http: false           # HTTPS is required unless explicitly enabled
   node:
     name: "coord-01"
@@ -145,11 +147,23 @@ distributed:
     country: "US"
 ```
 
+Before starting a Coordinator, create its database-encryption key as a file readable by the `mirrorrelay` service account but not by other users:
+
+```sh
+sudo sh -c 'umask 0027; openssl rand -base64 32 > /etc/mirrorrelay/cluster-mutation-token.key'
+sudo chown root:mirrorrelay /etc/mirrorrelay/cluster-mutation-token.key
+sudo chmod 0640 /etc/mirrorrelay/cluster-mutation-token.key
+```
+
+Each key file must contain exactly 32 raw bytes or a base64-encoded 32-byte value. A Coordinator requires at least one absolute key-file path. Per-Edge mutation tokens are stored in SQLite only as AES-256-GCM authenticated ciphertext; legacy plaintext rows are encrypted transactionally during startup. Startup fails closed if stored credentials cannot be decrypted or no keyring is configured. Keep the active key with database backups and never copy it to Edge nodes.
+
+For rotation, create a new key file, list it first and the old file second, then restart MirrorRelay. Startup rewrites all ciphertext under the first key. After that restart succeeds, remove the old path from the list and restart once more; retain retired keys only with backups that still require them.
+
 ---
 
 ## 5. Security & Isolation
 
-- **Split Cluster Credentials**: `distributed.token` is a shared, read-only probe credential for manifest and health. Every Edge has a different `mutation_token` for sync and purge; it must differ from the probe credential and every other Edge token. Coordinator seed records store the matching per-Edge credential, API responses never return it, and the Web UI leaves it blank while editing. Credentials are verified in constant time.
+- **Split Cluster Credentials**: `distributed.token` is a shared, read-only probe credential for manifest and health. Every Edge has a different `mutation_token` for sync and purge; it must differ from the probe credential and every other Edge token. Coordinator seed records store the matching per-Edge credential encrypted with the configured keyring, API responses never return it, and the Web UI leaves it blank while editing. Only Admin users may create, edit, enable, disable, or delete node records; Operators may run checks and synchronization. Credentials are verified in constant time.
 - **Coordinator Binding & Replay Defense**: Every Edge configures `coordinator_id`. Protocol v2 sync and purge envelopes bind that identity to a persisted random Coordinator epoch. Edge persists the highest accepted generation and fingerprint before activation: older generations, conflicting same-generation payloads, and retired epochs are rejected; an identical applied payload is idempotent.
 - **SSRF Safety**: A node URL is an origin only: credentials, path prefixes, query strings and fragments are rejected. HTTPS is required by default. Plaintext HTTP needs `distributed.allow_http: true`, while private/loopback/link-local targets separately require `security.allow_private_upstream: true`. Health checks, configuration sync and cache purge all enforce the same policy before sending the token, use policy-filtered addresses, preserve TLS hostname verification and do not follow redirects.
 - **Cache Independence**: Each Edge node maintains isolated, content-addressed disk storage, eliminating cross-node cache contamination.

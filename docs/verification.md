@@ -26,9 +26,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.16 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.16-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.16-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.17 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.17-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.17-source/vendor/modules.txt'
 ```
 
 The vendored source archive is generated from the exact Git commit being released, then `go mod vendor` is run inside that exported tree. The hosted workflow extracts the result and runs `go list -mod=vendor ./...` before adding it to the GitHub Release and `SHA256SUMS`.
@@ -114,7 +114,7 @@ For each object size, retain a report containing peak/baseline RSS and heap, all
 ## Security acceptance
 
 - Submit forged `X-Mirror-Internal-*` headers and confirm they never reach Managed Upstream Nginx unchanged.
-- Confirm the trusted frontend endpoint is unreachable from untrusted peers. For an explicit wildcard/non-loopback bind, verify the container port mapping or firewall admits only External Shared Nginx; then confirm its `X-Real-IP` drives admin CIDR, audit and per-IP limits.
+- Confirm the trusted frontend endpoint is unreachable from untrusted peers. For an explicit wildcard/non-loopback bind, verify the container port mapping or firewall admits only External Shared Nginx and configure its exact peer CIDR in `security.trusted_proxy_cidrs`. Confirm the ingress overwrites `X-Real-IP` with `$remote_addr`; a request from an untrusted peer with a spoofed header must still use its socket address for Admin CIDR, audit and per-IP limits. Also confirm a client-supplied `X-Forwarded-Proto: http` cannot downgrade generated public URLs from HTTPS.
 - Verify malformed or missing-realm Registry Bearer challenges return 502 and never fall back to a direct token endpoint.
 - Attempt redirect/token targets using userinfo, unsupported schemes, forbidden ports/addresses, DNS rebinding and non-allowlisted hosts.
 - Verify HTTP/private upstream access requires both global and repository permission.

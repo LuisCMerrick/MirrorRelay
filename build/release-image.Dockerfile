@@ -37,6 +37,12 @@ COPY --chmod=0644 linux-${TARGETARCH}/LICENSE /usr/share/licenses/mirrorrelay/LI
 COPY --chmod=0644 linux-${TARGETARCH}/managed-upstream-nginx.md /usr/share/licenses/mirrorrelay/managed-upstream-nginx.md
 COPY --chown=65532:65532 --chmod=0640 config.yaml /etc/mirrorrelay/config.yaml
 
+RUN set -eu; \
+    mirrorrelay_checksum="$(sha256sum /usr/bin/mirrorrelay | cut -d ' ' -f 1)"; \
+    nginx_checksum="$(sha256sum /usr/lib/mirrorrelay/nginx/nginx | cut -d ' ' -f 1)"; \
+    grep -Fx "MirrorRelay SHA256: ${mirrorrelay_checksum}" /usr/share/doc/mirrorrelay/BUILD-INFO; \
+    grep -Fx "Managed Upstream Nginx SHA256: ${nginx_checksum}" /usr/share/doc/mirrorrelay/BUILD-INFO
+
 USER 65532:65532
 EXPOSE 9081/tcp
 STOPSIGNAL SIGTERM

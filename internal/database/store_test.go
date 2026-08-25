@@ -3,8 +3,11 @@ package database
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -121,6 +124,29 @@ func TestRepositoryRoundTripAndConfigHistory(t *testing.T) {
 	values, err := store.ListMirrors(ctx)
 	if err != nil || len(values) != 1 || values[0].ID != created.ID || !values[0].HTMLRewriteEnabled {
 		t.Fatalf("replace result: values=%+v err=%v", values, err)
+	}
+}
+
+func TestCorruptRepositoryPolicyJSONFailsClosed(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	repository, err := store.CreateMirror(ctx, model.Mirror{
+		Name: "Policy", Slug: "policy", Type: "generic",
+		BlockedPackages: []string{"blocked-*"},
+		Upstreams:       []model.Upstream{{URL: "https://packages.example/", Enabled: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE mirrors SET blocked_packages='{' WHERE id=?`, repository.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Mirror(ctx, repository.ID); err == nil || !strings.Contains(err.Error(), "blocked_packages") {
+		t.Fatalf("corrupt package policy did not fail closed: %v", err)
 	}
 }
 
@@ -278,7 +304,7 @@ func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
 }
 
 func TestClusterNodeAndSettingStore(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"), WithClusterMutationTokenKeys(bytes.Repeat([]byte{0x42}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,6 +338,13 @@ func TestClusterNodeAndSettingStore(t *testing.T) {
 	}
 	if created1.ID == 0 || created1.Name != "tokyo-01" || created1.Priority != 100 {
 		t.Fatalf("unexpected created node: %+v", created1)
+	}
+	var plaintextToken, encryptedToken string
+	if err := store.db.QueryRowContext(ctx, `SELECT mutation_token,mutation_token_ciphertext FROM cluster_nodes WHERE id=?`, created1.ID).Scan(&plaintextToken, &encryptedToken); err != nil {
+		t.Fatal(err)
+	}
+	if plaintextToken != "" || encryptedToken == "" || strings.Contains(encryptedToken, node1.MutationToken) {
+		t.Fatalf("cluster mutation token was not encrypted at rest: plaintext=%q ciphertext=%q", plaintextToken, encryptedToken)
 	}
 
 	node2 := model.ClusterNode{
@@ -381,5 +414,106 @@ func TestClusterNodeAndSettingStore(t *testing.T) {
 	}
 	if _, err := store.GetClusterNode(ctx, created2.ID); err == nil {
 		t.Fatal("node2 should be deleted")
+	}
+}
+
+func TestClusterMutationTokenMigrationAndKeyRotation(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "mirrorrelay.db")
+	legacyStore, err := Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const token = "legacy-edge-mutation-secret"
+	if _, err := legacyStore.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,mutation_token,created_at,updated_at) VALUES(?,?,?,?,?,?)`,
+		"legacy-edge", "https://legacy-edge.example", "test", token, nowText(), nowText()); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacyStore.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(databasePath); err == nil {
+		t.Fatal("database with plaintext cluster credentials opened without an encryption key")
+	}
+
+	primaryKey := bytes.Repeat([]byte{0x31}, 32)
+	migrated, err := Open(databasePath, WithClusterMutationTokenKeys(primaryKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := migrated.GetClusterNodeByURL(ctx, "https://legacy-edge.example")
+	if err != nil || node.MutationToken != token {
+		t.Fatalf("legacy token was not migrated transparently: node=%+v err=%v", node, err)
+	}
+	var plaintext, firstCiphertext string
+	if err := migrated.db.QueryRowContext(ctx, `SELECT mutation_token,mutation_token_ciphertext FROM cluster_nodes WHERE id=?`, node.ID).Scan(&plaintext, &firstCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if plaintext != "" || !strings.HasPrefix(firstCiphertext, clusterMutationTokenEnvelopePrefix) || strings.Contains(firstCiphertext, token) {
+		t.Fatalf("legacy token remained readable at rest: plaintext=%q ciphertext=%q", plaintext, firstCiphertext)
+	}
+	if err := migrated.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatedKey := bytes.Repeat([]byte{0x52}, 32)
+	rotated, err := Open(databasePath, WithClusterMutationTokenKeys(rotatedKey, primaryKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rotatedCiphertext string
+	if err := rotated.db.QueryRowContext(ctx, `SELECT mutation_token_ciphertext FROM cluster_nodes WHERE id=?`, node.ID).Scan(&rotatedCiphertext); err != nil {
+		t.Fatal(err)
+	}
+	if rotatedCiphertext == firstCiphertext {
+		t.Fatal("legacy-key ciphertext was not rotated to the primary key")
+	}
+	if err := rotated.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	currentOnly, err := Open(databasePath, WithClusterMutationTokenKeys(rotatedKey))
+	if err != nil {
+		t.Fatalf("rotated database did not open with only the current key: %v", err)
+	}
+	if _, err := currentOnly.GetClusterNode(ctx, node.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := currentOnly.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(databasePath, WithClusterMutationTokenKeys(primaryKey)); err == nil {
+		t.Fatal("rotated database unexpectedly opened with only the retired key")
+	}
+}
+
+func TestLoadClusterMutationTokenKeyFiles(t *testing.T) {
+	directory := t.TempDir()
+	key := bytes.Repeat([]byte{0x73}, 32)
+	keyPath := filepath.Join(directory, "cluster.key")
+	if err := os.WriteFile(keyPath, []byte(base64.StdEncoding.EncodeToString(key)+"\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(keyPath, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadClusterMutationTokenKeyFiles([]string{keyPath})
+	if err != nil || len(loaded) != 1 || !bytes.Equal(loaded[0], key) {
+		t.Fatalf("valid cluster key file did not load: keys=%x err=%v", loaded, err)
+	}
+
+	if err := os.Chmod(keyPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadClusterMutationTokenKeyFiles([]string{keyPath}); err == nil {
+		t.Fatal("world-readable cluster key file was accepted")
+	}
+
+	malformedPath := filepath.Join(directory, "malformed.key")
+	if err := os.WriteFile(malformedPath, []byte("too-short\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadClusterMutationTokenKeyFiles([]string{malformedPath}); err == nil {
+		t.Fatal("malformed cluster key file was accepted")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -25,6 +26,27 @@ func TestLoadDurationsAndDevDefaults(t *testing.T) {
 	}
 	if cfg.HTTP.HTTPSListen != "127.0.0.1:8443" || cfg.Admin.Path != "/admin/" {
 		t.Fatalf("development defaults not applied: %#v", cfg)
+	}
+	if cfg.Security.ExposeClientIP {
+		t.Fatal("client IP exposure should default to disabled")
+	}
+}
+
+func TestDevDefaultsUseRepositoryNginxFixtureFromRepositoryRoot(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("the checked-in development fixture is linux/amd64 only")
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+	t.Chdir(repositoryRoot)
+
+	cfg := Default()
+	applyDevDefaults(&cfg)
+	if cfg.UpstreamNginx.Binary != filepath.Join("nginx", "sbin", "nginx") {
+		t.Fatalf("development Nginx binary = %q", cfg.UpstreamNginx.Binary)
 	}
 }
 
@@ -97,6 +119,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	settings.Security.AllowHTTPUpstream = true
 	settings.Security.AllowPrivateUpstream = true
 	settings.Security.ExposeClientIP = true
+	settings.Security.TrustedProxyCIDRs = []string{"127.0.0.2/32"}
 	settings.Security.SessionTimeout = "8h0m0s"
 	settings.Security.LoginWindow = "10m0s"
 	settings.Security.LoginMaxFailures = 8
@@ -199,6 +222,11 @@ func TestWebSettingsRejectUnknownFieldsAndInvalidValues(t *testing.T) {
 	if _, err := settings.Apply(Default()); err == nil {
 		t.Fatal("invalid Web security setting was accepted")
 	}
+	settings = WebSettingsFrom(Default())
+	settings.Security.TrustedProxyCIDRs = []string{"not-a-cidr"}
+	if _, err := settings.Apply(Default()); err == nil {
+		t.Fatal("invalid trusted proxy CIDR was accepted")
+	}
 	legacy := WebSettingsFrom(Default())
 	legacy.Webhook = nil
 	applied, err := legacy.Apply(Default())
@@ -227,6 +255,7 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 		candidate.Distributed.Enabled = true
 		candidate.Distributed.Role = "coordinator"
 		candidate.Distributed.Token = "cluster-secret"
+		candidate.Distributed.MutationTokenKeyFiles = []string{"/etc/mirrorrelay/cluster-mutation-token.key"}
 		candidate.Distributed.Node.Name = "coordinator-1"
 		candidate.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: rawURL, MutationToken: "edge-mutation-secret", Enabled: true}}
 		if err := candidate.Validate(); err == nil {
@@ -238,6 +267,7 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 	httpCluster.Distributed.Enabled = true
 	httpCluster.Distributed.Role = "coordinator"
 	httpCluster.Distributed.Token = "cluster-secret"
+	httpCluster.Distributed.MutationTokenKeyFiles = []string{"/etc/mirrorrelay/cluster-mutation-token.key"}
 	httpCluster.Distributed.Node.Name = "coordinator-1"
 	httpCluster.Distributed.AllowHTTP = true
 	httpCluster.Distributed.Nodes = []DistributedNodeSeed{{Name: "edge", URL: "http://edge.example.com:8080", MutationToken: "edge-mutation-secret", Enabled: true}}
@@ -262,6 +292,17 @@ func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {
 	missingToken.Distributed.Token = ""
 	if err := missingToken.Validate(); err == nil {
 		t.Fatal("enabled distributed mode accepted an empty cluster token")
+	}
+
+	missingKeyring := httpCluster
+	missingKeyring.Distributed.MutationTokenKeyFiles = nil
+	if err := missingKeyring.Validate(); err == nil {
+		t.Fatal("Coordinator accepted an empty mutation-token encryption keyring")
+	}
+	relativeKey := httpCluster
+	relativeKey.Distributed.MutationTokenKeyFiles = []string{"cluster.key"}
+	if err := relativeKey.Validate(); err == nil {
+		t.Fatal("Coordinator accepted a relative mutation-token encryption key path")
 	}
 
 	edge := Default()

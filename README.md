@@ -89,9 +89,70 @@ Traditional repository setups require either **full mirror synchronization** or 
 
 ---
 
-## Quick Start (5 Minutes)
+## Quick Start
 
-### Option 1: Instant Development Evaluation (Zero Setup)
+The latest multi-architecture image is `luiscmerrick/mirrorrelay:latest`:
+[https://hub.docker.com/r/luiscmerrick/mirrorrelay:latest](https://hub.docker.com/r/luiscmerrick/mirrorrelay:latest).
+Production traffic still follows the required External Shared Nginx →
+MirrorRelay frontend → Managed Upstream Nginx path.
+
+### Option 1: Start the latest image directly with Docker
+
+Create the fixed private bridge once, then start the non-root container with
+persistent state/cache/log volumes and a UID/GID-scoped runtime tmpfs:
+
+```bash
+docker network create --driver bridge --subnet 172.31.255.0/24 --gateway 172.31.255.1 mirrorrelay-net
+
+docker run -d \
+  --name mirrorrelay \
+  --restart unless-stopped \
+  --network mirrorrelay-net \
+  --publish 127.0.0.1:9081:9081 \
+  --volume mirrorrelay-data:/var/lib/mirrorrelay \
+  --volume mirrorrelay-cache:/var/cache/mirrorrelay \
+  --volume mirrorrelay-logs:/var/log/mirrorrelay \
+  --tmpfs /run/mirrorrelay:rw,nosuid,nodev,noexec,mode=0770,uid=65532,gid=65532 \
+  luiscmerrick/mirrorrelay:latest
+```
+
+The bundled Docker configuration trusts the fixed bridge gateway and disables
+cross-boundary zero-copy because the runtime socket is container-private.
+Connect administrator-owned External Shared Nginx to host `127.0.0.1:9081`,
+review the generated ingress configuration, and set the exact administration
+CIDRs before exposing the service. See the [Installation Guide](docs/installation.md).
+
+### Option 2: Start with `compose.yaml`
+
+```bash
+git clone https://github.com/LuisCMerrick/MirrorRelay.git
+cd MirrorRelay
+sudoedit configs/config.docker.yaml
+docker compose pull
+docker compose up -d
+```
+
+The Compose model uses `luiscmerrick/mirrorrelay:latest` by default. Set
+`MIRRORRELAY_IMAGE_TAG` to an immutable release tag when pinning a deployment.
+
+### Option 3: Install a release package (DEB / RPM)
+
+```bash
+# Debian / Ubuntu (amd64 example):
+sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+
+# RHEL / Rocky Linux / Fedora (amd64 example):
+sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+
+sudoedit /etc/mirrorrelay/config.yaml
+sudo systemctl enable --now mirrorrelay.service
+```
+
+Packages also ship for arm64/aarch64. Apply the generated External Shared Nginx
+snippet from `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf`
+using that ingress installation's normal maintenance process.
+
+### Option 4: Run from source in development mode
 
 ```bash
 git clone https://github.com/LuisCMerrick/MirrorRelay.git
@@ -99,49 +160,10 @@ cd MirrorRelay
 go run ./cmd/mirrorrelay -dev
 ```
 
-Open `https://127.0.0.1:8443/admin/` and register the initial administrator. MirrorRelay does not ship default credentials.
-
-### Option 2: Production Package Deployment (DEB / RPM)
-
-1. **Install Package**:
-   ```bash
-   # Debian / Ubuntu:
-   sudo apt-get install --yes ./mirrorrelay_0.0.16_amd64.deb
-
-   # RHEL / Rocky Linux / Fedora:
-   sudo dnf install --yes ./mirrorrelay-0.0.16.x86_64.rpm
-   ```
-2. **Review the Administration Network Boundary & Enable Service**:
-   ```bash
-   sudoedit /etc/mirrorrelay/config.yaml   # set security.admin_cidrs
-   sudo systemctl enable --now mirrorrelay.service
-   ```
-3. **Connect External Shared Nginx** (see [Installation Guide](docs/installation.md)):
-   The generated snippet connects to the default frontend at `127.0.0.1:9081`.
-   Add your web server user (e.g. `www-data` or `nginx`) to the
-   `mirrorrelay` group when zero-copy bypass needs the private upstream socket,
-   or when you explicitly enable the frontend Unix socket:
-   ```bash
-   sudo usermod -aG mirrorrelay www-data
-   ```
-   Include the generated snippet `/var/lib/mirrorrelay/integration/external-nginx/mirrorrelay.conf` in your Nginx `server` block and reload Nginx.
-4. Open the HTTPS administration URL and complete the one-time initial-administrator registration before exposing it to untrusted networks.
-
-### Option 3: Official Multi-Architecture Docker Image
-
-Published releases also push one Docker Hub image for both `linux/amd64` and
-`linux/arm64`; Docker selects the host architecture automatically:
-
-```bash
-export DOCKERHUB_USERNAME=<dockerhub-namespace>
-docker pull "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
-```
-
-Versioned, v-prefixed and stable-release `latest` tags refer to the same verified
-multi-platform manifest. The image contains the exact MirrorRelay and Managed
-Upstream Nginx binaries tested by the matching package jobs. See the
-[Installation Guide](docs/installation.md) for configuration, persistent mounts
-and External Shared Nginx integration.
+Open `https://127.0.0.1:8443/admin/`, accept the local development certificate,
+and register the initial administrator. The checked-in development Nginx fixture
+is for Linux amd64; formal amd64 and arm64 deployments should use the published
+image or packages.
 
 ### Example Repository & Client Setup
 

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM --platform=linux/amd64 golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS build
 
-ARG VERSION=0.0.16
+ARG VERSION=0.0.17
 ARG TARGETARCH
 WORKDIR /src
 RUN test "${TARGETARCH}" = "amd64"
@@ -31,6 +31,10 @@ RUN apk add --no-cache ca-certificates \
         /run/mirrorrelay
 COPY --from=build /out/mirrorrelay /usr/local/bin/mirrorrelay
 COPY --chmod=0755 nginx/sbin/nginx /usr/lib/mirrorrelay/nginx/nginx
+COPY --chmod=0644 nginx/sbin/nginx.sha256 /usr/lib/mirrorrelay/nginx/nginx.sha256
+RUN cd /usr/lib/mirrorrelay/nginx \
+    && sha256sum -c nginx.sha256 \
+    && rm nginx.sha256
 USER 65532:65532
 EXPOSE 9081/tcp
 ENTRYPOINT ["/usr/local/bin/mirrorrelay"]

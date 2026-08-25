@@ -25,6 +25,16 @@ func requestHostname(raw string) string {
 	return strings.ToLower(strings.Trim(strings.TrimSuffix(raw, "."), "[]"))
 }
 
+func (s *Server) requestPublicBase(request *http.Request) (string, error) {
+	if s.cfg.HTTP.PublicBaseURL != "" {
+		return strings.TrimRight(s.cfg.HTTP.PublicBaseURL, "/"), nil
+	}
+	if request == nil || !security.ValidRequestAuthority(request.Host) {
+		return "", fmt.Errorf("invalid request host")
+	}
+	return "https://" + request.Host, nil
+}
+
 func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.hostRepository(r.Host) {
@@ -60,7 +70,7 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 					})
 					return
 				}
-				clientIP := security.RequestClientIP(r)
+				clientIP := s.requestClientIP(r)
 				fp := ""
 				if s.clusterChecker != nil {
 					fp = s.clusterChecker.ClusterFingerprint()
@@ -163,13 +173,10 @@ func (s *Server) helpOverview(w http.ResponseWriter, r *http.Request) {
 	appearance := s.appearanceConfig()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	publicBase := s.cfg.HTTP.PublicBaseURL
-	if publicBase == "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		publicBase = scheme + "://" + r.Host
+	publicBase, err := s.requestPublicBase(r)
+	if err != nil {
+		http.Error(w, "invalid request host", http.StatusBadRequest)
+		return
 	}
 	var repoList []model.Mirror
 	if s.registry != nil {
@@ -200,13 +207,10 @@ func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath str
 	format := r.URL.Query().Get("format")
 	safeUI := r.URL.Query().Get("safe-ui") == "1"
 
-	publicBase := s.cfg.HTTP.PublicBaseURL
-	if publicBase == "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		publicBase = scheme + "://" + r.Host
+	publicBase, err := s.requestPublicBase(r)
+	if err != nil {
+		http.Error(w, "invalid request host", http.StatusBadRequest)
+		return
 	}
 
 	res, err := help.Render(repo, publicBase, variant, format, appearance.Branding.Title)
@@ -232,7 +236,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	allowAdministrative := s.adminCIDRs.Allows(security.RequestClientIP(r))
+	allowAdministrative := s.adminCIDRs.Allows(s.requestClientIP(r))
 	var repositories []model.Mirror
 	if s.registry != nil {
 		repositories = s.registry.List()

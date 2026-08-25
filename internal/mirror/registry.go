@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/textproto"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -67,6 +68,9 @@ func buildSnapshot(all []model.Mirror) snapshot {
 	active := make([]model.Mirror, 0, len(all))
 	for _, value := range all {
 		m := clone(value)
+		if err := CompilePackagePolicy(&m); err != nil {
+			m.PackagePolicy = &model.PackagePolicy{Invalid: err.Error()}
+		}
 		active = append(active, m)
 		m = clone(m)
 		bySlug[strings.ToLower(m.Slug)] = m
@@ -191,6 +195,8 @@ func clone(m model.Mirror) model.Mirror {
 	m.Upstreams = append([]model.Upstream(nil), m.Upstreams...)
 	m.RewriteHosts = append([]string(nil), m.RewriteHosts...)
 	m.HeaderRemove = append([]string(nil), m.HeaderRemove...)
+	m.BlockedPackages = append([]string(nil), m.BlockedPackages...)
+	m.AllowedPackages = append([]string(nil), m.AllowedPackages...)
 	if m.HeaderAdd != nil {
 		m.HeaderAdd = make(map[string]string, len(m.HeaderAdd))
 		for name, value := range m.HeaderAdd {
@@ -468,8 +474,62 @@ func NormalizeAndValidate(m *model.Mirror, allowHTTP, globallyAllowPrivate bool)
 	if m.InsecureTLS {
 		return errors.New("insecure_skip_verify is not supported; upstream TLS certificates must be verified")
 	}
+	if err := CompilePackagePolicy(m); err != nil {
+		return err
+	}
 	sort.SliceStable(m.Upstreams, func(i, j int) bool { return m.Upstreams[i].Priority < m.Upstreams[j].Priority })
 	return nil
+}
+
+const (
+	maxPackagePatterns     = 128
+	maxPackagePatternBytes = 512
+)
+
+// CompilePackagePolicy validates, bounds and precompiles every repository
+// package rule. The compiled policy is immutable and safe for concurrent use by
+// the active routing snapshot.
+func CompilePackagePolicy(m *model.Mirror) error {
+	blocked, blockedValues, err := compilePackagePatterns("blocked_packages", m.BlockedPackages)
+	if err != nil {
+		return err
+	}
+	allowed, allowedValues, err := compilePackagePatterns("allowed_packages", m.AllowedPackages)
+	if err != nil {
+		return err
+	}
+	m.BlockedPackages = blockedValues
+	m.AllowedPackages = allowedValues
+	m.PackagePolicy = &model.PackagePolicy{Blocked: blocked, Allowed: allowed}
+	return nil
+}
+
+func compilePackagePatterns(field string, values []string) ([]model.PackagePattern, []string, error) {
+	if len(values) > maxPackagePatterns {
+		return nil, nil, fmt.Errorf("%s must contain at most %d patterns", field, maxPackagePatterns)
+	}
+	compiled := make([]model.PackagePattern, 0, len(values))
+	normalized := make([]string, 0, len(values))
+	for index, raw := range values {
+		pattern := strings.TrimSpace(raw)
+		if pattern == "" {
+			return nil, nil, fmt.Errorf("%s[%d] must not be empty", field, index)
+		}
+		if len(pattern) > maxPackagePatternBytes {
+			return nil, nil, fmt.Errorf("%s[%d] exceeds %d bytes", field, index, maxPackagePatternBytes)
+		}
+		if strings.ContainsAny(pattern, "\x00\r\n") {
+			return nil, nil, fmt.Errorf("%s[%d] contains control characters", field, index)
+		}
+		_, globErr := path.Match(pattern, "")
+		expression, regexpErr := regexp.Compile(pattern)
+		if globErr != nil && regexpErr != nil {
+			return nil, nil, fmt.Errorf("%s[%d] is neither a valid glob nor RE2 expression", field, index)
+		}
+		compiled = append(compiled, model.PackagePattern{Pattern: pattern, Glob: globErr == nil, Regexp: expression})
+		normalized = append(normalized, pattern)
+	}
+	return compiled, normalized, nil
 }
 
 func validHostname(value string) bool {

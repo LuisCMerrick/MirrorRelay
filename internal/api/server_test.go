@@ -84,6 +84,61 @@ func TestHandlerScopesUIAndAPIUnderConfiguredAdminPath(t *testing.T) {
 	}
 }
 
+func TestAdminAccessRejectsSpoofedClientIPFromUntrustedPeer(t *testing.T) {
+	cfg := config.Default()
+	cfg.Security.AdminCIDRs = []string{"203.0.113.0/24"}
+	adminCIDRs, err := security.ParseCIDRs(cfg.Security.AdminCIDRs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedProxies, err := security.ParseCIDRs(cfg.Security.TrustedProxyCIDRs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{
+		cfg:            cfg,
+		adminCIDRs:     adminCIDRs,
+		trustedProxies: trustedProxies,
+		web: fstest.MapFS{
+			"index.html": {Data: []byte("admin index")},
+		},
+	}
+	handler := server.Handler(http.NotFoundHandler())
+
+	spoofed := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	spoofed.RemoteAddr = "198.51.100.20:4321"
+	spoofed.Header.Set("X-Real-IP", "203.0.113.10")
+	spoofedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(spoofedRecorder, spoofed)
+	if spoofedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("untrusted peer spoofed an administrative client address: status=%d", spoofedRecorder.Code)
+	}
+
+	trusted := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	trusted.RemoteAddr = "127.0.0.1:4321"
+	trusted.Header.Set("X-Real-IP", "203.0.113.10")
+	trustedRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(trustedRecorder, trusted)
+	if trustedRecorder.Code != http.StatusOK {
+		t.Fatalf("trusted ingress address was ignored: status=%d", trustedRecorder.Code)
+	}
+}
+
+func TestRequestPublicBaseDefaultsToValidatedHTTPSAuthority(t *testing.T) {
+	server := &Server{cfg: config.Default()}
+	request := httptest.NewRequest(http.MethodGet, "http://mirror.example/help/", nil)
+	request.Header.Set("X-Forwarded-Proto", "http")
+	base, err := server.requestPublicBase(request)
+	if err != nil || base != "https://mirror.example" {
+		t.Fatalf("public help base = %q, %v; want validated HTTPS origin", base, err)
+	}
+
+	request.Host = "unsafe.example;return"
+	if _, err := server.requestPublicBase(request); err == nil {
+		t.Fatal("unsafe request authority was accepted for public help URLs")
+	}
+}
+
 func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
 	if err != nil {

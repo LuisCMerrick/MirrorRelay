@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
@@ -59,15 +60,27 @@ func scanMirror(row scanner) (model.Mirror, error) {
 		return m, err
 	}
 	m.Enabled, m.CacheEnabled, m.RewriteEnabled, m.HTMLRewriteEnabled, m.HealthCheckEnabled, m.PullOnly = enabled != 0, cacheEnabled != 0, rewriteEnabled != 0, htmlRewriteEnabled != 0, healthEnabled != 0, pullOnly != 0
-	_ = json.Unmarshal([]byte(rewriteHosts), &m.RewriteHosts)
-	_ = json.Unmarshal([]byte(headerAdd), &m.HeaderAdd)
-	_ = json.Unmarshal([]byte(headerRemove), &m.HeaderRemove)
+	if err := json.Unmarshal([]byte(rewriteHosts), &m.RewriteHosts); err != nil {
+		return m, fmt.Errorf("decode repository %d rewrite_hosts: %w", m.ID, err)
+	}
+	if err := json.Unmarshal([]byte(headerAdd), &m.HeaderAdd); err != nil {
+		return m, fmt.Errorf("decode repository %d header_add: %w", m.ID, err)
+	}
+	if err := json.Unmarshal([]byte(headerRemove), &m.HeaderRemove); err != nil {
+		return m, fmt.Errorf("decode repository %d header_remove: %w", m.ID, err)
+	}
 	if helpJSON != "" && helpJSON != "{}" {
-		_ = json.Unmarshal([]byte(helpJSON), &m.Help)
+		if err := json.Unmarshal([]byte(helpJSON), &m.Help); err != nil {
+			return m, fmt.Errorf("decode repository %d help_json: %w", m.ID, err)
+		}
 	}
 	m.Help.Enabled = helpEnabled != 0
-	_ = json.Unmarshal([]byte(blockedPkg), &m.BlockedPackages)
-	_ = json.Unmarshal([]byte(allowedPkg), &m.AllowedPackages)
+	if err := json.Unmarshal([]byte(blockedPkg), &m.BlockedPackages); err != nil {
+		return m, fmt.Errorf("decode repository %d blocked_packages: %w", m.ID, err)
+	}
+	if err := json.Unmarshal([]byte(allowedPkg), &m.AllowedPackages); err != nil {
+		return m, fmt.Errorf("decode repository %d allowed_packages: %w", m.ID, err)
+	}
 	m.CacheAuthenticated = cacheAuthenticated != 0
 	m.AllowHTTP, m.AllowPrivate, m.InsecureTLS = allowHTTP != 0, allowPrivate != 0, insecure != 0
 	m.CreatedAt, m.UpdatedAt = parseTime(created), parseTime(updated)

@@ -105,11 +105,11 @@
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
           <span data-i18n="navUpstreamNginx">Managed Upstream Nginx</span>
         </button>
-        <button data-page="custom" class="requires-operator">
+        <button data-page="custom" class="requires-admin">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           <span data-i18n="navCustom">Custom configuration</span>
         </button>
-        <button data-page="ingress">
+        <button data-page="ingress" class="requires-admin">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><line x1="12" x2="12" y1="12" y2="8"/></svg>
           <span data-i18n="navIngress">Ingress integration</span>
         </button>
@@ -137,7 +137,7 @@
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
           <span data-i18n="navAudit">Audit log</span>
         </button>
-        <button data-page="system">
+        <button data-page="system" class="requires-operator">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
           <span data-i18n="navSystem">System</span>
         </button>
@@ -235,7 +235,7 @@
         <section id="page-custom" class="page hidden">
           <div class="toolbar">
             <div></div>
-            <button id="add-custom" class="btn-primary requires-operator">
+            <button id="add-custom" class="btn-primary requires-admin">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
               <span data-i18n="addCustom">Add custom configuration</span>
             </button>
@@ -249,7 +249,7 @@
             <div class="actions">
               <button id="sync-all-nodes" class="secondary requires-operator" data-i18n="syncAllNodes">Sync all nodes</button>
               <button id="reset-cluster-fp" class="secondary requires-admin" data-i18n="resetFingerprint">Reset fingerprint</button>
-              <button id="add-node" class="btn-primary requires-operator" data-i18n="addNode">Add node</button>
+              <button id="add-node" class="btn-primary requires-admin" data-i18n="addNode">Add node</button>
             </div>
           </div>
           <div id="cluster-overview"></div>

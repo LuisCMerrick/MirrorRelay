@@ -58,12 +58,13 @@ export async function loadUpstreamNginx() {
 
     const isRunning = status.state === 'running';
     const canManage = state.role === 'admin' || state.role === 'operator';
+    const canRevealConfiguration = state.role === 'admin';
     const reloadAction = canManage
       ? `<button id="reload-upstream-nginx" class="btn-primary">
           ${icon('refresh', 14)} ${L('Regenerate, validate and reload')}
         </button>`
       : '';
-    const effectiveConfiguration = canManage
+    const effectiveConfiguration = canRevealConfiguration
       ? disclosure(
           L('Effective configuration'),
           `<div class="panel-header-row">

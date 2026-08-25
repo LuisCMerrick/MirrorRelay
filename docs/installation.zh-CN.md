@@ -68,8 +68,7 @@ Attestation。Docker 会自动选择与宿主机匹配的架构。生产发布�
 生产配置。特别要设置公开 URL、TLS 路径和精确的管理网段。Docker 专用
 配置会在容器内显式监听 `0.0.0.0:9081`；只能把该端口发布到宿主机回环，
 供管理员维护的 External Shared Nginx 使用，不能暴露受信前端端点。状态、
-缓存和日志必须持久化；可选零拷贝路径还需要共享私有上游 Socket 所在的
-Runtime 目录：
+缓存和日志必须持久化；Runtime 目录默认是容器私有的临时文件系统：
 
 ```sh
 docker run -d \
@@ -80,16 +79,26 @@ docker run -d \
   --mount type=volume,src=mirrorrelay-data,dst=/var/lib/mirrorrelay \
   --mount type=volume,src=mirrorrelay-cache,dst=/var/cache/mirrorrelay \
   --mount type=volume,src=mirrorrelay-logs,dst=/var/log/mirrorrelay \
-  --mount type=bind,src=/run/mirrorrelay,dst=/run/mirrorrelay \
+  --tmpfs /run/mirrorrelay:rw,nosuid,nodev,noexec,mode=0770,uid=65532,gid=65532 \
   "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
 ```
 
-启动容器前，必须先按 UID `65532` 需要的属主和权限创建挂载路径。
-镜像不会安装、修改或重启宿主机 Nginx，也不会改动其服务用户。生成的
-入口片段连接宿主机 `127.0.0.1:9081`；启用零拷贝旁路时还会使用共享的
-私有 `upstream.sock`。应通过宿主机正常的 Group 或 ACL 管理，仅授权已
-确认的入口 Worker；不得把 Runtime 目录改成全局可写。若把容器端口发布到
-非回环宿主机地址，必须再用网络防火墙限制为可信入口 Peer。
+Compose 文件使用相同的 UID/GID 受限 tmpfs，避免非 root 镜像因宿主机
+`/run` 属主不匹配而启动失败。其固定默认 Bridge Gateway 为
+`172.31.255.1`，Docker 配置已把该地址加入
+`security.trusted_proxy_cidrs`。由于私有 tmpfs Socket 未挂载到宿主机入口，
+Docker 配置会关闭 `zero_copy_bypass`。若通过 `MIRRORRELAY_DOCKER_SUBNET` 或
+`MIRRORRELAY_DOCKER_GATEWAY` 修改网络，还必须把 Trusted CIDR 更新为新的
+精确入口 Peer。
+
+镜像不会安装、修改或重启宿主机 Nginx，也不会改动其服务用户。正常生成的
+入口链路连接宿主机 `127.0.0.1:9081`。External Shared Nginx 必须用
+`$remote_addr` 覆盖 `X-Real-IP`；MirrorRelay 只接受已配置可信 Peer 提供的
+该 Header。若要跨容器边界启用可选零拷贝 Socket，应以为 UID/GID `65532`
+显式准备的 Bind Mount 替换 tmpfs，设置 `performance.zero_copy_bypass: true`，
+并通过宿主机正常的 Group 或 ACL 管理仅
+授权已确认的入口 Worker；不得把 Runtime 目录改成全局可写。若把容器端口
+发布到非回环宿主机地址，必须再用网络防火墙限制为可信入口 Peer。
 
 软件包安装到以下固定路径：
 
@@ -102,7 +111,7 @@ docker run -d \
 
 DEB 配置使用 `/etc/ssl/certs/ca-certificates.crt`；RPM 配置在 RHEL 系发行版上使用 `/etc/pki/tls/certs/ca-bundle.crt`。使用便携 tar 包时，必须在启动服务前确认当前发行版的 CA Bundle 路径。
 
-安装脚本会创建 `mirrorrelay` 系统账户和私有的运行时、状态、缓存与日志目录，但不会自动启用或启动服务。请先审核 `/etc/mirrorrelay/config.yaml`，尤其是 `security.admin_cidrs`。软件包默认值只允许回环客户端；如需远程管理，请改为精确的管理网络。然后执行：
+安装脚本会创建 `mirrorrelay` 系统账户和私有的运行时、状态、缓存与日志目录，但不会自动启用或启动服务。请先审核 `/etc/mirrorrelay/config.yaml`，尤其是 `security.admin_cidrs` 与 `security.trusted_proxy_cidrs`。软件包默认只允许回环管理客户端并只信任回环入口 Peer；如需远程管理或独立入口主机，请改为精确网段。然后执行：
 
 ```sh
 sudo systemctl enable --now mirrorrelay.service

@@ -16,12 +16,11 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/database"
 	"github.com/LuisCMerrick/MirrorRelay/internal/help"
 	"github.com/LuisCMerrick/MirrorRelay/internal/profile"
-	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 func (s *Server) adminAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.adminCIDRs.Allows(security.RequestClientIP(r)) {
+		if !s.adminCIDRs.Allows(s.requestClientIP(r)) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -145,14 +144,14 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "/stats" && r.Method == http.MethodGet:
 		s.dashboard(w, r)
 	case path == "/health" && r.Method == http.MethodGet:
-		s.healthStatus(w, r)
+		s.healthStatus(w, r, session.Role)
 	case path == "/audit" && r.Method == http.MethodGet:
 		entries, err := s.store.ListAudit(r.Context(), 200)
 		if err != nil {
 			writeInternal(w, err)
 			return
 		}
-		writeJSON(w, 200, entries)
+		writeJSON(w, 200, auditEntriesForRole(entries, session.Role))
 	case path == "/access" && r.Method == http.MethodGet:
 		if !s.requireRole(w, session, "admin", "operator") {
 			return
@@ -164,20 +163,30 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, lines)
 	case path == "/system" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin", "operator") {
+			return
+		}
 		frontendNetwork, frontendAddress := s.cfg.FrontendEndpoint()
 		upstreamNetwork, upstreamAddress := s.cfg.UpstreamEndpoint()
-		writeJSON(w, 200, map[string]any{
+		response := map[string]any{
 			"version": s.build.Version, "build_id": s.build.BuildID, "git_commit": s.build.GitCommit,
 			"build_timestamp": s.build.BuildTimestamp, "go_version": s.build.GoVersion,
 			"target_os": s.build.TargetOS, "architecture": s.build.Architecture,
 			"uptime_seconds": int64(time.Since(s.started).Seconds()), "ingress_mode": s.cfg.Ingress.Mode,
 			"public_base_url": s.cfg.HTTP.PublicBaseURL, "tls_min_version": s.cfg.TLS.MinVersion,
-			"https_listen": s.cfg.HTTP.HTTPSListen, "tls_certificate": s.cfg.TLS.Certificate,
-			"tls_private_key": s.cfg.TLS.PrivateKey, "frontend_network": frontendNetwork,
-			"frontend_address": frontendAddress, "upstream_network": upstreamNetwork,
-			"upstream_address": upstreamAddress, "upstream_nginx": s.upstreamNginx.Status(),
+			"upstream_nginx":   upstreamNginxStatusForRole(s.upstreamNginx.Status(), session.Role),
 			"zero_copy_bypass": s.cfg.Performance.ZeroCopyBypass,
-		})
+		}
+		if session.Role == "admin" {
+			response["https_listen"] = s.cfg.HTTP.HTTPSListen
+			response["tls_certificate"] = s.cfg.TLS.Certificate
+			response["tls_private_key"] = s.cfg.TLS.PrivateKey
+			response["frontend_network"] = frontendNetwork
+			response["frontend_address"] = frontendAddress
+			response["upstream_network"] = upstreamNetwork
+			response["upstream_address"] = upstreamAddress
+		}
+		writeJSON(w, 200, response)
 	case (path == "/system/restart" || path == "/restart") && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin") {
 			return
@@ -190,6 +199,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			s.triggerRestart()
 		}()
 	case path == "/settings" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		s.webSettings(w, r, session)
 	case path == "/settings" && r.Method == http.MethodPut:
 		if !s.requireRole(w, session, "admin") {
@@ -227,7 +239,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, 404, "profile not found")
 	case path == "/upstream-nginx/status" && r.Method == http.MethodGet:
-		writeJSON(w, 200, s.upstreamNginx.Status())
+		writeJSON(w, 200, upstreamNginxStatusForRole(s.upstreamNginx.Status(), session.Role))
 	case path == "/upstream-nginx/test" && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin", "operator") {
 			return
@@ -239,11 +251,18 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		generated, result, err := s.upstreamNginx.Validate(r.Context(), mirrors)
 		if err != nil {
-			writeError(w, 422, validationMessage(result, err))
+			writeError(w, 422, validationMessageForRole(result, err, session.Role))
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "configuration_hash": generated.Hash, "validation_result": result})
+		response := map[string]any{"ok": true, "configuration_hash": generated.Hash}
+		if session.Role == "admin" {
+			response["validation_result"] = result
+		}
+		writeJSON(w, 200, response)
 	case path == "/ingress/snippet" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
 		mirrors, err := s.store.ListMirrors(r.Context())
 		if err != nil {
 			writeInternal(w, err)
@@ -257,7 +276,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		network, address := s.cfg.FrontendEndpoint()
 		writeJSON(w, 200, map[string]any{"frontend_network": network, "frontend_address": address, "mode": s.cfg.Ingress.Mode, "configuration": generated.Files["external-nginx-integration.conf"]})
 	case path == "/upstream-nginx/config" && r.Method == http.MethodGet:
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		value, err := s.upstreamNginx.EffectiveConfig(r.Context())
@@ -272,7 +291,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			writeInternal(w, err)
 			return
 		}
-		writeJSON(w, 200, values)
+		writeJSON(w, 200, configVersionsForRole(values, session.Role))
 	case path == "/upstream-nginx/reload" && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin", "operator") {
 			return
@@ -280,7 +299,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		v, err := s.upstreamNginx.Reconcile(r.Context(), session.Username, "manual reconcile")
 		if err != nil {
 			_ = s.audit(r, session.Username, "upstream_nginx_reload", "managed-upstream-nginx", err.Error(), false)
-			writeError(w, 422, err.Error())
+			writeError(w, 422, activationMessageForRole("Managed Upstream Nginx reload failed", err, session.Role))
 			return
 		}
 		if err := s.publishActiveRouting(); err != nil {
@@ -289,7 +308,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.audit(r, session.Username, "upstream_nginx_reload", "managed-upstream-nginx", fmt.Sprintf("version %d", v.Version), true)
 		s.dispatchAlert("config_change", "Nginx Reloaded", fmt.Sprintf("Configuration reloaded to version %d by %s", v.Version, session.Username), nil)
-		writeJSON(w, 200, v)
+		writeJSON(w, 200, configVersionForRole(v, session.Role))
 	case strings.HasPrefix(path, "/upstream-nginx/history/") && strings.HasSuffix(path, "/rollback") && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin", "operator") {
 			return
@@ -303,7 +322,7 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		v, err := s.upstreamNginx.Rollback(r.Context(), version, session.Username)
 		if err != nil {
 			_ = s.audit(r, session.Username, "config_rollback", "managed-upstream-nginx", err.Error(), false)
-			writeError(w, 422, err.Error())
+			writeError(w, 422, activationMessageForRole("Managed Upstream Nginx rollback failed", err, session.Role))
 			return
 		}
 		if err := s.publishActiveRouting(); err != nil {
@@ -312,9 +331,9 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.audit(r, session.Username, "config_rollback", "managed-upstream-nginx", fmt.Sprintf("version %d", version), true)
 		s.dispatchAlert("config_change", "Config Rollback", fmt.Sprintf("Configuration rolled back to version %d by %s", version, session.Username), nil)
-		writeJSON(w, 200, v)
+		writeJSON(w, 200, configVersionForRole(v, session.Role))
 	case path == "/custom-configs" && r.Method == http.MethodGet:
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		values, err := s.store.ListCustomConfigs(r.Context())
@@ -324,12 +343,12 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, values)
 	case path == "/custom-configs" && r.Method == http.MethodPost:
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		s.createCustomConfig(w, r, session)
 	case strings.HasPrefix(path, "/custom-configs/"):
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		s.customConfigAction(w, r, session, strings.TrimPrefix(path, "/custom-configs/"))
@@ -343,15 +362,23 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "/cluster/nodes" && r.Method == http.MethodGet:
 		s.listClusterNodes(w, r)
 	case path == "/cluster/nodes" && r.Method == http.MethodPost:
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		s.createClusterNode(w, r, session)
 	case strings.HasPrefix(path, "/cluster/nodes/"):
-		if r.Method != http.MethodGet && !s.requireRole(w, session, "admin", "operator") {
-			return
+		tail := strings.TrimPrefix(path, "/cluster/nodes/")
+		operational := r.Method == http.MethodPost && (strings.HasSuffix(tail, "/check") || strings.HasSuffix(tail, "/sync"))
+		if r.Method != http.MethodGet {
+			if operational {
+				if !s.requireRole(w, session, "admin", "operator") {
+					return
+				}
+			} else if !s.requireRole(w, session, "admin") {
+				return
+			}
 		}
-		s.clusterNodeAction(w, r, session, strings.TrimPrefix(path, "/cluster/nodes/"))
+		s.clusterNodeAction(w, r, session, tail)
 	case path == "/cluster/fingerprint/reset" && r.Method == http.MethodPost:
 		if !s.requireRole(w, session, "admin") {
 			return
@@ -449,7 +476,7 @@ func (s *Server) rollbackConfig(w http.ResponseWriter, r *http.Request, session 
 	value, err := s.upstreamNginx.Rollback(r.Context(), version, session.Username)
 	if err != nil {
 		_ = s.audit(r, session.Username, "config_rollback", "managed-upstream-nginx", err.Error(), false)
-		writeError(w, 422, err.Error())
+		writeError(w, 422, activationMessageForRole("Managed Upstream Nginx rollback failed", err, session.Role))
 		return
 	}
 	if err := s.publishActiveRouting(); err != nil {
@@ -457,7 +484,7 @@ func (s *Server) rollbackConfig(w http.ResponseWriter, r *http.Request, session 
 		return
 	}
 	_ = s.audit(r, session.Username, "config_rollback", "managed-upstream-nginx", fmt.Sprintf("version %d", version), true)
-	writeJSON(w, 200, value)
+	writeJSON(w, 200, configVersionForRole(value, session.Role))
 }
 
 type loginRequest struct {
@@ -530,7 +557,7 @@ func (s *Server) registerInitialAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	ip := security.RequestClientIP(r)
+	ip := s.requestClientIP(r)
 	var in loginRequest
 	if err := decodeJSON(w, r, &in); err != nil {
 		return

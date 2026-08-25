@@ -26,9 +26,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.16 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.16-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.16-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.17 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.17-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.17-source/vendor/modules.txt'
 ```
 
 带 Vendor 的源码包从本次发布对应的精确 Git Commit 导出，再在导出树内执行 `go mod vendor`。托管构建流程会解包并执行 `go list -mod=vendor ./...`，通过后才把它加入 GitHub Release 与 `SHA256SUMS`。
@@ -112,7 +112,7 @@ Managed Upstream Nginx 在 amd64 构建 Runner 上使用固定版本的 `xx`/Cla
 ## 安全验收
 
 - 伪造 `X-Mirror-Internal-*` Header，确认它们不会原样到达 Managed Upstream Nginx。
-- 确认不受信任 Peer 无法访问受信前端端点。显式使用通配/非回环绑定时，应验证容器端口映射或防火墙只允许 External Shared Nginx；再确认其 `X-Real-IP` 用于 Admin CIDR、Audit 与单 IP 限制。
+- 确认不受信任 Peer 无法访问受信前端端点。显式使用通配/非回环绑定时，应验证容器端口映射或防火墙只允许 External Shared Nginx，并把其精确 Peer CIDR 加入 `security.trusted_proxy_cidrs`。确认入口使用 `$remote_addr` 覆盖 `X-Real-IP`；不受信任 Peer 即使伪造该 Header，Admin CIDR、Audit 与单 IP 限制仍必须采用 Socket 地址。还应确认客户端提供的 `X-Forwarded-Proto: http` 无法把生成的公开 URL 从 HTTPS 降级。
 - 确认格式错误或缺少 Realm 的 Registry Bearer Challenge 返回 502，且不会回退到直接 Token Endpoint。
 - 尝试含 Userinfo、非 HTTP(S) Scheme、禁止端口/地址、DNS Rebinding 和非白名单 Host 的 Redirect/Token Target。
 - 确认 HTTP/私网上游必须同时具有全局和仓库许可。

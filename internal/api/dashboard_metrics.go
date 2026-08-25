@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
-	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +44,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) healthStatus(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) healthStatus(w http.ResponseWriter, _ *http.Request, role string) {
 	upstreamNginxStatus := s.upstreamNginx.Status()
 	upstreamEndpoint := "error"
 	network, address := s.cfg.UpstreamEndpoint()
@@ -64,21 +63,24 @@ func (s *Server) healthStatus(w http.ResponseWriter, _ *http.Request) {
 	if upstreamNginxStatus.State != "running" || upstreamEndpoint != "healthy" {
 		status = "degraded"
 	}
-	writeJSON(w, 200, map[string]any{
+	response := map[string]any{
 		"status":                 status,
 		"mirrorrelay":            "healthy",
 		"frontend_socket":        "healthy",
 		"frontend_endpoint":      "healthy",
-		"frontend_network":       frontendNetwork,
-		"frontend_address":       frontendAddress,
 		"external_shared_nginx":  "external",
 		"go_router":              "healthy",
 		"managed_upstream_nginx": upstreamNginxStatus.State,
 		"upstream_endpoint":      upstreamEndpoint,
-		"upstream_network":       network,
-		"upstream_address":       address,
 		"repositories":           repositories,
-	})
+	}
+	if role == "admin" {
+		response["frontend_network"] = frontendNetwork
+		response["frontend_address"] = frontendAddress
+		response["upstream_network"] = network
+		response["upstream_address"] = address
+	}
+	writeJSON(w, 200, response)
 }
 
 func repositoryHealthState(repository model.Mirror) string {
@@ -149,7 +151,7 @@ func (s *Server) audit(r *http.Request, user, action, object, detail string, ok 
 	entry := model.AuditEntry{
 		Time:      time.Now(),
 		Username:  user,
-		ClientIP:  security.RequestClientIP(r),
+		ClientIP:  s.requestClientIP(r),
 		Action:    action,
 		Object:    object,
 		Detail:    detail,

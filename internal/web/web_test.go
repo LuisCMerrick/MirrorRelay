@@ -199,12 +199,13 @@ func TestEmbeddedUIKeepsRoleRestrictedControlsOutOfLowerPrivilegeViews(t *testin
 	}
 
 	for name, expected := range map[string][]string{
-		"index.html":               {"requires-admin", "requires-operator", `id="user-role"`},
+		"index.html":               {"requires-admin", "requires-operator", `id="user-role"`, `data-page="ingress" class="requires-admin"`},
 		"app.css":                  {`:root[data-role="viewer"] .requires-operator`, `:root:not([data-role="admin"]) .requires-admin`},
 		"js/main.js":               {"document.documentElement.dataset.role", "refreshRoleUI()"},
-		"js/pages/mirrors.js":      {`class="requires-operator" data-action="check-mirror"`},
-		"js/pages/mirrorDetail.js": {`class="requires-operator" data-action="view-effective-config"`},
-		"js/pages/cluster.js":      {"const canManage = state.role === 'admin' || state.role === 'operator'"},
+		"js/pages/mirrors.js":      {`class="requires-operator" data-action="check-mirror"`, `class="requires-admin" data-action="preview-repository-config"`},
+		"js/pages/mirrorDetail.js": {`class="requires-admin" data-action="view-effective-config"`},
+		"js/pages/cluster.js":      {"const canOperate = state.role === 'admin' || state.role === 'operator'", "const canManageNodes = state.role === 'admin'"},
+		"js/pages/custom.js":       {`class="requires-admin" data-action="edit-custom"`},
 		"js/pages/cache.js":        {"const canManage = state.role === 'admin' || state.role === 'operator'"},
 		"js/pages/system.js":       {`class="btn-restart-inline requires-admin"`},
 	} {

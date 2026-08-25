@@ -36,6 +36,8 @@ When a repository or redirect target is evaluated:
 - **Session Tokens**: 256-bit cryptographically secure random tokens (`crypto/rand`). Stored in SQLite as SHA-256 hashes (plaintext tokens are never stored in the database).
 - **Cookie Security**: Session cookies enforce `HttpOnly`, `Secure`, and `SameSite=Strict`.
 - **CSRF Protection**: Authenticated state-modifying requests (`POST`, `PUT`, `DELETE`) require a valid session CSRF token passed via `X-CSRF-Token` and verified in constant time (`crypto/subtle.ConstantTimeCompare`). The unauthenticated one-time enrollment request is instead constrained by the empty-database condition, atomic insertion and administration network boundary.
+- **Trusted Ingress Identity**: A TCP request may use `X-Real-IP` only when its immediate peer belongs to `security.trusted_proxy_cidrs`; otherwise the socket peer is the client identity. The explicitly enabled frontend Unix socket is trusted through its `0660` permission boundary. Generated ingress configuration overwrites `X-Real-IP` with `$remote_addr`; repository rewrites and public help URL generation ignore `X-Forwarded-Proto`, validate any fallback request authority, and remain HTTPS.
+- **Encrypted Cluster Mutation Credentials**: Coordinator node mutation tokens are stored as AES-256-GCM authenticated ciphertext. An ordered file-backed keyring supports startup migration and rotation; a missing key or undecryptable credential stops startup instead of falling back to plaintext.
 
 ---
 
@@ -73,6 +75,7 @@ CapabilityBoundingSet=
 File system permissions:
 - `/usr/bin/mirrorrelay` & `/usr/lib/mirrorrelay/nginx/nginx`: `0755 root:root`
 - `/etc/mirrorrelay/config.yaml`: `0640 root:mirrorrelay`
+- `/etc/mirrorrelay/cluster-mutation-token.key` when a Coordinator is enabled: `0640 root:mirrorrelay`
 - `/var/lib/mirrorrelay/`: `0750 mirrorrelay:mirrorrelay`
 - `/var/cache/mirrorrelay/`: `0750 mirrorrelay:mirrorrelay`
 - `/run/mirrorrelay/*.sock`: `0660 root:mirrorrelay`
@@ -84,18 +87,22 @@ File system permissions:
 MirrorRelay includes built-in supply chain poisoning and dependency confusion defenses:
 - **Package Blacklisting (`blocked_packages`)**: Regex and glob wildcard patterns (e.g. `^malicious-.*`, `bad-pkg-*.tar.gz`) preventing pulling poisoned or compromised packages.
 - **Package Whitelisting (`allowed_packages`)**: Restricts packages to an enterprise-approved subset (e.g. `^internal-.*`).
+- Each list is limited to 128 patterns and each pattern to 512 bytes. Rules must be valid Go globs or RE2 expressions and are compiled before activation; invalid candidates are rejected and unexpected invalid Active state fails closed.
 - When a client requests a blocked package, MirrorRelay immediately terminates the request with HTTP `403 Forbidden` and details the violated security policy rule.
+- The development image verifies its checked-in Managed Upstream Nginx fixture against `nginx.sha256` during the build. Formal images verify both architecture-matched binaries against the package job's `BUILD-INFO`; release packages also carry `BUILD-INFO` and internal checksums, while the published OCI manifest has SBOM and provenance attestations.
 
 ---
 
 ## 7. Role-Based Access Control (RBAC)
 
 MirrorRelay supports a three-tier permission model:
-- **`admin` (Administrator)**: Full operational control, user management, system settings override, service restart, and webhook test execution.
-- **`operator` (Operator)**: Repository configuration CRUD, cache purge, health check triggering, and Nginx reload/rollback. Cannot manage user accounts or alter system-level settings.
-- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, the audit log, redacted mirror details, and health status. The token endpoint is omitted entirely, and static authentication/cookie/token headers are removed from viewer responses. Managed Upstream Nginx access records and effective/per-repository/custom configurations require `admin` or `operator`. All mutating API calls are denied with HTTP `403 Forbidden`.
+- **`admin` (Administrator)**: Full operational control, repository credential reveal/rotation, custom Managed Upstream Nginx fragments, cluster-node record management, user management, system settings override, service restart, and webhook test execution.
+- **`operator` (Operator)**: Repository CRUD for non-secret fields, cache purge, health checks, cluster check/sync, and Nginx reload/rollback. Repository static-header values and token endpoints remain redacted and unchanged during edits. Operators cannot read generated/effective/custom Nginx configuration, manage node credentials, manage users, or alter system-level settings.
+- **`viewer` (Viewer / Auditor)**: Read-only access to metrics, the audit log, redacted repository details, and health status. Viewers cannot read the System endpoint, Managed Upstream Nginx access records, or generated/effective/custom configuration. All mutating API calls are denied with HTTP `403 Forbidden`.
 
-Managed Upstream Nginx records `$uri` rather than `$request_uri`, so access logs never retain query values such as tokens or signatures. The management API applies the same Admin/Operator boundary to those records.
+All non-Admin repository responses replace static-header values and token endpoints with a sentinel, and fail closed when redacting malformed or legacy upstream URLs containing query/userinfo credentials. Manual repository-check responses use the same URL redaction and replace raw connection errors with a generic failure. Only an Admin can use the ordinary repository editor to add, remove, or rotate those credential-bearing fields. While credentials are configured, only Admin may change their upstream/Host and routing bindings or the public access, package-filter, authenticated-cache and pull-only policies that control the credential's reach. System information is limited to Admin and Operator; the Operator representation omits certificate/private-key paths, listen/socket endpoints, process PID, generated integration snippets and raw Nginx diagnostics. The Health API likewise omits local network/socket endpoint coordinates for every non-Admin role. Configuration-history validation output, repository activation errors and failed audit-entry details are likewise Admin-only. Operational settings and the generated ingress configuration are Admin-only.
+
+Managed Upstream Nginx records `$uri` rather than `$request_uri`, so access logs never retain query values such as tokens or signatures. The management API limits those records to Admin and Operator.
 
 ---
 
@@ -106,7 +113,7 @@ Enterprise notifications are delivered with HMAC-SHA256 signatures:
 - Headers include `X-MirrorRelay-Signature: sha256=<hex_digest>` and `X-MirrorRelay-Event: <event_name>` for payload authenticity verification.
 - HTTPS is required by default. Plaintext HTTP and private/loopback/link-local targets require separate explicit `webhook.allow_http` and `webhook.allow_private` settings.
 - The configured target and every redirect hop are resolved and filtered before connection. The safe dialer rejects DNS rebinding to a blocked address, TLS hostname verification stays enabled, and at most five redirect hops are accepted.
-- Webhook tests can use the running destination or one temporary destination validated under the same policy. A temporary destination does not inherit the running signing secret. Invalid JSON stops immediately without sending a notification. Non-admin settings responses include neither `webhook.secret` nor the credential-bearing webhook URL.
+- Webhook tests can use the running destination or one temporary destination validated under the same policy. A temporary destination does not inherit the running signing secret. Invalid JSON stops immediately without sending a notification. The settings API, including the configured webhook destination, is Admin-only.
 
 ---
 

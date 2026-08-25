@@ -1,7 +1,7 @@
 server: {unix_socket_enabled: false, frontend_socket: "/run/mirrorrelay/frontend.sock", frontend_socket_mode: "0660", local_address: "0.0.0.0", local_port: 9081}
 runtime: {root: "/var/lib/mirrorrelay/runtime", run_dir: "/run/mirrorrelay"}
 ingress: {mode: external, generate_snippet: true, snippet_path: "/var/lib/mirrorrelay/integration/external-nginx"}
-performance: {stream_buffer_size_bytes: 65536, go_memory_limit_bytes: 0, gogc: 100}
+performance: {stream_buffer_size_bytes: 65536, zero_copy_bypass: false, go_memory_limit_bytes: 0, gogc: 100}
 metadata: {rewrite_buffer_limit_bytes: 8388608, output_compression: auto, gzip_min_length_bytes: 1024, validator_entries: 2048}
 redirect: {max_hops: 5, pin_validated_ip: true, reject_mixed_dns_result: true}
 http:
@@ -26,7 +26,7 @@ cache:
   wait_for_fill: 30m
   minimum_free_bytes: 1073741824
 logging: {path: "/var/log/mirrorrelay", queue_size: 8192, max_size_mb: 1024, keep_days: 30}
-security: {allow_http_upstream: false, allow_private_upstream: false, expose_client_ip: false, session_timeout: 12h, login_window: 15m, login_max_failures: 5, admin_cidrs: ["127.0.0.1/32", "::1/128"]}
+security: {allow_http_upstream: false, allow_private_upstream: false, expose_client_ip: false, trusted_proxy_cidrs: ["127.0.0.1/32", "::1/128", "172.31.255.1/32"], session_timeout: 12h, login_window: 15m, login_max_failures: 5, admin_cidrs: ["127.0.0.1/32", "::1/128"]}
 transport: {dial_timeout: 10s, keep_alive: 30s, tls_handshake_timeout: 10s, response_header_timeout: 30s, idle_connection_timeout: 90s, max_idle_connections: 512, max_idle_connections_per_host: 64}
 limits: {max_total_concurrency: 0, max_ip_concurrency: 0, bandwidth_limit_bps: 0}
 health: {worker_interval: 15s}
@@ -60,6 +60,7 @@ distributed:
   role: standalone
   token: ""
   mutation_token: ""
+  mutation_token_key_files: []
   coordinator_id: ""
   allow_http: false
   node:

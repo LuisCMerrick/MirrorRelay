@@ -218,6 +218,39 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	if viewerMirrorsRecorder.Code != http.StatusOK || !strings.Contains(viewerMirrorsRecorder.Body.String(), redactedValue) {
 		t.Fatalf("viewer mirror response leaked static credentials: status=%d body=%s", viewerMirrorsRecorder.Code, viewerMirrorsRecorder.Body.String())
 	}
+	operatorMirrors := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/mirrors", nil)
+	operatorMirrors.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorMirrorsRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorMirrorsRecorder, operatorMirrors)
+	for _, secret := range []string{"repository-secret", "header-secret", "token-secret", "path-secret", "%65ncoded-secret", "encoded-secret", "query-secret"} {
+		if strings.Contains(operatorMirrorsRecorder.Body.String(), secret) {
+			t.Fatalf("operator mirror response leaked %q: status=%d body=%s", secret, operatorMirrorsRecorder.Code, operatorMirrorsRecorder.Body.String())
+		}
+	}
+	if operatorMirrorsRecorder.Code != http.StatusOK || !strings.Contains(operatorMirrorsRecorder.Body.String(), redactedValue) {
+		t.Fatalf("operator mirror response did not redact credentials: status=%d body=%s", operatorMirrorsRecorder.Code, operatorMirrorsRecorder.Body.String())
+	}
+	operatorCheck := httptest.NewRequest(http.MethodPost, fmt.Sprintf("https://mirror.example/admin/api/v1/mirrors/%d/check", secretMirror.ID), nil)
+	operatorCheck.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorCheck.Header.Set("X-CSRF-Token", operatorSession.CSRFToken)
+	operatorCheckRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorCheckRecorder, operatorCheck)
+	if operatorCheckRecorder.Code != http.StatusOK {
+		t.Fatalf("operator repository health check failed: status=%d body=%s", operatorCheckRecorder.Code, operatorCheckRecorder.Body.String())
+	}
+	for _, secret := range []string{"query-secret", cfg.UpstreamNginx.UpstreamSocket, "permission denied"} {
+		if secret != "" && strings.Contains(operatorCheckRecorder.Body.String(), secret) {
+			t.Fatalf("operator repository health result leaked %q: %s", secret, operatorCheckRecorder.Body.String())
+		}
+	}
+	operatorCredentialCreate := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/mirrors", strings.NewReader(`{"name":"Credentialed","slug":"operator-secret","token_upstream":"https://tokens.example/secret"}`))
+	operatorCredentialCreate.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorCredentialCreate.Header.Set("X-CSRF-Token", operatorSession.CSRFToken)
+	operatorCredentialCreateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorCredentialCreateRecorder, operatorCredentialCreate)
+	if operatorCredentialCreateRecorder.Code != http.StatusForbidden {
+		t.Fatalf("operator should not configure repository credentials, got %d: %s", operatorCredentialCreateRecorder.Code, operatorCredentialCreateRecorder.Body.String())
+	}
 	viewerAccess := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/access", nil)
 	viewerAccess.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
 	viewerAccessRecorder := httptest.NewRecorder()
@@ -232,12 +265,26 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	if viewerConfigRecorder.Code != http.StatusForbidden {
 		t.Fatalf("viewer should not receive generated repository config, got %d", viewerConfigRecorder.Code)
 	}
+	operatorConfig := httptest.NewRequest(http.MethodGet, fmt.Sprintf("https://mirror.example/admin/api/v1/mirrors/%d/config", secretMirror.ID), nil)
+	operatorConfig.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorConfigRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorConfigRecorder, operatorConfig)
+	if operatorConfigRecorder.Code != http.StatusForbidden {
+		t.Fatalf("operator should not receive generated repository config, got %d", operatorConfigRecorder.Code)
+	}
 	viewerEffective := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/upstream-nginx/config", nil)
 	viewerEffective.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
 	viewerEffectiveRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(viewerEffectiveRecorder, viewerEffective)
 	if viewerEffectiveRecorder.Code != http.StatusForbidden {
 		t.Fatalf("viewer should not receive effective Nginx config, got %d", viewerEffectiveRecorder.Code)
+	}
+	operatorEffective := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/upstream-nginx/config", nil)
+	operatorEffective.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorEffectiveRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorEffectiveRecorder, operatorEffective)
+	if operatorEffectiveRecorder.Code != http.StatusForbidden {
+		t.Fatalf("operator should not receive effective Nginx config, got %d", operatorEffectiveRecorder.Code)
 	}
 	if _, err := store.CreateCustomConfig(ctx, model.CustomConfig{Name: "credentialed", Context: "http", Enabled: true, Content: "proxy_set_header Authorization secret-in-custom-config;"}); err != nil {
 		t.Fatal(err)
@@ -248,5 +295,71 @@ func TestRBACPermissionsAndWebhookTestEndpoint(t *testing.T) {
 	handler.ServeHTTP(viewerCustomRecorder, viewerCustom)
 	if viewerCustomRecorder.Code != http.StatusForbidden || strings.Contains(viewerCustomRecorder.Body.String(), "secret-in-custom-config") {
 		t.Fatalf("viewer should not receive custom Nginx configuration: status=%d body=%s", viewerCustomRecorder.Code, viewerCustomRecorder.Body.String())
+	}
+	operatorCustom := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/custom-configs", nil)
+	operatorCustom.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorCustomRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorCustomRecorder, operatorCustom)
+	if operatorCustomRecorder.Code != http.StatusForbidden || strings.Contains(operatorCustomRecorder.Body.String(), "secret-in-custom-config") {
+		t.Fatalf("operator should not receive custom Nginx configuration: status=%d body=%s", operatorCustomRecorder.Code, operatorCustomRecorder.Body.String())
+	}
+	for _, restricted := range []struct {
+		name      string
+		path      string
+		sessionID string
+	}{
+		{name: "viewer settings", path: "/settings", sessionID: viewerSession.ID},
+		{name: "operator settings", path: "/settings", sessionID: operatorSession.ID},
+		{name: "viewer ingress configuration", path: "/ingress/snippet", sessionID: viewerSession.ID},
+		{name: "operator ingress configuration", path: "/ingress/snippet", sessionID: operatorSession.ID},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1"+restricted.path, nil)
+		req.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: restricted.sessionID})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("%s should be forbidden, got %d: %s", restricted.name, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	operatorNodeCreate := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/cluster/nodes", strings.NewReader(`{}`))
+	operatorNodeCreate.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorNodeCreate.Header.Set("X-CSRF-Token", operatorSession.CSRFToken)
+	operatorNodeCreateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorNodeCreateRecorder, operatorNodeCreate)
+	if operatorNodeCreateRecorder.Code != http.StatusForbidden {
+		t.Fatalf("operator should not manage cluster node credentials, got %d", operatorNodeCreateRecorder.Code)
+	}
+
+	viewerSystem := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/system", nil)
+	viewerSystem.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: viewerSession.ID})
+	viewerSystemRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(viewerSystemRecorder, viewerSystem)
+	if viewerSystemRecorder.Code != http.StatusForbidden {
+		t.Fatalf("viewer should not receive system details, got %d", viewerSystemRecorder.Code)
+	}
+	operatorSystem := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/system", nil)
+	operatorSystem.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorSystemRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorSystemRecorder, operatorSystem)
+	if operatorSystemRecorder.Code != http.StatusOK {
+		t.Fatalf("operator should receive operational system status, got %d", operatorSystemRecorder.Code)
+	}
+	for _, sensitiveField := range []string{"tls_private_key", "tls_certificate", "frontend_address", "upstream_address", cfg.TLS.PrivateKey, cfg.Server.FrontendSocket} {
+		if strings.Contains(operatorSystemRecorder.Body.String(), sensitiveField) {
+			t.Fatalf("operator system response leaked %q: %s", sensitiveField, operatorSystemRecorder.Body.String())
+		}
+	}
+	operatorHealth := httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/health", nil)
+	operatorHealth.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: operatorSession.ID})
+	operatorHealthRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(operatorHealthRecorder, operatorHealth)
+	if operatorHealthRecorder.Code != http.StatusOK {
+		t.Fatalf("operator should receive health state, got %d", operatorHealthRecorder.Code)
+	}
+	for _, sensitive := range []string{"frontend_address", "upstream_address", "frontend_network", "upstream_network", cfg.UpstreamNginx.UpstreamSocket} {
+		if strings.Contains(operatorHealthRecorder.Body.String(), sensitive) {
+			t.Fatalf("operator health response leaked %q: %s", sensitive, operatorHealthRecorder.Body.String())
+		}
 	}
 }

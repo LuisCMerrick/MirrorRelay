@@ -71,7 +71,7 @@ exact administration CIDRs. The Docker-specific file explicitly listens on
 `0.0.0.0:9081` inside the container; publish that port only on host loopback so
 administrator-owned External Shared Nginx can reach it without exposing the
 trusted frontend endpoint. Persist state, cache and logs. The runtime directory
-is also shared for the optional zero-copy path to the private upstream socket:
+is transient and private to the container by default:
 
 ```sh
 docker run -d \
@@ -82,19 +82,29 @@ docker run -d \
   --mount type=volume,src=mirrorrelay-data,dst=/var/lib/mirrorrelay \
   --mount type=volume,src=mirrorrelay-cache,dst=/var/cache/mirrorrelay \
   --mount type=volume,src=mirrorrelay-logs,dst=/var/log/mirrorrelay \
-  --mount type=bind,src=/run/mirrorrelay,dst=/run/mirrorrelay \
+  --tmpfs /run/mirrorrelay:rw,nosuid,nodev,noexec,mode=0770,uid=65532,gid=65532 \
   "${DOCKERHUB_USERNAME}/mirrorrelay:<version>"
 ```
 
-Create the bind-mounted paths with ownership and permissions suitable for UID
-`65532` before starting the container. The image does not install, reconfigure
-or restart host Nginx and does not alter its service user. The generated ingress
-snippet connects to host `127.0.0.1:9081`; when zero-copy bypass is enabled it
-also uses the shared private `upstream.sock`. Grant only the confirmed ingress
-worker access through the host's normal group or ACL management, and never make
-the runtime directory world-writable. If the container port is published on a
-non-loopback host address, a network firewall must restrict it to trusted
-ingress peers.
+The Compose file uses the same UID/GID-scoped tmpfs, avoiding host `/run`
+ownership failures for the non-root image. Its fixed default bridge gateway is
+`172.31.255.1`, which is included in `security.trusted_proxy_cidrs` in the Docker
+configuration. The Docker configuration disables `zero_copy_bypass` because
+the private tmpfs socket is not mounted into the host ingress. If `MIRRORRELAY_DOCKER_SUBNET` or
+`MIRRORRELAY_DOCKER_GATEWAY` changes that network, update the trusted CIDR to
+the exact new ingress peer as well.
+
+The image does not install, reconfigure or restart host Nginx and does not alter
+its service user. The normal generated ingress path connects to host
+`127.0.0.1:9081`. External Shared Nginx must overwrite `X-Real-IP` with
+`$remote_addr`; MirrorRelay accepts that header only from a configured trusted
+peer. To enable the optional cross-boundary zero-copy socket, replace the tmpfs
+with an explicitly prepared bind mount owned for UID/GID `65532`, set
+`performance.zero_copy_bypass: true`, grant only the
+confirmed ingress worker access through the host's normal group or ACL
+management, and never make the runtime directory world-writable. If the
+container port is published on a non-loopback host address, a network firewall
+must restrict it to trusted ingress peers.
 
 The packages install these fixed paths:
 
@@ -107,7 +117,7 @@ The packages install these fixed paths:
 
 The DEB configuration selects `/etc/ssl/certs/ca-certificates.crt`; the RPM configuration selects the RHEL-family `/etc/pki/tls/certs/ca-bundle.crt`. Portable tar users must confirm the CA bundle path for their distribution before starting the service.
 
-They create the `mirrorrelay` system account and private runtime, state, cache and log directories. The service is not enabled or started automatically. Review `/etc/mirrorrelay/config.yaml` first, especially `security.admin_cidrs`. Its packaged default permits only loopback clients; replace it with the exact administration networks when remote management is required. Then run:
+They create the `mirrorrelay` system account and private runtime, state, cache and log directories. The service is not enabled or started automatically. Review `/etc/mirrorrelay/config.yaml` first, especially `security.admin_cidrs` and `security.trusted_proxy_cidrs`. Their packaged defaults permit only loopback administration and trust only loopback ingress peers; replace them with the exact networks when remote management or a separate ingress host is required. Then run:
 
 ```sh
 sudo systemctl enable --now mirrorrelay.service

@@ -79,7 +79,7 @@ function renderMirrorsTable() {
           ${helpBtn}
           <button data-action="show-repository" data-id="${repository.id}">${icon('file-text', 13)} ${L('Details')}</button>
           <button class="requires-operator" data-action="check-mirror" data-id="${repository.id}">${icon('play', 13)} ${L('Test')}</button>
-          <button class="requires-operator" data-action="preview-repository-config" data-id="${repository.id}">${icon('code', 13)} ${L('Config')}</button>
+          <button class="requires-admin" data-action="preview-repository-config" data-id="${repository.id}">${icon('code', 13)} ${L('Config')}</button>
           <button class="requires-operator" data-action="purge-repository" data-id="${repository.id}">${icon('database', 13)} ${L('Purge')}</button>
           <button class="requires-operator" data-action="edit-mirror" data-id="${repository.id}">${icon('edit', 13)} ${L('Edit')}</button>
           <button class="requires-operator" data-action="toggle-mirror" data-id="${repository.id}" data-enabled="${!repository.enabled}">

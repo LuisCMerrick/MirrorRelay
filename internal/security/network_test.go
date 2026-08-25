@@ -8,15 +8,31 @@ import (
 )
 
 func TestRequestClientIPUsesTrustedIngressAddress(t *testing.T) {
+	trusted, err := ParseCIDRs([]string{"127.0.0.1/32", "::1/128"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := httptest.NewRequest("GET", "https://mirror.example/", nil)
 	request.RemoteAddr = "127.0.0.1:40123"
 	request.Header.Set("X-Real-IP", "203.0.113.44")
-	if got := RequestClientIP(request); got != "203.0.113.44" {
+	if got := RequestClientIP(request, trusted, false); got != "203.0.113.44" {
 		t.Fatalf("client IP = %q", got)
 	}
+	if got := RequestClientIP(request, nil, false); got != "127.0.0.1" {
+		t.Fatalf("empty trusted-proxy policy accepted a forwarded address: %q", got)
+	}
 	request.Header.Set("X-Real-IP", "invalid, 127.0.0.1")
-	if got := RequestClientIP(request); got != "127.0.0.1" {
+	if got := RequestClientIP(request, trusted, false); got != "127.0.0.1" {
 		t.Fatalf("invalid ingress address was trusted: %q", got)
+	}
+	request.RemoteAddr = "198.51.100.20:40123"
+	request.Header.Set("X-Real-IP", "203.0.113.44")
+	if got := RequestClientIP(request, trusted, false); got != "198.51.100.20" {
+		t.Fatalf("untrusted peer spoofed client IP: %q", got)
+	}
+	request.RemoteAddr = "@"
+	if got := RequestClientIP(request, trusted, true); got != "203.0.113.44" {
+		t.Fatalf("permission-controlled Unix ingress address was not trusted: %q", got)
 	}
 }
 

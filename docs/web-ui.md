@@ -47,6 +47,8 @@ The administration UI follows one hierarchy across pages:
 
 ## Recommended first-use sequence
 
+This sequence assumes an Admin account; role-restricted pages and configuration previews are intentionally absent for other roles.
+
 1. Open **System** and confirm the MirrorRelay identity and local endpoints.
 2. Open **Managed Upstream Nginx → Technical details** and confirm its version, build ID and architecture.
 3. Open **Health** and confirm that MirrorRelay, the frontend endpoint, Go Router, Managed Upstream Nginx and the upstream endpoint are healthy or running.
@@ -104,6 +106,8 @@ The auxiliary route accepts only `GET` and `HEAD`. Its HMAC binds the repository
 
 Select **Validate, save and activate** to submit the candidate. Success means candidate generation, validation, persistence, atomic publication and graceful reload all completed. An error remains in the form and does not replace the active configuration.
 
+Repository static request-header values and token endpoints are credential-bearing fields. They are visible and editable only to Admin users. Operator responses show a redaction sentinel, and an Operator edit must preserve the existing sentinel-backed values; attempts to add, remove, or rotate them are rejected. When credentials exist, changing their upstream/Host, routing, public exposure, package filters, authenticated caching or pull-only policy is also Admin-only.
+
 ### Repository actions
 
 | Action | Result |
@@ -111,13 +115,13 @@ Select **Validate, save and activate** to submit the candidate. Success means ca
 | Details | Shows Desired versus Active state, counters, upstream health and client examples |
 | Copy URL | Copies the published repository URL; browser clipboard permission may be required |
 | Test | Runs configured health checks against all enabled upstreams |
-| Config | Previews the generated repository portion of the Nginx candidate |
+| Config | Admin-only preview of the generated repository portion of the Nginx candidate |
 | Purge | Logically invalidates the whole repository or one optional object path |
 | Edit | Opens the full repository form |
 | Enable / Disable | Validates and activates a new desired state with the selected enabled flag |
 | Delete | Deletes the repository and logically invalidates its cache; this cannot be undone |
 
-The Details dialog also provides the complete effective configuration, generated client commands and a profile-upgrade preview when a newer pinned profile exists. Review the field-by-field diff and generated configuration before selecting **Apply upgrade**.
+The Details dialog provides generated client commands and a profile-upgrade preview when a newer pinned profile exists. Admin users can additionally request the complete generated configuration. Review the field-by-field diff and, when authorized, the generated configuration before selecting **Apply upgrade**.
 
 All row and dialog actions are same-origin API operations. They display a success or error message after completion, and the active button is temporarily disabled while its request is running. **Copy URL** uses the browser Clipboard API when available and falls back to a local text selection for browsers that deny Clipboard API access.
 
@@ -131,7 +135,7 @@ Profiles are read-only, versioned starting points for supported repository ecosy
 
 The first screen shows only process state, uptime, the current configuration version and configuration history. Select **Technical details** to open the secondary view containing PID, start time, binary version, build ID, architecture, SHA-256, configuration hash, reload/exit data and Nginx compile options.
 
-The effective Nginx configuration is hidden and not requested from the API until **Effective configuration** is expanded. Admin and Operator users can then inspect it and select **Copy configuration**. Viewers retain the status/history view without being offered a configuration control they cannot access.
+The effective Nginx configuration is Admin-only, hidden, and not requested from the API until **Effective configuration** is expanded. Operator and Viewer users retain the permitted status/history view without being offered a configuration control they cannot access. Non-Admin status/history omits the process PID, generated integration snippet and raw validation/lifecycle diagnostics; repository Test output also redacts credential-bearing URL components and raw connection errors.
 
 - **Regenerate, validate and reload** reconciles the current desired repositories and custom fragments.
 - **Rollback** restores both repositories and custom configuration from the selected immutable history version, validates it and performs a graceful reload.
@@ -140,13 +144,13 @@ Do not treat rollback as a text-only Nginx rollback: it changes the persisted re
 
 ## Custom configuration
 
-Custom fragments target a controlled `http`, `server`, `location`, `upstream` or repository context. Use repository ID `0` for a global fragment. Saving or deleting a fragment generates and validates the complete candidate before activation.
+The Custom configuration page and API are Admin-only because fragments are code-level changes. Custom fragments target a controlled `http`, `server`, `location`, `upstream` or repository context. Use repository ID `0` for a global fragment. Saving or deleting a fragment generates and validates the complete candidate before activation.
 
 MirrorRelay rejects directives that could escape the selected context, create listeners/routes/upstream targets, weaken TLS validation, alter cache identity or bypass, access the filesystem or environment, or use reserved variables and internal headers. Custom fragments are an advanced escape hatch; prefer repository fields whenever they express the requirement.
 
 ## Ingress integration
 
-This page reports the ingress mode and frontend endpoint. The generated External Shared Nginx snippet is hidden by default; expand it to review and copy it. MirrorRelay does not install, edit or reload the shared ingress. Complete any certificate placeholders and apply the snippet using that ingress deployment's normal change procedure.
+This Admin-only page reports the ingress mode and frontend endpoint. The generated External Shared Nginx snippet is hidden by default; expand it to review and copy it. MirrorRelay does not install, edit or reload the shared ingress. Complete any certificate placeholders and apply the snippet using that ingress deployment's normal change procedure.
 
 ## Cache
 
@@ -156,19 +160,19 @@ The purge/reclaim table distinguishes immediate logical invalidation from delaye
 
 ## Health
 
-Health shows MirrorRelay, Managed Upstream Nginx and the repository-health aggregate first. Expand **Component and endpoint details** for the frontend endpoint, External Shared Nginx, Go Router and upstream endpoint. An unknown repository usually means no successful check has completed; an unhealthy repository should be investigated with **Repositories → Test**, its upstream details and the logs.
+Health shows MirrorRelay, Managed Upstream Nginx and the repository-health aggregate first. Expand **Component and endpoint details** for the frontend endpoint, External Shared Nginx, Go Router and upstream endpoint. Exact local network/socket coordinates are shown only to Admin; lower roles receive component state without those filesystem/listener details. An unknown repository usually means no successful check has completed; an unhealthy repository should be investigated with **Repositories → Test**, its upstream details and the logs.
 
 ## Access log, audit log and system
 
 - **Access log** displays the latest Managed Upstream Nginx access records for Admin and Operator users and supports manual refresh. Query strings are not written to this log.
 - **Audit log** records administrative users, client addresses, actions, objects/details and success or failure.
-- **System** shows uptime, RSS and Managed Upstream Nginx state first, then groups build identity, Go runtime counters, ingress/TLS endpoints and Nginx lifecycle data into secondary disclosure sections. Exact Nginx binary and compile details live in the Nginx page's **Technical details** view.
+- **System** is available to Admin and Operator. It shows uptime, RSS and Managed Upstream Nginx state first, then groups build identity, Go runtime counters and Nginx lifecycle data into secondary disclosure sections. Only Admin receives ingress/TLS/listen/socket paths and other sensitive endpoint details. Exact Nginx binary and compile details live in the Nginx page's **Technical details** view.
 
-Viewers can read the audit log but cannot access the Managed Upstream Nginx access log. Use the audit log to establish who changed configuration; Admin/Operator users can use the query-free access log for data-plane requests; use the application and Nginx error logs on disk for startup, validation and upstream failures.
+Viewers can read the audit log but cannot access the Managed Upstream Nginx access log. Failed-entry diagnostic details are Admin-only because they can contain internal runtime context; lower roles still receive the actor, action, object, result and time. Use the audit log to establish who changed configuration; Admin/Operator users can use the query-free access log for data-plane requests; use the application and Nginx error logs on disk for startup, validation and upstream failures.
 
 ## Settings
 
-The **Settings** page manages most operational values that also exist in `config.yaml`: local Unix/TCP endpoints, ingress mode, HTTP/TLS behavior, performance, metadata, redirects, cache defaults, security and administrator CIDRs, transport pools and timeouts, concurrency and bandwidth limits, log rotation, health scheduling, shutdown and Managed Upstream Nginx lifecycle settings. Configuration groups use consistent disclosure sections; the first group opens initially and the remaining groups stay collapsed until needed.
+The Admin-only **Settings** page manages most operational values that also exist in `config.yaml`: local Unix/TCP endpoints, ingress mode, HTTP/TLS behavior, performance, metadata, redirects, cache defaults, security and administrator CIDRs, transport pools and timeouts, concurrency and bandwidth limits, log rotation, health scheduling, shutdown and Managed Upstream Nginx lifecycle settings. Configuration groups use consistent disclosure sections; the first group opens initially and the remaining groups stay collapsed until needed.
 
 Selecting **Validate and save** validates the complete merged configuration before storing the override in SQLite. The saved Web UI values take precedence over matching YAML values on the next MirrorRelay start. They do not hot-reload the running process. You can select **Restart now** / **Restart MirrorRelay** directly in the Web UI or execute the displayed CLI command:
 
@@ -178,7 +182,7 @@ sudo systemctl restart mirrorrelay
 
 After restart, the page automatically reconnects and reports that the running process matches the saved values. A **Restart service** button is also available directly on the **System** page. **Reset to YAML after restart** removes the Web UI override; restart again to make the YAML values active.
 
-Credential, filesystem and executable locations remain file-only so the running service cannot relocate its own trust boundary or database. The page displays the exact protected list, including socket paths/modes, runtime paths, ingress snippet path, TLS key/certificate paths, database/cache/log paths and Managed Upstream Nginx binary, prefix, PID, log, socket and CA-bundle paths.
+Credential, filesystem and executable locations remain file-only so the running service cannot relocate its own trust boundary or database. The page displays the exact protected list, including socket paths/modes, runtime paths, ingress snippet path, TLS key/certificate paths, database/cache/log paths, the cluster mutation-token keyring, and Managed Upstream Nginx binary, prefix, PID, log, socket and CA-bundle paths.
 
 Repository Desired/Active changes are separate from this page and continue to validate and activate immediately.
 
@@ -203,7 +207,7 @@ The **Appearance** page manages the instance default theme, branding identity, c
 
 Administrators can create Admin, Operator and Viewer accounts with a 3–64 character non-space username and a password of at least 10 characters. The currently signed-in user cannot delete their own account. Use **My account** to change the current password by supplying the existing password and a new password.
 
-The interface follows the same role policy as the API and omits controls the current account cannot use: Admin manages users and process-level settings, Operator manages repositories, cluster operations, cache and validation, and Viewer receives a read-only operational view. Use separate accounts so audit records identify the operator, and remove accounts that are no longer required.
+The interface follows the same role policy as the API and omits controls the current account cannot use. Admin manages users, repository credentials, custom Nginx code, cluster-node records and process-level settings. Operator manages non-secret repository fields, cache, validation, Nginx reload/rollback and cluster check/sync operations. Viewer receives a minimal read-only operational view and cannot open System. Use separate accounts so audit records identify the operator, and remove accounts that are no longer required.
 
 Generated client configuration never disables TLS certificate verification. Add an organization CA to the client trust store when a private PKI is required instead of using insecure client flags.
 

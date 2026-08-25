@@ -23,6 +23,10 @@ func (s *Server) createMirror(w http.ResponseWriter, r *http.Request, session au
 	if decodeJSON(w, r, &m) != nil {
 		return
 	}
+	if session.Role != "admin" && hasMirrorSecrets(m) {
+		writeError(w, http.StatusForbidden, "repository credentials may only be configured by an administrator")
+		return
+	}
 	if err := mirror.NormalizeAndValidate(&m, s.cfg.Security.AllowHTTPUpstream, s.cfg.Security.AllowPrivateUpstream); err != nil {
 		writeError(w, 400, err.Error())
 		return
@@ -44,7 +48,7 @@ func (s *Server) createMirror(w http.ResponseWriter, r *http.Request, session au
 	m.ConfigState, m.ConfigError = "pending", ""
 	if _, result, err := s.upstreamNginx.Validate(r.Context(), proposed); err != nil {
 		_ = s.audit(r, session.Username, "validate", "repository", err.Error(), false)
-		writeError(w, 422, validationMessage(result, err))
+		writeError(w, 422, validationMessageForRole(result, err, session.Role))
 		return
 	}
 	created, err := s.store.CreateMirror(r.Context(), m)
@@ -58,7 +62,7 @@ func (s *Server) createMirror(w http.ResponseWriter, r *http.Request, session au
 	}
 	if _, err = s.upstreamNginx.Reconcile(r.Context(), session.Username, "create repository "+created.Slug); err != nil {
 		_ = s.audit(r, session.Username, "create", "repository", err.Error(), false)
-		writeError(w, 502, "repository saved as desired state but Managed Upstream Nginx activation failed: "+err.Error())
+		writeError(w, 502, activationMessageForRole("repository saved as desired state but Managed Upstream Nginx activation failed", err, session.Role))
 		return
 	}
 	if err = s.publishActiveRouting(); err != nil {
@@ -69,7 +73,7 @@ func (s *Server) createMirror(w http.ResponseWriter, r *http.Request, session au
 	if current, ok := findMirror(s.registry.List(), created.ID); ok {
 		created = current
 	}
-	writeJSON(w, 201, created)
+	writeJSON(w, 201, mirrorForRole(created, session.Role))
 }
 
 func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session auth.Session, tail string) {
@@ -106,10 +110,22 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		if decodeJSON(w, r, &updated) != nil {
 			return
 		}
+		if session.Role != "admin" {
+			if err := restoreRedactedMirrorSecrets(m, &updated); err != nil {
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
+		}
 		updated.ID = id
 		if err := mirror.NormalizeAndValidate(&updated, s.cfg.Security.AllowHTTPUpstream, s.cfg.Security.AllowPrivateUpstream); err != nil {
 			writeError(w, 400, err.Error())
 			return
+		}
+		if session.Role != "admin" {
+			if err := validateOperatorMirrorSecretBindings(m, updated); err != nil {
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
 		}
 		desired, loadErr := s.store.ListMirrors(r.Context())
 		if loadErr != nil {
@@ -128,7 +144,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		updated.ConfigState, updated.ConfigError = "pending", ""
 		if _, result, err := s.upstreamNginx.Validate(r.Context(), proposed); err != nil {
 			_ = s.audit(r, session.Username, "validate", "repository", err.Error(), false)
-			writeError(w, 422, validationMessage(result, err))
+			writeError(w, 422, validationMessageForRole(result, err, session.Role))
 			return
 		}
 		updated, err = s.store.UpdateMirror(r.Context(), updated)
@@ -142,7 +158,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		}
 		if _, err = s.upstreamNginx.Reconcile(r.Context(), session.Username, "update repository "+updated.Slug); err != nil {
 			_ = s.audit(r, session.Username, "update", "repository", err.Error(), false)
-			writeError(w, 502, "repository saved as desired state but Managed Upstream Nginx activation failed: "+err.Error())
+			writeError(w, 502, activationMessageForRole("repository saved as desired state but Managed Upstream Nginx activation failed", err, session.Role))
 			return
 		}
 		if err = s.publishActiveRouting(); err != nil {
@@ -153,7 +169,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		if current, ok := findMirror(s.registry.List(), updated.ID); ok {
 			updated = current
 		}
-		writeJSON(w, 200, updated)
+		writeJSON(w, 200, mirrorForRole(updated, session.Role))
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
@@ -164,7 +180,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		}
 		proposed := removeCandidate(desired, id)
 		if _, result, err := s.upstreamNginx.Validate(r.Context(), proposed); err != nil {
-			writeError(w, 422, validationMessage(result, err))
+			writeError(w, 422, validationMessageForRole(result, err, session.Role))
 			return
 		}
 		if _, err := s.cache.Purge(r.Context(), "repository", id, "", session.Username); err != nil {
@@ -178,7 +194,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		}
 		if _, err := s.upstreamNginx.Reconcile(r.Context(), session.Username, "delete repository "+m.Slug); err != nil {
 			_ = s.audit(r, session.Username, "delete", "repository", err.Error(), false)
-			writeError(w, 502, "repository deleted from desired state but Managed Upstream Nginx activation failed: "+err.Error())
+			writeError(w, 502, activationMessageForRole("repository deleted from desired state but Managed Upstream Nginx activation failed", err, session.Role))
 			return
 		}
 		if err := s.publishActiveRouting(); err != nil {
@@ -199,7 +215,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			return
 		}
 		if _, result, err := s.upstreamNginx.Validate(r.Context(), replaceCandidate(desired, candidate)); err != nil {
-			writeError(w, 422, validationMessage(result, err))
+			writeError(w, 422, validationMessageForRole(result, err, session.Role))
 			return
 		}
 		if err := s.store.SetMirrorEnabled(r.Context(), id, enabled); err != nil {
@@ -207,7 +223,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			return
 		}
 		if _, err := s.upstreamNginx.Reconcile(r.Context(), session.Username, parts[1]+" repository "+m.Slug); err != nil {
-			writeError(w, 502, "desired state saved but Managed Upstream Nginx activation failed: "+err.Error())
+			writeError(w, 502, activationMessageForRole("desired state saved but Managed Upstream Nginx activation failed", err, session.Role))
 			return
 		}
 		if err := s.publishActiveRouting(); err != nil {
@@ -224,7 +240,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			writeInternal(w, err)
 			return
 		}
-		writeJSON(w, 200, results)
+		writeJSON(w, 200, healthResultsForRole(results, session.Role))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "cache" && r.Method == http.MethodDelete {
@@ -236,7 +252,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		return
 	}
 	if len(parts) == 2 && parts[1] == "config" && r.Method == http.MethodGet {
-		if !s.requireRole(w, session, "admin", "operator") {
+		if !s.requireRole(w, session, "admin") {
 			return
 		}
 		desired, loadErr := s.store.ListMirrors(r.Context())
@@ -265,9 +281,18 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			writeError(w, 400, err.Error())
 			return
 		}
+		if session.Role != "admin" {
+			preserveMirrorSecrets(m, &candidate)
+		}
 		if err := mirror.NormalizeAndValidate(&candidate, s.cfg.Security.AllowHTTPUpstream, s.cfg.Security.AllowPrivateUpstream); err != nil {
 			writeError(w, 400, err.Error())
 			return
+		}
+		if session.Role != "admin" {
+			if err := validateOperatorMirrorSecretBindings(m, candidate); err != nil {
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
 		}
 		desired, loadErr := s.store.ListMirrors(r.Context())
 		if loadErr != nil {
@@ -281,11 +306,18 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		}
 		generated, result, err := s.upstreamNginx.Validate(r.Context(), proposed)
 		if err != nil {
-			writeError(w, 422, validationMessage(result, err))
+			writeError(w, 422, validationMessageForRole(result, err, session.Role))
 			return
 		}
 		if parts[2] == "preview" {
-			writeJSON(w, 200, map[string]any{"repository": candidate, "diff": profileDiff(m, candidate), "configuration": generated.Effective, "configuration_hash": generated.Hash, "validation_result": result})
+			beforeResponse := mirrorForRole(m, session.Role)
+			candidateResponse := mirrorForRole(candidate, session.Role)
+			response := map[string]any{"repository": candidateResponse, "diff": profileDiff(beforeResponse, candidateResponse), "configuration_hash": generated.Hash}
+			if session.Role == "admin" {
+				response["configuration"] = generated.Effective
+				response["validation_result"] = result
+			}
+			writeJSON(w, 200, response)
 			return
 		}
 		candidate.ConfigState = "pending"
@@ -295,7 +327,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 			return
 		}
 		if _, err := s.upstreamNginx.Reconcile(r.Context(), session.Username, "apply profile "+input.Name+" "+input.Version+" to "+m.Slug); err != nil {
-			writeError(w, 502, "profile desired state saved but Managed Upstream Nginx activation failed: "+err.Error())
+			writeError(w, 502, activationMessageForRole("profile desired state saved but Managed Upstream Nginx activation failed", err, session.Role))
 			return
 		}
 		if err := s.publishActiveRouting(); err != nil {
@@ -306,7 +338,7 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		if current, ok := findMirror(s.registry.List(), updated.ID); ok {
 			updated = current
 		}
-		writeJSON(w, 200, updated)
+		writeJSON(w, 200, mirrorForRole(updated, session.Role))
 		return
 	}
 	writeError(w, 404, "not found")
@@ -384,19 +416,19 @@ func (s *Server) purgeRepositoryCache(w http.ResponseWriter, r *http.Request, se
 func (s *Server) validateUpstreams(parent context.Context, m model.Mirror) error {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
-	for _, u := range m.Upstreams {
+	for index, u := range m.Upstreams {
 		if !u.Enabled {
 			continue
 		}
 		if err := security.ValidateResolvedURL(ctx, u.URL, s.cfg.Security.AllowHTTPUpstream && m.AllowHTTP,
 			s.cfg.Security.AllowPrivateUpstream && m.AllowPrivate, net.DefaultResolver); err != nil {
-			return fmt.Errorf("upstream %s: %w", u.URL, err)
+			return fmt.Errorf("upstream %d: %w", index+1, err)
 		}
 	}
 	if m.TokenUpstream != "" {
 		if err := security.ValidateResolvedURL(ctx, m.TokenUpstream, s.cfg.Security.AllowHTTPUpstream && m.AllowHTTP,
 			s.cfg.Security.AllowPrivateUpstream && m.AllowPrivate, net.DefaultResolver); err != nil {
-			return fmt.Errorf("token upstream %s: %w", m.TokenUpstream, err)
+			return fmt.Errorf("token upstream: %w", err)
 		}
 	}
 	return nil

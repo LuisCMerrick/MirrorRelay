@@ -85,6 +85,8 @@ distributed:
   enabled: true
   role: coordinator           # standalone, coordinator, edge
   token: "read-only-probe-token-at-least-32bytes"
+  mutation_token_key_files:
+    - /etc/mirrorrelay/cluster-mutation-token.key
   allow_http: false           # 除非显式开启，否则强制 HTTPS
   node:
     name: "coord-01"
@@ -144,11 +146,23 @@ distributed:
     country: "CN"
 ```
 
+启动 Coordinator 前，应创建仅 `mirrorrelay` 服务账户可读、其他用户不可访问的数据库加密密钥文件：
+
+```sh
+sudo sh -c 'umask 0027; openssl rand -base64 32 > /etc/mirrorrelay/cluster-mutation-token.key'
+sudo chown root:mirrorrelay /etc/mirrorrelay/cluster-mutation-token.key
+sudo chmod 0640 /etc/mirrorrelay/cluster-mutation-token.key
+```
+
+每个密钥文件必须包含恰好 32 个原始字节，或一个 Base64 编码的 32 字节值。Coordinator 至少需要一个绝对密钥文件路径。逐 Edge Mutation Token 在 SQLite 中只以 AES-256-GCM 认证密文保存；旧版明文记录会在启动时以事务方式完成加密迁移。已有凭据无法解密或未配置密钥环时，启动会按 Fail-Closed 策略失败。应将当前密钥与数据库备份一同安全保管，且绝不能把它复制到 Edge 节点。
+
+轮换时先创建新密钥文件，在列表中把新密钥放在首位、旧密钥放在第二位，然后重启 MirrorRelay。启动过程会把全部密文改用首个密钥加密。该次重启成功后，从列表移除旧路径并再次重启；退役密钥只需随仍依赖它的旧备份保留。
+
 ---
 
 ## 5. 安全与隔离规范
 
-- **集群凭据分权**：`distributed.token` 是 Manifest/Health 共用的只读探测凭据。每个 Edge 必须使用不同的 `mutation_token` 执行同步与 Purge；它不得等于探测凭据，也不得被其他 Edge 复用。Coordinator 的 Seed/节点记录保存与该 Edge 匹配的凭据，API 永不回显，Web UI 编辑时保持空白。凭据比较采用常量时间实现。
+- **集群凭据分权**：`distributed.token` 是 Manifest/Health 共用的只读探测凭据。每个 Edge 必须使用不同的 `mutation_token` 执行同步与 Purge；它不得等于探测凭据，也不得被其他 Edge 复用。Coordinator 的 Seed/节点记录使用已配置密钥环加密保存与该 Edge 匹配的凭据，API 永不回显，Web UI 编辑时保持空白。只有 Admin 可以创建、编辑、启用、禁用或删除节点记录；Operator 只能执行检查与同步。凭据比较采用常量时间实现。
 - **Coordinator 绑定与防重放**：每个 Edge 都要配置 `coordinator_id`。Protocol v2 的同步/Purge Envelope 将该身份绑定到持久化的随机 Coordinator Epoch。Edge 在激活前持久化已接受的最高 Generation 与指纹；旧 Generation、同 Generation 不同指纹及已退役 Epoch 会被拒绝，完全相同且已生效的 Payload 可幂等重试。
 - **SSRF 安全**：节点 URL 只能是 Origin，不允许凭据、路径前缀、查询或片段。默认强制 HTTPS；明文 HTTP 必须显式设置 `distributed.allow_http: true`，私网/环回/链路本地目标还必须独立设置 `security.allow_private_upstream: true`。健康检查、配置同步及缓存淘汰在发送 Token 前都执行同一策略，连接只使用策略允许的地址，保留 TLS 主机名验证，并禁止重定向。
 - **缓存数据物理隔离**：各边缘节点缓存独立落盘，互不污染。

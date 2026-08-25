@@ -1,7 +1,10 @@
 // Package model defines the data structures used across the application.
 package model
 
-import "time"
+import (
+	"regexp"
+	"time"
+)
 
 type Mirror struct {
 	ID                 int64             `json:"id"`
@@ -58,10 +61,23 @@ type Mirror struct {
 	MaxConcurrency     int               `json:"max_concurrency"`
 	BlockedPackages    []string          `json:"blocked_packages,omitempty" yaml:"blocked_packages,omitempty"`
 	AllowedPackages    []string          `json:"allowed_packages,omitempty" yaml:"allowed_packages,omitempty"`
+	PackagePolicy      *PackagePolicy    `json:"-" yaml:"-"`
 	Help               HelpConfig        `json:"help"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
 	Upstreams          []Upstream        `json:"upstreams"`
+}
+
+type PackagePattern struct {
+	Pattern string
+	Glob    bool
+	Regexp  *regexp.Regexp
+}
+
+type PackagePolicy struct {
+	Blocked []PackagePattern
+	Allowed []PackagePattern
+	Invalid string
 }
 
 type Upstream struct {

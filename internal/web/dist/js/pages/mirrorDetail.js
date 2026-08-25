@@ -323,8 +323,8 @@ async function showRepository(id) {
           <button data-action="copy-repository-url" data-id="${id}">${icon('copy', 13)} ${L('Copy URL')}</button>
           <button class="requires-operator" data-action="edit-mirror-from-detail" data-id="${id}">${icon('edit', 13)} ${L('Edit')}</button>
           <button class="requires-operator" data-action="check-mirror" data-id="${id}">${icon('play', 13)} ${L('Test')}</button>
-          <button class="requires-operator" data-action="preview-repository-config" data-id="${id}">${icon('code', 13)} ${L('Preview config')}</button>
-          <button class="requires-operator" data-action="view-effective-config">${icon('server', 13)} ${L('Effective config')}</button>
+          <button class="requires-admin" data-action="preview-repository-config" data-id="${id}">${icon('code', 13)} ${L('Preview config')}</button>
+          <button class="requires-admin" data-action="view-effective-config">${icon('server', 13)} ${L('Effective config')}</button>
           <button class="requires-operator" data-action="purge-repository" data-id="${id}">${icon('database', 13)} ${L('Purge cache')}</button>
           ${upgrade}
         </div>
@@ -473,7 +473,10 @@ registerAction('preview-profile-upgrade', async button => {
   try {
     const value = await api(`/mirrors/${id}/profile/preview`, {method: 'POST', body: JSON.stringify({name, version})});
     const rows = Object.entries(value.diff || {}).map(([field, change]) => `<tr><td>${esc(field)}</td><td><code>${esc(JSON.stringify(change.before))}</code></td><td><code>${esc(JSON.stringify(change.after))}</code></td></tr>`).join('');
-    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade" class="btn-primary requires-operator">${L('Apply upgrade')}</button></div><pre class="config-preview">${esc(value.configuration)}</pre>`);
+    const configPreview = state.role === 'admin' && value.configuration
+      ? `<pre class="config-preview">${esc(value.configuration)}</pre>`
+      : '';
+    showPreview(L('Profile upgrade preview'), `<div class="table-wrap"><table><thead><tr><th>${L('Field')}</th><th>${L('Before')}</th><th>${L('After')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="toolbar end"><button id="apply-profile-upgrade" class="btn-primary requires-operator">${L('Apply upgrade')}</button></div>${configPreview}`);
     $('#apply-profile-upgrade').addEventListener('click', async () => {
       try {
         await api(`/mirrors/${id}/profile/apply`, {method: 'POST', body: JSON.stringify({name, version})});

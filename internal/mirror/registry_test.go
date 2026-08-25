@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,3 +102,31 @@ func TestActiveSnapshotIsExplicitAndHealthDoesNotImportDesiredState(t *testing.T
 type mutableLoader struct{ values []model.Mirror }
 
 func (m *mutableLoader) ListMirrors(context.Context) ([]model.Mirror, error) { return m.values, nil }
+
+func TestCompilePackagePolicyValidatesBoundsAndPrecompiles(t *testing.T) {
+	repository := model.Mirror{
+		BlockedPackages: []string{"^malicious-.*", "bad-*.rpm"},
+		AllowedPackages: []string{"*.rpm"},
+	}
+	if err := CompilePackagePolicy(&repository); err != nil {
+		t.Fatal(err)
+	}
+	if repository.PackagePolicy == nil || len(repository.PackagePolicy.Blocked) != 2 ||
+		repository.PackagePolicy.Blocked[0].Regexp == nil || !repository.PackagePolicy.Blocked[1].Glob {
+		t.Fatalf("package policy was not precompiled: %+v", repository.PackagePolicy)
+	}
+
+	for _, patterns := range [][]string{{"["}, {""}, {strings.Repeat("a", maxPackagePatternBytes+1)}} {
+		candidate := model.Mirror{BlockedPackages: patterns}
+		if err := CompilePackagePolicy(&candidate); err == nil {
+			t.Fatalf("invalid package pattern set was accepted: %#v", patterns)
+		}
+	}
+	tooMany := model.Mirror{BlockedPackages: make([]string, maxPackagePatterns+1)}
+	for index := range tooMany.BlockedPackages {
+		tooMany.BlockedPackages[index] = "package-*"
+	}
+	if err := CompilePackagePolicy(&tooMany); err == nil {
+		t.Fatal("repository accepted too many package patterns")
+	}
+}

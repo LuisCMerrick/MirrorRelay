@@ -1,10 +1,6 @@
 services:
   mirrorrelay:
-    platform: linux/amd64
-    build:
-      context: .
-      args:
-        VERSION: ${MIRRORRELAY_VERSION:-0.0.16}
+    image: luiscmerrick/mirrorrelay:${MIRRORRELAY_IMAGE_TAG:-latest}
     restart: unless-stopped
     ulimits:
       nofile:
@@ -14,9 +10,10 @@ services:
       MIRRORRELAY_ADMIN_HOST: ${MIRRORRELAY_ADMIN_HOST:-}
     ports:
       - "127.0.0.1:${MIRRORRELAY_FRONTEND_PORT:-9081}:9081"
+    tmpfs:
+      - /run/mirrorrelay:rw,nosuid,nodev,noexec,mode=0770,uid=65532,gid=65532
     volumes:
       - ./configs/config.docker.yaml:/etc/mirrorrelay/config.yaml:ro
-      - /run/mirrorrelay:/run/mirrorrelay
       - mirrorrelay-data:/var/lib/mirrorrelay
       - mirrorrelay-cache:/var/cache/mirrorrelay
       - mirrorrelay-logs:/var/log/mirrorrelay
@@ -25,3 +22,10 @@ volumes:
   mirrorrelay-data:
   mirrorrelay-cache:
   mirrorrelay-logs:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${MIRRORRELAY_DOCKER_SUBNET:-172.31.255.0/24}
+          gateway: ${MIRRORRELAY_DOCKER_GATEWAY:-172.31.255.1}

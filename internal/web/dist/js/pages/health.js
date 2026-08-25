@@ -1,5 +1,5 @@
-// Health page: primary service health first, with component endpoints disclosed
-// separately from the per-repository health list.
+// Health page: primary service health first, with Admin-only component endpoint
+// details separated from the per-repository health list.
 import { api } from '../api.js';
 import { card, disclosure, kv } from '../components.js';
 import { $, esc } from '../dom.js';
@@ -13,15 +13,15 @@ export async function loadHealth() {
   const enabledRepositories = repositories.filter(repository => repository.health_state !== 'disabled');
   const healthyRepositories = enabledRepositories.filter(repository => repository.health_state === 'healthy').length;
   const repositoryHealthOK = healthyRepositories === enabledRepositories.length;
-  const endpointLabel = `${health.upstream_network || 'unix'} · ${health.upstream_address || ''}`;
-  const frontendLabel = `${health.frontend_network || 'unix'} · ${health.frontend_address || ''}`;
+  const endpointLabel = health.upstream_network && health.upstream_address ? ` · ${health.upstream_network} · ${health.upstream_address}` : '';
+  const frontendLabel = health.frontend_network && health.frontend_address ? ` · ${health.frontend_network} · ${health.frontend_address}` : '';
   const nginxRunning = health.managed_upstream_nginx === 'running';
 
   const componentDetails = [
-    kv(L('Frontend endpoint'), `${stateLabel(health.frontend_endpoint || health.frontend_socket)} · ${frontendLabel}`),
+    kv(L('Frontend endpoint'), `${stateLabel(health.frontend_endpoint || health.frontend_socket)}${frontendLabel}`),
     kv(L('External Shared Nginx'), stateLabel(health.external_shared_nginx)),
     kv('Go Router', stateLabel(health.go_router)),
-    kv(L('Upstream endpoint'), `${stateLabel(health.upstream_endpoint || health.upstream_socket)} · ${endpointLabel}`)
+    kv(L('Upstream endpoint'), `${stateLabel(health.upstream_endpoint || health.upstream_socket)}${endpointLabel}`)
   ].join('');
 
   $('#page-health').innerHTML = `

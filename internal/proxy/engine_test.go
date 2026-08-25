@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
+	"github.com/LuisCMerrick/MirrorRelay/internal/mirror"
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
@@ -117,6 +118,11 @@ func TestRequestPublicBaseUsesConfiguredRepositoryIdentity(t *testing.T) {
 	base, err = requestPublicBase(cfg, model.Mirror{PublicMode: "host", PublicHost: "registry.example.com"}, request)
 	if err != nil || base != "https://registry.example.com" {
 		t.Fatalf("host-mode public base = %q, %v", base, err)
+	}
+	request.Header.Set("X-Forwarded-Proto", "http")
+	base, err = requestPublicBase(cfg, model.Mirror{PublicMode: "host", PublicHost: "registry.example.com"}, request)
+	if err != nil || base != "https://registry.example.com" {
+		t.Fatalf("untrusted forwarded protocol changed public base to %q, %v", base, err)
 	}
 	cfg.HTTP.PublicBaseURL = ""
 	request.Host = "unsafe.example;return"
@@ -228,7 +234,6 @@ func TestIsAllowedRewriteOrigin(t *testing.T) {
 			"https://archive.debian.org:8443",
 		},
 	}
-
 	allowed1, _ := url.Parse("https://deb.debian.org/pool/main/a/a.deb")
 	if !isAllowedRewriteOrigin(repo, allowed1) {
 		t.Fatal("deb.debian.org should be allowed")
@@ -278,9 +283,15 @@ func TestCredentialPartitionKey(t *testing.T) {
 }
 
 func TestPackageFilteringGuard(t *testing.T) {
+	if blocked, reason := isPackageBlocked(model.Mirror{BlockedPackages: []string{"example-*"}}, "/packages/example.tar.gz"); !blocked || !strings.Contains(reason, "unavailable") {
+		t.Fatalf("missing compiled package policy did not fail closed: blocked=%v reason=%q", blocked, reason)
+	}
 	repo := model.Mirror{
 		BlockedPackages: []string{"^malicious-.*", "bad-package-*.tar.gz"},
 		AllowedPackages: []string{"^safe-.*", "numpy*", "*.whl"},
+	}
+	if err := mirror.CompilePackagePolicy(&repo); err != nil {
+		t.Fatal(err)
 	}
 
 	// Blocked by blacklist

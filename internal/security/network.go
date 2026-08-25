@@ -308,18 +308,43 @@ func ClientIP(remoteAddr string) string {
 	return remoteAddr
 }
 
-// RequestClientIP returns the client address supplied by the trusted ingress.
-// Deployments must keep the frontend listener private to that ingress; the
-// packaged default uses loopback and the Docker example publishes only on host
-// loopback.
-func RequestClientIP(request *http.Request) string {
-	if request != nil {
+// RequestClientIP accepts X-Real-IP only from an explicitly trusted TCP peer or
+// from the permission-controlled frontend Unix socket. Untrusted peers are
+// always identified by RemoteAddr, regardless of supplied forwarding headers.
+func RequestClientIP(request *http.Request, trustedProxies CIDRList, trustUnixSocket bool) string {
+	if request == nil {
+		return ""
+	}
+	peer := ClientIP(request.RemoteAddr)
+	trustedPeer := trustedProxies.Contains(peer)
+	if trustUnixSocket && net.ParseIP(peer) == nil {
+		trustedPeer = true
+	}
+	if trustedPeer {
 		if value := strings.TrimSpace(request.Header.Get("X-Real-IP")); net.ParseIP(value) != nil {
 			return value
 		}
-		return ClientIP(request.RemoteAddr)
 	}
-	return ""
+	return peer
+}
+
+// ValidRequestAuthority accepts only a plain host or host:port authority that
+// can safely be used to construct an HTTPS public origin.
+func ValidRequestAuthority(value string) bool {
+	if value == "" || strings.ContainsAny(value, "\x00\r\n/\\ {};$\"") {
+		return false
+	}
+	parsed, err := url.Parse("https://" + value)
+	if err != nil || parsed.Host != value || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 type CIDRList []*net.IPNet
@@ -339,6 +364,23 @@ func ParseCIDRs(values []string) (CIDRList, error) {
 func (l CIDRList) Allows(ip string) bool {
 	if len(l) == 0 {
 		return true
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, network := range l {
+		if network.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// Contains differs from Allows by treating an empty list as trusting no peers.
+func (l CIDRList) Contains(ip string) bool {
+	if len(l) == 0 {
+		return false
 	}
 	parsed := net.ParseIP(ip)
 	if parsed == nil {

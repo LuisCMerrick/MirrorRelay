@@ -22,24 +22,32 @@ func IsConflict(err error) bool {
 
 func IsNotFound(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
-const clusterNodeColumns = `id,name,url,region,country,priority,weight,enabled,mutation_token,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at`
+const clusterNodeColumns = `id,name,url,region,country,priority,weight,enabled,mutation_token,mutation_token_ciphertext,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at`
 
 type rowScanner interface {
 	Scan(...any) error
 }
 
-func scanClusterNode(scanner rowScanner) (model.ClusterNode, error) {
+func (s *Store) scanClusterNode(scanner rowScanner) (model.ClusterNode, error) {
 	var node model.ClusterNode
 	var enabled int
+	var plaintextToken, encryptedToken string
 	var capabilitiesJSON, repositoryHealthJSON string
 	var lastCheck, created, updated string
 	err := scanner.Scan(&node.ID, &node.Name, &node.URL, &node.Region, &node.Country, &node.Priority, &node.Weight,
-		&enabled, &node.MutationToken, &node.HealthStatus, &node.ConfigStatus, &node.ConfigFingerprint,
+		&enabled, &plaintextToken, &encryptedToken, &node.HealthStatus, &node.ConfigStatus, &node.ConfigFingerprint,
 		&node.ConfigGeneration, &node.NodeID, &node.CoordinatorID, &node.CoordinatorEpoch, &node.Version,
 		&node.ProtocolVersion, &capabilitiesJSON, &repositoryHealthJSON, &node.LatencyMS, &lastCheck,
 		&node.LastError, &created, &updated)
 	if err != nil {
 		return node, err
+	}
+	if plaintextToken != "" {
+		return node, errors.New("cluster node mutation token is still stored as plaintext")
+	}
+	node.MutationToken, err = s.decryptClusterMutationToken(encryptedToken)
+	if err != nil {
+		return node, fmt.Errorf("decrypt cluster node %d mutation token: %w", node.ID, err)
 	}
 	node.Enabled = enabled != 0
 	node.MutationTokenConfigured = node.MutationToken != ""
@@ -69,7 +77,7 @@ func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, erro
 	defer rows.Close()
 	var nodes []model.ClusterNode
 	for rows.Next() {
-		node, err := scanClusterNode(rows)
+		node, err := s.scanClusterNode(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -79,11 +87,11 @@ func (s *Store) ListClusterNodes(ctx context.Context) ([]model.ClusterNode, erro
 }
 
 func (s *Store) GetClusterNode(ctx context.Context, id int64) (model.ClusterNode, error) {
-	return scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE id=?`, id))
+	return s.scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE id=?`, id))
 }
 
 func (s *Store) GetClusterNodeByURL(ctx context.Context, rawURL string) (model.ClusterNode, error) {
-	return scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE url=?`, rawURL))
+	return s.scanClusterNode(s.db.QueryRowContext(ctx, `SELECT `+clusterNodeColumns+` FROM cluster_nodes WHERE url=?`, rawURL))
 }
 
 func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (model.ClusterNode, error) {
@@ -107,8 +115,12 @@ func (s *Store) CreateClusterNode(ctx context.Context, node model.ClusterNode) (
 		enabledInt = 1
 	}
 	repositoryHealthBytes, _ := json.Marshal(node.RepositoryHealth)
-	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,mutation_token,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.MutationToken, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.ConfigGeneration, node.NodeID, node.CoordinatorID, node.CoordinatorEpoch, node.Version, node.ProtocolVersion, string(capsBytes), string(repositoryHealthBytes), node.LatencyMS, "", node.LastError, nowStr, nowStr)
+	encryptedToken, err := s.encryptClusterMutationToken(node.MutationToken)
+	if err != nil {
+		return node, err
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO cluster_nodes(name,url,region,country,priority,weight,enabled,mutation_token,mutation_token_ciphertext,health_status,config_status,config_fingerprint,config_generation,node_id,coordinator_id,coordinator_epoch,version,protocol_version,capabilities,repository_health,latency_ms,last_check,last_error,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, "", encryptedToken, node.HealthStatus, node.ConfigStatus, node.ConfigFingerprint, node.ConfigGeneration, node.NodeID, node.CoordinatorID, node.CoordinatorEpoch, node.Version, node.ProtocolVersion, string(capsBytes), string(repositoryHealthBytes), node.LatencyMS, "", node.LastError, nowStr, nowStr)
 	if err != nil {
 		return node, err
 	}
@@ -136,8 +148,12 @@ func (s *Store) UpdateClusterNode(ctx context.Context, node model.ClusterNode) (
 	if node.Enabled {
 		enabledInt = 1
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET name=?,url=?,region=?,country=?,priority=?,weight=?,enabled=?,mutation_token=?,updated_at=? WHERE id=?`,
-		node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, node.MutationToken, nowStr, node.ID)
+	encryptedToken, err := s.encryptClusterMutationToken(node.MutationToken)
+	if err != nil {
+		return node, err
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE cluster_nodes SET name=?,url=?,region=?,country=?,priority=?,weight=?,enabled=?,mutation_token='',mutation_token_ciphertext=?,updated_at=? WHERE id=?`,
+		node.Name, node.URL, node.Region, node.Country, node.Priority, node.Weight, enabledInt, encryptedToken, nowStr, node.ID)
 	if err != nil {
 		return node, err
 	}
