@@ -225,6 +225,17 @@ CREATE TABLE IF NOT EXISTS warmup_jobs (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS setting_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version INTEGER NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  operator TEXT NOT NULL,
+  source TEXT NOT NULL,
+  description TEXT NOT NULL,
+  diff_summary TEXT NOT NULL,
+  settings_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_setting_versions_version ON setting_versions(version DESC);
 CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {

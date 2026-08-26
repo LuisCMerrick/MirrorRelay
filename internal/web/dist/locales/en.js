@@ -2,6 +2,22 @@ export default {
   lang: 'en',
   locale: 'en-US',
   dictionary: {
+    "Export YAML configuration": "Export YAML configuration",
+    "Standard export (Omit sensitive tokens and local base URLs)": "Standard export (Omit sensitive tokens and local base URLs)",
+    "Full backup export (Include sensitive tokens and keys)": "Full backup export (Include sensitive tokens and keys)",
+    "Warning: Full backup contains sensitive credentials. Store securely!": "Warning: Full backup contains sensitive credentials. Store securely!",
+    "Copy YAML": "Copy YAML",
+    "Download YAML": "Download YAML",
+    "Import YAML configuration": "Import YAML configuration",
+    "Upload file or paste YAML configuration to import and apply.": "Upload file or paste YAML configuration to import and apply.",
+    "Choose file": "Choose file",
+    "YAML Configuration": "YAML Configuration",
+    "Configuration Diff Preview": "Configuration Diff Preview",
+    "Path": "Path",
+    "Current value": "Current value",
+    "Imported value": "Imported value",
+    "Validate & Preview Diff": "Validate & Preview Diff",
+    "Apply configuration": "Apply configuration",
     "tagline": "Linux repository reverse-proxy gateway",
     "Repository Gateway": "Repository Gateway",
     "Core": "Core",
@@ -233,6 +249,28 @@ export default {
     "pending": "Pending",
     "failed": "Failed",
     "healthy": "Healthy",
+    ],
+    "settings": [
+        "Settings",
+        "Validated operational configuration saved through the Web UI"
+    ],
+    "users": [
+        "Users",
+        "Administrator account management"
+    ],
+    "account": [
+        "My account",
+        "Change the current password"
+    ]
+},
+  stateLabels: {
+    "match": "Match",
+    "mismatch": "Mismatch",
+
+    "active": "Active",
+    "pending": "Pending",
+    "failed": "Failed",
+    "healthy": "Healthy",
     "unhealthy": "Unhealthy",
     "unknown": "Unknown",
     "running": "Running",
@@ -243,11 +281,24 @@ export default {
   settingsGroups: [
     {
         "title": "Local endpoints and ingress",
+        "effect": "restart",
         "fields": [
             {
                 "path": "server.unix_socket_enabled",
                 "label": "Enable frontend Unix socket",
                 "type": "boolean"
+            },
+            {
+                "path": "server.frontend_socket",
+                "label": "Frontend Unix socket path",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay/frontend.sock"
+            },
+            {
+                "path": "server.frontend_socket_mode",
+                "label": "Frontend socket file mode",
+                "type": "text",
+                "placeholder": "0660"
             },
             {
                 "path": "server.local_address",
@@ -262,6 +313,24 @@ export default {
                 "min": 1,
                 "max": 65535
             },
+            {
+                "path": "runtime.root",
+                "label": "Runtime root directory",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/runtime"
+            },
+            {
+                "path": "runtime.run_dir",
+                "label": "Runtime PID/socket directory",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay"
+            }
+        ]
+    },
+    {
+        "title": "Ingress and standalone HTTP/TLS",
+        "effect": "restart",
+        "fields": [
             {
                 "path": "ingress.mode",
                 "label": "Ingress mode",
@@ -283,20 +352,40 @@ export default {
                 "type": "boolean"
             },
             {
+                "path": "ingress.snippet_path",
+                "label": "Ingress snippet output path",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/integration/external-nginx"
+            },
+            {
                 "path": "http.listen",
                 "label": "Standalone HTTP listen",
-                "type": "text"
+                "type": "text",
+                "placeholder": ":80"
             },
             {
                 "path": "http.https_listen",
                 "label": "Standalone HTTPS listen",
-                "type": "text"
+                "type": "text",
+                "placeholder": ":443"
             },
             {
                 "path": "http.public_base_url",
                 "label": "Public base URL",
                 "type": "text",
                 "placeholder": "https://mirror.example.com"
+            },
+            {
+                "path": "tls.certificate",
+                "label": "TLS certificate file path",
+                "type": "text",
+                "placeholder": "/etc/mirrorrelay/certs/fullchain.pem"
+            },
+            {
+                "path": "tls.private_key",
+                "label": "TLS private key file path",
+                "type": "text",
+                "placeholder": "/etc/mirrorrelay/certs/privkey.pem"
             },
             {
                 "path": "tls.min_version",
@@ -332,6 +421,7 @@ export default {
     },
     {
         "title": "Performance, metadata and redirects",
+        "effect": "restart",
         "fields": [
             {
                 "path": "performance.stream_buffer_size_bytes",
@@ -416,6 +506,11 @@ export default {
                 "max": 20
             },
             {
+                "path": "redirect.pin_validated_ip",
+                "label": "Pin validated IP for redirects",
+                "type": "boolean"
+            },
+            {
                 "path": "redirect.reject_mixed_dns_result",
                 "label": "Reject mixed permitted/forbidden DNS results",
                 "type": "boolean"
@@ -423,8 +518,21 @@ export default {
         ]
     },
     {
-        "title": "Cache defaults",
+        "title": "Database and cache defaults",
+        "effect": "restart",
         "fields": [
+            {
+                "path": "database.path",
+                "label": "SQLite database file path",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/mirrorrelay.db"
+            },
+            {
+                "path": "cache.path",
+                "label": "Cache directory path",
+                "type": "text",
+                "placeholder": "/var/cache/mirrorrelay"
+            },
             {
                 "path": "cache.max_size_bytes",
                 "label": "Maximum cache bytes",
@@ -471,7 +579,8 @@ export default {
         ]
     },
     {
-        "title": "Security and administration",
+        "title": "Security and access control",
+        "effect": "restart",
         "fields": [
             {
                 "path": "security.allow_http_upstream",
@@ -493,303 +602,17 @@ export default {
                 "label": "Trusted ingress CIDRs (one per line)",
                 "type": "list"
             },
-            {
-                "path": "security.session_timeout",
-                "label": "Session timeout",
-                "type": "text"
-            },
-            {
-                "path": "security.login_window",
-                "label": "Login throttle window",
-                "type": "text"
-            },
-            {
-                "path": "security.login_max_failures",
-                "label": "Maximum login failures",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "security.admin_cidrs",
-                "label": "Admin CIDRs (one per line)",
-                "type": "list"
-            }
-        ]
-    },
-    {
-        "title": "Transport and limits",
-        "fields": [
-            {
-                "path": "transport.dial_timeout",
-                "label": "Dial timeout",
-                "type": "text"
-            },
-            {
-                "path": "transport.keep_alive",
-                "label": "TCP keepalive",
-                "type": "text"
-            },
-            {
-                "path": "transport.tls_handshake_timeout",
-                "label": "TLS handshake timeout",
-                "type": "text"
-            },
-            {
-                "path": "transport.response_header_timeout",
-                "label": "Response header timeout",
-                "type": "text"
-            },
-            {
-                "path": "transport.idle_connection_timeout",
-                "label": "Idle connection timeout",
-                "type": "text"
-            },
-            {
-                "path": "transport.max_idle_connections",
-                "label": "Maximum idle connections",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "transport.max_idle_connections_per_host",
-                "label": "Maximum idle connections per host",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "limits.max_total_concurrency",
-                "label": "Global concurrency (0 = unlimited)",
-                "type": "number",
-                "min": 0
-            },
-            {
-                "path": "limits.max_ip_concurrency",
-                "label": "Per-IP concurrency (0 = unlimited)",
-                "type": "number",
-                "min": 0
-            },
-            {
-                "path": "limits.bandwidth_limit_bps",
-                "label": "Global bandwidth B/s (0 = unlimited)",
-                "type": "number",
-                "min": 0
-            }
-        ]
-    },
-    {
-        "title": "Logging and lifecycle",
-        "fields": [
-            {
-                "path": "logging.queue_size",
-                "label": "Log queue size",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "logging.max_size_mb",
-                "label": "Log file maximum MiB",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "logging.keep_days",
-                "label": "Log retention days",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "health.worker_interval",
-                "label": "Health worker interval",
-                "type": "text"
-            },
-            {
-                "path": "shutdown.grace_period",
-                "label": "Graceful shutdown window",
-                "type": "text"
-            }
-        ]
-    },
-    {
-        "title": "Managed Upstream Nginx",
-        "fields": [
-            {
-                "path": "upstream_nginx.mode",
-                "label": "Mode",
-                "type": "select",
-                "options": [
-                    [
-                        "managed",
-                        "Managed"
-                    ],
-                    [
-                        "external",
-                        "External advanced mode"
-                    ],
-                    [
-                        "disabled",
-                        "Disabled"
-                    ]
-                ]
-            },
-            {
-                "path": "upstream_nginx.upstream_unix_socket_enabled",
-                "label": "Use upstream Unix socket",
-                "type": "boolean"
-            },
-            {
-                "path": "upstream_nginx.upstream_local_port",
-                "label": "Upstream loopback port",
-                "type": "number",
-                "min": 1,
-                "max": 65535
-            },
-            {
-                "path": "upstream_nginx.tls_verify_depth",
-                "label": "TLS verification depth",
-                "type": "number",
-                "min": 1,
-                "max": 20
-            },
-            {
-                "path": "upstream_nginx.resolver",
-                "label": "DNS resolvers (space separated)",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.resolver_refresh",
-                "label": "Resolver refresh",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.history_limit",
-                "label": "Configuration history limit",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "upstream_nginx.restart_max_failures",
-                "label": "Restart maximum failures",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "upstream_nginx.restart_window",
-                "label": "Restart failure window",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.restart_initial_backoff",
-                "label": "Initial restart backoff",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.restart_max_backoff",
-                "label": "Maximum restart backoff",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.worker_processes",
-                "label": "Worker processes",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.worker_user",
-                "label": "Worker user (empty is allowed)",
-                "type": "text"
-            },
-            {
-                "path": "upstream_nginx.worker_connections",
-                "label": "Worker connections",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "upstream_nginx.stop_on_mirrorrelay_exit",
-                "label": "Stop Nginx when MirrorRelay exits",
-                "type": "boolean"
-            }
-        ]
-    },
-    {
-        "title": "Webhook & Alerting — single destination",
-        "fields": [
-            {
-                "path": "webhook.enabled",
-                "label": "Enable Webhook notifications",
-                "type": "boolean"
-            },
-            {
-                "path": "webhook.url",
-                "label": "Single Webhook destination URL (provider format is auto-detected)",
-                "type": "text"
-            },
-            {
-                "path": "webhook.secret",
-                "label": "Secret token (for HMAC-SHA256 signature)",
-                "type": "text"
-            },
-            {
-                "path": "webhook.events",
-                "label": "Enabled event names (one per line)",
-                "type": "list"
-            },
-            {
-                "path": "webhook.timeout",
-                "label": "Request timeout",
-                "type": "text"
-            },
-            {
-                "path": "webhook.allow_http",
-                "label": "Allow plaintext HTTP for this webhook",
-                "type": "boolean"
-            },
-            {
-                "path": "webhook.allow_private",
-                "label": "Allow private or local addresses for this webhook",
-                "type": "boolean"
-            }
-        ]
-    },
-    {
-        "title": "Smart Cache Warm-Up & Predictive Pre-Fetching",
-        "fields": [
-            {
-                "path": "warmup.enabled",
-                "label": "Enable Smart Cache Warm-Up Engine",
-                "type": "boolean"
-            },
-            {
-                "path": "warmup.max_concurrency",
-                "label": "Maximum warm-up concurrency",
-                "type": "number",
-                "min": 1,
-                "max": 64
-            },
-            {
-                "path": "warmup.metadata_depth",
-                "label": "Metadata package extraction depth (0 = direct only, 1 = parse packages)",
-                "type": "number",
-                "min": 0,
-                "max": 5
-            },
-            {
-                "path": "warmup.retry_count",
-                "label": "Retry count on failure",
-                "type": "number",
-                "min": 0,
-                "max": 10
-            }
-        ]
-    }
-],
-  duration: function(days, hours, minutes) {
-    return days + 'd ' + hours + 'h ' + minutes + 'm';
-  },
   exitSummary: function(dateStr, code, reason) {
     var codeStr = code === -1 ? 'exit code unknown' : 'exit code ' + (code !== null && code !== undefined ? code : '—');
     return dateStr + ' · ' + codeStr + ' · ' + (reason || '');
   },
   strings: {
+    "No mappings configured": "No mappings configured",
+    "Close": "Close",
+    "Loading history...": "Loading history...",
+    "Downloaded YAML configuration.": "Downloaded YAML configuration.",
+    "Enter or upload YAML configuration content.": "Enter or upload YAML configuration content.",
+    "No configuration history recorded yet.": "No configuration history recorded yet.",
     "Configuration format": "Configuration format",
     "DEB822 (.sources)": "DEB822 (.sources)",
     "sources.list one-line format": "sources.list one-line format",
@@ -914,13 +737,11 @@ export default {
     "Architecture": "Architecture",
     "Integration snippet": "Integration snippet",
     "Regenerate, validate and reload": "Regenerate, validate and reload",
-    "Configuration history": "Configuration history",
     "Time": "Time",
     "Triggered by": "Triggered by",
     "Description": "Description",
     "Active": "Active",
     "History": "History",
-    "Rollback": "Rollback",
     "Runtime and build": "Runtime and build",
     "Last reload": "Last reload",
     "Reload result": "Reload result",
@@ -1253,6 +1074,39 @@ export default {
     "Zero-Copy Acceleration": "Zero-Copy Acceleration",
     "items": "items",
     "Sync all nodes": "Sync all nodes",
-    "Warm-Up Total Items": "Warm-Up Total Items"
+    "Warm-Up Total Items": "Warm-Up Total Items",
+    "Export configuration": "Export configuration",
+    "Import configuration": "Import configuration",
+    "Configuration history": "Configuration history",
+    "Export YAML configuration": "Export YAML configuration",
+    "Standard export (Omit sensitive tokens and local base URLs)": "Standard export (Omit sensitive tokens and local base URLs)",
+    "Full backup export (Include sensitive tokens and keys)": "Full backup export (Include sensitive tokens and keys)",
+    "Warning: Full backup contains sensitive credentials. Store securely!": "Warning: Full backup contains sensitive credentials. Store securely!",
+    "Download YAML": "Download YAML",
+    "Copy YAML": "Copy YAML",
+    "YAML copied to clipboard.": "YAML copied to clipboard.",
+    "Import YAML configuration": "Import YAML configuration",
+    "Upload file or paste YAML configuration to import and apply.": "Upload file or paste YAML configuration to import and apply.",
+    "Choose file": "Choose file",
+    "Validate & Preview Diff": "Validate & Preview Diff",
+    "Apply configuration": "Apply configuration",
+    "Configuration Diff Preview": "Configuration Diff Preview",
+    "No changes detected": "No changes detected",
+    "Configuration Version History": "Configuration Version History",
+    "Rollback": "Rollback",
+    "Confirm rollback to version %s?": "Confirm rollback to version %s?",
+    "Configuration rolled back successfully.": "Configuration rolled back successfully.",
+    "Configuration imported successfully.": "Configuration imported successfully.",
+    "Configuration saved. Restart MirrorRelay to take effect.": "Configuration saved. Restart MirrorRelay to take effect.",
+    "Restart required": "Restart required",
+    "Immediate": "Immediate",
+    "Reload required": "Reload required",
+    "Client network routing mappings": "Client network routing mappings",
+    "Region country mappings": "Region country mappings",
+    "Add mapping": "Add mapping",
+    "CIDR": "CIDR",
+    "Region Code": "Region Code",
+    "Country Codes (comma separated)": "Country Codes (comma separated)",
+    "Remove": "Remove"
 }
 };

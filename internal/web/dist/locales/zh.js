@@ -2,6 +2,22 @@ export default {
   lang: 'zh',
   locale: 'zh-CN',
   dictionary: {
+    "Export YAML configuration": "\u5bfc\u51fa YAML \u914d\u7f6e",
+    "Standard export (Omit sensitive tokens and local base URLs)": "\u6807\u51c6\u5bfc\u51fa\uff08\u5254\u9664\u654f\u611f\u5bc6\u94a5\u4e0e\u672c\u5730\u5b9e\u4f8bURL\uff09",
+    "Full backup export (Include sensitive tokens and keys)": "\u5b8c\u6574\u5907\u4efd\u5bfc\u51fa\uff08\u5305\u542b\u654f\u611f\u5bc6\u94a5\u4e0e\u51ed\u636e\uff09",
+    "Warning: Full backup contains sensitive credentials. Store securely!": "\u8b66\u544a\uff1a\u5b8c\u6574\u5907\u4efd\u5305\u542b\u660e\u6587\u654f\u611f\u5bc6\u94a5\uff0c\u8bf7\u59a5\u5584\u4fdd\u7ba1\uff01",
+    "Copy YAML": "\u590d\u5236 YAML",
+    "Download YAML": "\u4e0b\u8f7d YAML",
+    "Import YAML configuration": "\u5bfc\u5165 YAML \u914d\u7f6e",
+    "Upload file or paste YAML configuration to import and apply.": "\u4e0a\u4f20\u6587\u4ef6\u6216\u7c98\u8d34 YAML \u6587\u672c\u4ee5\u5bfc\u5165\u5e76\u5e94\u7528\u914d\u7f6e\u3002",
+    "Choose file": "\u9009\u62e9\u6587\u4ef6",
+    "YAML Configuration": "YAML \u914d\u7f6e\u5185\u5bb9",
+    "Configuration Diff Preview": "\u914d\u7f6e\u5dee\u5f02\u9884\u89c8",
+    "Path": "\u8def\u5f84",
+    "Current value": "\u5f53\u524d\u503c",
+    "Imported value": "\u5bfc\u5165\u503c",
+    "Validate & Preview Diff": "\u6821\u9a8c\u5e76\u9884\u89c8\u5dee\u5f02",
+    "Apply configuration": "\u5e94\u7528\u914d\u7f6e",
     "tagline": "Linux 软件仓库反向代理网关",
     "Repository Gateway": "仓库网关",
     "Core": "核心",
@@ -243,11 +259,24 @@ export default {
   settingsGroups: [
     {
         "title": "本地端点与入口",
+        "effect": "restart",
         "fields": [
             {
                 "path": "server.unix_socket_enabled",
                 "label": "启用前端 Unix Socket",
                 "type": "boolean"
+            },
+            {
+                "path": "server.frontend_socket",
+                "label": "前端 Unix Socket 路径",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay/frontend.sock"
+            },
+            {
+                "path": "server.frontend_socket_mode",
+                "label": "前端 Socket 文件权限",
+                "type": "text",
+                "placeholder": "0660"
             },
             {
                 "path": "server.local_address",
@@ -262,6 +291,24 @@ export default {
                 "min": 1,
                 "max": 65535
             },
+            {
+                "path": "runtime.root",
+                "label": "运行时根目录",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/runtime"
+            },
+            {
+                "path": "runtime.run_dir",
+                "label": "运行时 PID/Socket 目录",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay"
+            }
+        ]
+    },
+    {
+        "title": "入口与独立 HTTP/TLS",
+        "effect": "restart",
+        "fields": [
             {
                 "path": "ingress.mode",
                 "label": "入口模式",
@@ -283,20 +330,40 @@ export default {
                 "type": "boolean"
             },
             {
+                "path": "ingress.snippet_path",
+                "label": "入口片段输出路径",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/integration/external-nginx"
+            },
+            {
                 "path": "http.listen",
                 "label": "独立 HTTP 监听",
-                "type": "text"
+                "type": "text",
+                "placeholder": ":80"
             },
             {
                 "path": "http.https_listen",
                 "label": "独立 HTTPS 监听",
-                "type": "text"
+                "type": "text",
+                "placeholder": ":443"
             },
             {
                 "path": "http.public_base_url",
                 "label": "公开基础地址",
                 "type": "text",
                 "placeholder": "https://mirror.example.com"
+            },
+            {
+                "path": "tls.certificate",
+                "label": "TLS 证书文件路径",
+                "type": "text",
+                "placeholder": "/etc/mirrorrelay/certs/fullchain.pem"
+            },
+            {
+                "path": "tls.private_key",
+                "label": "TLS 私钥文件路径",
+                "type": "text",
+                "placeholder": "/etc/mirrorrelay/certs/privkey.pem"
             },
             {
                 "path": "tls.min_version",
@@ -331,11 +398,12 @@ export default {
         ]
     },
     {
-        "title": "性能、Metadata 与重定向",
+        "title": "性能、元数据与重定向",
+        "effect": "restart",
         "fields": [
             {
                 "path": "performance.stream_buffer_size_bytes",
-                "label": "流式缓冲字节",
+                "label": "流式传输缓冲大小",
                 "type": "select",
                 "valueType": "number",
                 "options": [
@@ -355,79 +423,97 @@ export default {
             },
             {
                 "path": "performance.go_memory_limit_bytes",
-                "label": "Go 内存限制字节（0 = 环境/默认）",
+                "label": "Go 内存上限字节（0 = 随环境默认）",
                 "type": "number",
                 "min": 0
             },
             {
                 "path": "performance.gogc",
-                "label": "GOGC（-1..10000）",
+                "label": "GOGC 垃圾回收比率（-1..10000）",
                 "type": "number",
                 "min": -1,
                 "max": 10000
             },
             {
                 "path": "performance.zero_copy_bypass",
-                "label": "零拷贝 X-Accel 旁路加速 (大包内核直传)",
+                "label": "零拷贝 X-Accel 极速旁路加速",
                 "type": "boolean"
             },
             {
                 "path": "metadata.rewrite_buffer_limit_bytes",
-                "label": "Metadata 改写限制字节",
+                "label": "元数据改写缓冲上限（字节）",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "metadata.output_compression",
-                "label": "Metadata 输出压缩",
+                "label": "元数据输出压缩",
                 "type": "select",
                 "options": [
                     [
                         "auto",
-                        "自动"
+                        "自动协商"
                     ],
                     [
                         "identity",
-                        "不压缩"
+                        "不压缩 (Identity)"
                     ],
                     [
                         "gzip",
-                        "Gzip"
+                        "Gzip 压缩"
                     ]
                 ]
             },
             {
                 "path": "metadata.gzip_min_length_bytes",
-                "label": "Gzip 最小字节",
+                "label": "Gzip 最小压缩字节",
                 "type": "number",
                 "min": 0
             },
             {
                 "path": "metadata.validator_entries",
-                "label": "Validator 条目数",
+                "label": "验证器条目缓存上限",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "redirect.max_hops",
-                "label": "最大重定向次数",
+                "label": "最大重定向跳数",
                 "type": "number",
                 "min": 1,
                 "max": 20
             },
             {
+                "path": "redirect.pin_validated_ip",
+                "label": "重定向时锁定已校验 IP",
+                "type": "boolean"
+            },
+            {
                 "path": "redirect.reject_mixed_dns_result",
-                "label": "拒绝许可与禁止地址混合的 DNS 结果",
+                "label": "拒绝混合允许/禁止的 DNS 结果",
                 "type": "boolean"
             }
         ]
     },
     {
-        "title": "缓存默认值",
+        "title": "数据库与缓存默认值",
+        "effect": "restart",
         "fields": [
             {
+                "path": "database.path",
+                "label": "SQLite 数据库文件路径",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/mirrorrelay.db"
+            },
+            {
+                "path": "cache.path",
+                "label": "缓存目录路径",
+                "type": "text",
+                "placeholder": "/var/cache/mirrorrelay"
+            },
+            {
                 "path": "cache.max_size_bytes",
-                "label": "最大缓存字节",
+                "label": "最大缓存大小（字节）",
                 "type": "number",
                 "min": 1
             },
@@ -439,94 +525,107 @@ export default {
             },
             {
                 "path": "cache.minimum_free_bytes",
-                "label": "最小保留空间字节",
+                "label": "保留最小可用磁盘空间（字节）",
                 "type": "number",
                 "min": 0
             },
             {
                 "path": "cache.inactive",
-                "label": "Inactive 窗口",
+                "label": "非活动保留窗口",
                 "type": "text"
             },
             {
                 "path": "cache.metadata_ttl",
-                "label": "Metadata TTL",
+                "label": "元数据默认 TTL",
                 "type": "text"
             },
             {
                 "path": "cache.package_ttl",
-                "label": "软件包 TTL",
+                "label": "软件包默认 TTL",
                 "type": "text"
             },
             {
                 "path": "cache.cleanup_interval",
-                "label": "清理观测间隔",
+                "label": "清理扫描周期",
                 "type": "text"
             },
             {
                 "path": "cache.wait_for_fill",
-                "label": "缓存填充等待窗口",
+                "label": "缓存填充等待时间",
                 "type": "text"
             }
         ]
     },
     {
-        "title": "安全与管理",
+        "title": "安全与访问控制",
+        "effect": "restart",
         "fields": [
             {
                 "path": "security.allow_http_upstream",
-                "label": "全局允许 HTTP 上游",
+                "label": "全局允许明文 HTTP 上游",
                 "type": "boolean"
             },
             {
                 "path": "security.allow_private_upstream",
-                "label": "全局允许私网上游",
+                "label": "全局允许私网地址上游",
                 "type": "boolean"
             },
             {
                 "path": "security.expose_client_ip",
-                "label": "在内部暴露已验证客户端 IP",
+                "label": "内部传递经校验的客户端真实 IP",
                 "type": "boolean"
             },
             {
                 "path": "security.trusted_proxy_cidrs",
-                "label": "受信入口 CIDR（每行一个）",
+                "label": "受信入口代理 CIDR（每行一个）",
                 "type": "list"
             },
             {
                 "path": "security.session_timeout",
-                "label": "会话超时",
+                "label": "登录会话超时时间",
                 "type": "text"
             },
             {
                 "path": "security.login_window",
-                "label": "登录限流窗口",
+                "label": "登录限流观察窗口",
                 "type": "text"
             },
             {
                 "path": "security.login_max_failures",
-                "label": "最大登录失败次数",
+                "label": "允许最大登录失败次数",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "security.admin_cidrs",
-                "label": "管理 CIDR（每行一个）",
+                "label": "后台管理允许 CIDR（每行一个）",
                 "type": "list"
+            },
+            {
+                "path": "admin.host",
+                "label": "后台专用绑定域名（留空为所有域名）",
+                "type": "text"
+            },
+            {
+                "path": "admin.path",
+                "label": "后台管理路径前缀",
+                "type": "text",
+                "placeholder": "admin/"
             }
         ]
     },
     {
-        "title": "传输与限流",
+        "title": "网络传输与并发限制",
+        "effect": "restart",
         "fields": [
             {
                 "path": "transport.dial_timeout",
-                "label": "连接超时",
+                "label": "TCP 建连超时",
                 "type": "text"
             },
             {
                 "path": "transport.keep_alive",
-                "label": "TCP Keepalive",
+                "label": "TCP 保活心跳周期",
                 "type": "text"
             },
             {
@@ -536,41 +635,41 @@ export default {
             },
             {
                 "path": "transport.response_header_timeout",
-                "label": "响应头超时",
+                "label": "响应首部接收超时",
                 "type": "text"
             },
             {
                 "path": "transport.idle_connection_timeout",
-                "label": "空闲连接超时",
+                "label": "连接池空闲连接超时",
                 "type": "text"
             },
             {
                 "path": "transport.max_idle_connections",
-                "label": "最大空闲连接数",
+                "label": "连接池最大空闲连接数",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "transport.max_idle_connections_per_host",
-                "label": "每个 Host 最大空闲连接数",
+                "label": "每主机最大空闲连接数",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "limits.max_total_concurrency",
-                "label": "全局并发（0 = 不限）",
+                "label": "全局总并发限制（0 = 不限）",
                 "type": "number",
                 "min": 0
             },
             {
                 "path": "limits.max_ip_concurrency",
-                "label": "每 IP 并发（0 = 不限）",
+                "label": "单 IP 最大并发限制（0 = 不限）",
                 "type": "number",
                 "min": 0
             },
             {
                 "path": "limits.bandwidth_limit_bps",
-                "label": "全局带宽 B/s（0 = 不限）",
+                "label": "全局总带宽限制字节/秒（0 = 不限）",
                 "type": "number",
                 "min": 0
             }
@@ -578,16 +677,23 @@ export default {
     },
     {
         "title": "日志与生命周期",
+        "effect": "restart",
         "fields": [
             {
+                "path": "logging.path",
+                "label": "应用日志存储目录",
+                "type": "text",
+                "placeholder": "/var/log/mirrorrelay"
+            },
+            {
                 "path": "logging.queue_size",
-                "label": "日志队列大小",
+                "label": "日志异步队列容量",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "logging.max_size_mb",
-                "label": "单日志最大 MiB",
+                "label": "单个日志文件上限（MiB）",
                 "type": "number",
                 "min": 1
             },
@@ -599,27 +705,28 @@ export default {
             },
             {
                 "path": "health.worker_interval",
-                "label": "健康检查调度间隔",
+                "label": "健康探测工作协程间隔",
                 "type": "text"
             },
             {
                 "path": "shutdown.grace_period",
-                "label": "优雅退出窗口",
+                "label": "平滑退出等待宽限期",
                 "type": "text"
             }
         ]
     },
     {
         "title": "受管上游 Nginx",
+        "effect": "restart",
         "fields": [
             {
                 "path": "upstream_nginx.mode",
-                "label": "模式",
+                "label": "运行模式",
                 "type": "select",
                 "options": [
                     [
                         "managed",
-                        "受管"
+                        "托管模式（自动管理）"
                     ],
                     [
                         "external",
@@ -627,64 +734,106 @@ export default {
                     ],
                     [
                         "disabled",
-                        "禁用"
+                        "已停用"
                     ]
                 ]
             },
             {
+                "path": "upstream_nginx.binary",
+                "label": "Nginx 可执行文件路径",
+                "type": "text",
+                "placeholder": "/usr/lib/mirrorrelay/nginx/nginx"
+            },
+            {
+                "path": "upstream_nginx.prefix",
+                "label": "Nginx 运行前缀目录",
+                "type": "text",
+                "placeholder": "/var/lib/mirrorrelay/runtime/upstream-nginx"
+            },
+            {
+                "path": "upstream_nginx.pid",
+                "label": "Nginx PID 文件路径",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay/upstream-nginx.pid"
+            },
+            {
+                "path": "upstream_nginx.log_path",
+                "label": "Nginx 日志输出目录",
+                "type": "text",
+                "placeholder": "/var/log/mirrorrelay/upstream-nginx"
+            },
+            {
                 "path": "upstream_nginx.upstream_unix_socket_enabled",
-                "label": "使用上游 Unix Socket",
+                "label": "使用上游 Unix Socket 通信",
                 "type": "boolean"
             },
             {
+                "path": "upstream_nginx.upstream_socket",
+                "label": "上游 Unix Socket 路径",
+                "type": "text",
+                "placeholder": "/run/mirrorrelay/upstream.sock"
+            },
+            {
+                "path": "upstream_nginx.upstream_socket_mode",
+                "label": "上游 Socket 文件权限",
+                "type": "text",
+                "placeholder": "0660"
+            },
+            {
                 "path": "upstream_nginx.upstream_local_port",
-                "label": "上游回环端口",
+                "label": "上游回环 TCP 端口",
                 "type": "number",
                 "min": 1,
                 "max": 65535
             },
             {
+                "path": "upstream_nginx.ca_bundle",
+                "label": "上游 CA 证书包路径",
+                "type": "text",
+                "placeholder": "/etc/ssl/certs/ca-certificates.crt"
+            },
+            {
                 "path": "upstream_nginx.tls_verify_depth",
-                "label": "TLS 验证深度",
+                "label": "TLS 证书链验证深度",
                 "type": "number",
                 "min": 1,
                 "max": 20
             },
             {
                 "path": "upstream_nginx.resolver",
-                "label": "DNS Resolver（空格分隔）",
+                "label": "DNS 解析服务器（空格分隔）",
                 "type": "text"
             },
             {
                 "path": "upstream_nginx.resolver_refresh",
-                "label": "Resolver 刷新间隔",
+                "label": "DNS 解析刷新间隔",
                 "type": "text"
             },
             {
                 "path": "upstream_nginx.history_limit",
-                "label": "配置历史数量",
+                "label": "配置历史保留版本数",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "upstream_nginx.restart_max_failures",
-                "label": "最大重启失败次数",
+                "label": "异常退出最大重试次数",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "upstream_nginx.restart_window",
-                "label": "重启失败窗口",
+                "label": "重启失败统计窗口",
                 "type": "text"
             },
             {
                 "path": "upstream_nginx.restart_initial_backoff",
-                "label": "初始重启退避",
+                "label": "初始重启退避时长",
                 "type": "text"
             },
             {
                 "path": "upstream_nginx.restart_max_backoff",
-                "label": "最大重启退避",
+                "label": "最大重启退避时长",
                 "type": "text"
             },
             {
@@ -694,24 +843,151 @@ export default {
             },
             {
                 "path": "upstream_nginx.worker_user",
-                "label": "Worker 用户（可留空）",
+                "label": "Worker 运行用户（允许留空）",
                 "type": "text"
             },
             {
                 "path": "upstream_nginx.worker_connections",
-                "label": "Worker 连接数",
+                "label": "单个 Worker 连接上限",
                 "type": "number",
                 "min": 1
             },
             {
                 "path": "upstream_nginx.stop_on_mirrorrelay_exit",
-                "label": "MirrorRelay 退出时停止 Nginx",
+                "label": "MirrorRelay 退出时同时停止 Nginx",
                 "type": "boolean"
             }
         ]
     },
     {
-        "title": "Webhook 告警通知（单一目标）",
+        "title": "分布式集群与路由调度",
+        "effect": "restart",
+        "fields": [
+            {
+                "path": "distributed.enabled",
+                "label": "启用分布式集群支持",
+                "type": "boolean"
+            },
+            {
+                "path": "distributed.role",
+                "label": "集群节点角色",
+                "type": "select",
+                "options": [
+                    [
+                        "standalone",
+                        "单机模式 (Standalone)"
+                    ],
+                    [
+                        "coordinator",
+                        "主协调节点 (Coordinator)"
+                    ],
+                    [
+                        "edge",
+                        "边缘节点 (Edge)"
+                    ]
+                ]
+            },
+            {
+                "path": "distributed.token",
+                "label": "集群通信令牌（用于边缘节点注册）",
+                "type": "password",
+                "placeholder": "留空表示保留现有集群令牌"
+            },
+            {
+                "path": "distributed.mutation_token",
+                "label": "变更令牌（用于边缘节点写入/同步鉴权）",
+                "type": "password",
+                "placeholder": "留空表示保留现有变更令牌"
+            },
+            {
+                "path": "distributed.mutation_token_key_files",
+                "label": "变更令牌密钥环文件路径（每行一个）",
+                "type": "list"
+            },
+            {
+                "path": "distributed.coordinator_id",
+                "label": "协调节点实例标识 ID",
+                "type": "text"
+            },
+            {
+                "path": "distributed.allow_http",
+                "label": "允许集群节点间使用明文 HTTP 通信",
+                "type": "boolean"
+            },
+            {
+                "path": "distributed.node.name",
+                "label": "当前节点名称",
+                "type": "text",
+                "placeholder": "node-01"
+            },
+            {
+                "path": "distributed.node.public_base_url",
+                "label": "当前节点公开访问地址",
+                "type": "text",
+                "placeholder": "https://node.example.com"
+            },
+            {
+                "path": "distributed.node.region",
+                "label": "当前节点所在区域",
+                "type": "text",
+                "placeholder": "default"
+            },
+            {
+                "path": "distributed.node.country",
+                "label": "当前节点国家代码",
+                "type": "text",
+                "placeholder": "CN"
+            },
+            {
+                "path": "distributed.routing.mode",
+                "label": "客户端流量调度模式",
+                "type": "select",
+                "options": [
+                    [
+                        "hybrid",
+                        "混合调度 (CIDR网段 > Geo地理 > 优先级/权重)"
+                    ],
+                    [
+                        "cidr",
+                        "仅依 CIDR 客户端网段调度"
+                    ],
+                    [
+                        "geo",
+                        "仅依 Geo 地理位置与国家调度"
+                    ],
+                    [
+                        "priority",
+                        "仅依节点优先级与权重调度"
+                    ]
+                ]
+            },
+            {
+                "path": "distributed.health_check.interval",
+                "label": "集群节点健康检查周期",
+                "type": "text"
+            },
+            {
+                "path": "distributed.health_check.timeout",
+                "label": "集群节点健康检查超时",
+                "type": "text"
+            },
+            {
+                "path": "distributed.health_check.unhealthy_threshold",
+                "label": "判定为异常的连续失败次数",
+                "type": "number",
+                "min": 1
+            },
+            {
+                "path": "distributed.health_check.healthy_threshold",
+                "label": "判定为正常的连续成功次数",
+                "type": "number",
+                "min": 1
+            }
+        ]
+    },
+    {
+        "title": "Webhook 与告警通知 — 单一目标",
+        "effect": "restart",
         "fields": [
             {
                 "path": "webhook.enabled",
@@ -720,22 +996,23 @@ export default {
             },
             {
                 "path": "webhook.url",
-                "label": "单个 Webhook 目标 URL（按主机名自动识别平台格式）",
+                "label": "单一 Webhook 目标地址（自动识别平台格式）",
                 "type": "text"
             },
             {
                 "path": "webhook.secret",
-                "label": "密钥 Token (用于 HMAC-SHA256 验签)",
-                "type": "text"
+                "label": "签名密钥（用于 HMAC-SHA256 校验）",
+                "type": "password",
+                "placeholder": "留空表示保留现有密钥"
             },
             {
                 "path": "webhook.events",
-                "label": "启用的事件名称（每行一个）",
+                "label": "启用的事件名称列表（每行一个）",
                 "type": "list"
             },
             {
                 "path": "webhook.timeout",
-                "label": "请求超时时间",
+                "label": "请求超时时长",
                 "type": "text"
             },
             {
@@ -745,17 +1022,18 @@ export default {
             },
             {
                 "path": "webhook.allow_private",
-                "label": "允许此 Webhook 访问私网或本机地址",
+                "label": "允许此 Webhook 发送到私网或本地地址",
                 "type": "boolean"
             }
         ]
     },
     {
-        "title": "智能主动预热与热点预取",
+        "title": "智能缓存预热与预测性预取",
+        "effect": "restart",
         "fields": [
             {
                 "path": "warmup.enabled",
-                "label": "启用智能缓存预热引擎 (默认关闭)",
+                "label": "启用智能缓存预热引擎",
                 "type": "boolean"
             },
             {
@@ -766,8 +1044,19 @@ export default {
                 "max": 64
             },
             {
+                "path": "warmup.bandwidth_limit_bps",
+                "label": "预热带宽限制字节/秒（0 = 不限）",
+                "type": "number",
+                "min": 0
+            },
+            {
+                "path": "warmup.timeout",
+                "label": "预热任务执行超时",
+                "type": "text"
+            },
+            {
                 "path": "warmup.metadata_depth",
-                "label": "元数据包解析深度 (0 = 仅直接请求, 1 = 递归提取软件包)",
+                "label": "元数据包解析深度（0 = 仅直接文件, 1 = 解析索引软件包）",
                 "type": "number",
                 "min": 0,
                 "max": 5
@@ -790,6 +1079,12 @@ export default {
     return dateStr + ' · ' + codeStr + ' · ' + (reason || '');
   },
   strings: {
+    "No mappings configured": "\u672a\u914d\u7f6e\u6620\u5c04",
+    "Close": "\u5173\u95ed",
+    "Loading history...": "\u6b63\u5728\u52a0\u8f7d\u5386\u53f2...",
+    "Downloaded YAML configuration.": "\u5df2\u4e0b\u8f7d YAML \u914d\u7f6e\u6587\u4ef6\u3002",
+    "Enter or upload YAML configuration content.": "\u8bf7\u8f93\u5165\u6216\u4e0a\u4f20 YAML \u914d\u7f6e\u5185\u5bb9\u3002",
+    "No configuration history recorded yet.": "\u6682\u65e0\u914d\u7f6e\u5386\u53f2\u8bb0\u5f55\u3002",
     "Configuration format": "配置格式",
     "DEB822 (.sources)": "DEB822（.sources）",
     "sources.list one-line format": "sources.list 单行格式",
@@ -914,13 +1209,11 @@ export default {
     "Architecture": "架构",
     "Integration snippet": "接入片段",
     "Regenerate, validate and reload": "重新生成、验证并 Reload",
-    "Configuration history": "配置历史",
     "Time": "时间",
     "Triggered by": "操作人",
     "Description": "说明",
     "Active": "生效",
     "History": "历史",
-    "Rollback": "回滚",
     "Runtime and build": "运行与构建",
     "Last reload": "最后 Reload",
     "Reload result": "Reload 结果",
@@ -1254,5 +1547,40 @@ export default {
     "Theme and colors": "主题与颜色",
     "Zero-Copy Acceleration": "零拷贝加速",
     "items": "项"
+}
+,
+    "Export configuration": "导出配置",
+    "Import configuration": "导入配置",
+    "Configuration history": "配置历史",
+    "Export YAML configuration": "导出 YAML 配置",
+    "Standard export (Omit sensitive tokens and local base URLs)": "标准导出（剔除敏感密钥与本地实例URL）",
+    "Full backup export (Include sensitive tokens and keys)": "完整备份导出（包含敏感密钥与凭据）",
+    "Warning: Full backup contains sensitive credentials. Store securely!": "警告：完整备份包含明文敏感密钥，请妥善保管！",
+    "Download YAML": "下载 YAML",
+    "Copy YAML": "复制 YAML",
+    "YAML copied to clipboard.": "YAML 已复制到剪贴板。",
+    "Import YAML configuration": "导入 YAML 配置",
+    "Upload file or paste YAML configuration to import and apply.": "上传文件或粘贴 YAML 文本以导入并应用配置。",
+    "Choose file": "选择文件",
+    "Validate & Preview Diff": "校验并预览差异",
+    "Apply configuration": "应用配置",
+    "Configuration Diff Preview": "配置差异预览",
+    "No changes detected": "未检测到配置变更",
+    "Configuration Version History": "配置版本历史",
+    "Rollback": "回滚",
+    "Confirm rollback to version %s?": "确认回滚到版本 %s？",
+    "Configuration rolled back successfully.": "配置回滚成功。",
+    "Configuration imported successfully.": "配置导入并应用成功。",
+    "Configuration saved. Restart MirrorRelay to take effect.": "配置已保存，需要重启 MirrorRelay 后生效。",
+    "Restart required": "重启生效",
+    "Immediate": "立即生效",
+    "Reload required": "重新加载生效",
+    "Client network routing mappings": "客户端网络路由映射",
+    "Region country mappings": "区域国家映射",
+    "Add mapping": "添加映射",
+    "CIDR": "CIDR 网段",
+    "Region Code": "区域代码",
+    "Country Codes (comma separated)": "国家代码（逗号分隔）",
+    "Remove": "删除"
 }
 };

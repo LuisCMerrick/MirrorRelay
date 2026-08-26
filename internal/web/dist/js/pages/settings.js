@@ -100,11 +100,111 @@ function settingsInput(field, settings) {
   return `<label><span>${esc(label)}</span><input type="${field.type}" value="${esc(value ?? '')}" placeholder="${esc(field.placeholder || '')}" ${attributes}${limits}></label>`;
 }
 
+function renderClientNetworksManager(networks) {
+  const list = networks || [];
+  const rows = list.map((net, i) => `
+    <tr data-net-index="${i}">
+      <td><input type="text" class="net-cidr" value="${esc(net.CIDR || net.cidr || '')}" placeholder="192.168.1.0/24"></td>
+      <td><input type="text" class="net-region" value="${esc(net.Region || net.region || '')}" placeholder="ap-east"></td>
+      <td class="table-actions"><button type="button" class="link danger remove-net-row">${icon('trash', 12)} ${L('Remove')}</button></td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="wide" style="margin-top: 1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+        <strong>${L('Client network routing mappings')}</strong>
+        <button type="button" class="secondary btn-sm" id="add-net-row-btn">${icon('plus', 12)} ${L('Add mapping')}</button>
+      </div>
+      <table class="data-table" id="client-networks-table">
+        <thead>
+          <tr>
+            <th>${L('CIDR')}</th>
+            <th>${L('Region Code')}</th>
+            <th>${L('Actions')}</th>
+          </tr>
+        </thead>
+        <tbody id="client-networks-tbody">
+          ${rows || `<tr><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderRegionsManager(regions) {
+  const list = regions || [];
+  const rows = list.map((reg, i) => `
+    <tr data-reg-index="${i}">
+      <td><input type="text" class="reg-code" value="${esc(reg.Code || reg.code || '')}" placeholder="ap-east"></td>
+      <td><input type="text" class="reg-countries" value="${esc((reg.Countries || reg.countries || []).join(', '))}" placeholder="HK, TW, JP"></td>
+      <td class="table-actions"><button type="button" class="link danger remove-reg-row">${icon('trash', 12)} ${L('Remove')}</button></td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="wide" style="margin-top: 1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+        <strong>${L('Region country mappings')}</strong>
+        <button type="button" class="secondary btn-sm" id="add-reg-row-btn">${icon('plus', 12)} ${L('Add mapping')}</button>
+      </div>
+      <table class="data-table" id="regions-table">
+        <thead>
+          <tr>
+            <th>${L('Region Code')}</th>
+            <th>${L('Country Codes (comma separated)')}</th>
+            <th>${L('Actions')}</th>
+          </tr>
+        </thead>
+        <tbody id="regions-tbody">
+          ${rows || `<tr><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function parseClientNetworksTable() {
+  const rows = document.querySelectorAll('#client-networks-tbody tr');
+  const result = [];
+  rows.forEach(tr => {
+    const cidrInput = tr.querySelector('.net-cidr');
+    const regInput = tr.querySelector('.net-region');
+    if (cidrInput && regInput) {
+      const cidr = cidrInput.value.trim();
+      const region = regInput.value.trim();
+      if (cidr && region) {
+        result.push({ cidr, region });
+      }
+    }
+  });
+  return result;
+}
+
+function parseRegionsTable() {
+  const rows = document.querySelectorAll('#regions-tbody tr');
+  const result = [];
+  rows.forEach(tr => {
+    const codeInput = tr.querySelector('.reg-code');
+    const countriesInput = tr.querySelector('.reg-countries');
+    if (codeInput && countriesInput) {
+      const code = codeInput.value.trim();
+      const rawCountries = countriesInput.value.trim();
+      if (code) {
+        const countries = rawCountries ? rawCountries.split(',').map(s => s.trim().toUpperCase()).filter(Boolean) : [];
+        result.push({ code, countries });
+      }
+    }
+  });
+  return result;
+}
+
 export async function loadSettings() {
   const response = await api('/settings');
   const settings = response.settings;
   const loc = getLocale();
   const settingsGroups = loc.settingsGroups || [];
+
   const restart = response.restart_required
     ? `<div class="notice error">
         <span>${icon('alert', 16)} ${L('Saved values differ from the running process. Restart MirrorRelay to apply them.')}</span>
@@ -117,28 +217,74 @@ export async function loadSettings() {
       </div>`
     : `<div class="notice">${icon('check-circle', 16)} ${L('The running process matches the saved settings.')}</div>`;
 
-  const groups = settingsGroups.map((group, index) => `
-    <details class="disclosure-panel settings-section"${index === 0 ? ' open' : ''}>
-      <summary>
-        <span class="disclosure-heading">
-          <span class="disclosure-title">${icon('settings', 17)} ${esc(group.title)}</span>
-        </span>
-        <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
-      </summary>
-      <div class="disclosure-content form-grid">
-        ${group.fields.map(field => settingsInput(field, settings)).join('')}
-      </div>
-    </details>
-  `).join('');
+  const groups = settingsGroups.map((group, index) => {
+    let extraHTML = '';
+    if (group.title && (group.title.includes('Distributed') || group.title.includes('分布式'))) {
+      const networks = settings.distributed?.routing?.client_networks || [];
+      const regions = settings.distributed?.routing?.regions || [];
+      extraHTML = renderClientNetworksManager(networks) + renderRegionsManager(regions);
+    }
+    const badgeText = group.effect === 'immediate' ? L('Immediate') : (group.effect === 'reload' ? L('Reload required') : L('Restart required'));
+    const badgeClass = group.effect === 'immediate' ? 'status-pill status-healthy' : 'status-pill status-pending';
+
+    return `
+      <details class="disclosure-panel settings-section"${index === 0 ? ' open' : ''}>
+        <summary>
+          <span class="disclosure-heading">
+            <span class="disclosure-title">${icon('settings', 17)} ${esc(group.title)}</span>
+            <span class="${badgeClass}" style="margin-left: 0.5rem; font-size: 0.75rem;">${badgeText}</span>
+          </span>
+          <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
+        </summary>
+        <div class="disclosure-content form-grid">
+          ${group.fields.map(field => settingsInput(field, settings)).join('')}
+          ${extraHTML}
+        </div>
+      </details>
+    `;
+  }).join('');
 
   $('#page-settings').innerHTML = `
     ${restart}
     <div class="panel">
-      <h2>${icon('settings', 18)} ${L('Operational settings')}</h2>
-      <p>${L('These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.')}</p>
-      ${kv(L('Source'), response.source === 'web_ui' ? L('Web UI override') : L('Configuration file'))}
-      <p class="muted">${L('File-only bootstrap settings:')} <code>${esc((response.file_only || []).join(', '))}</code></p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h2>${icon('settings', 18)} ${L('Operational settings')}</h2>
+          <p>${L('These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.')}</p>
+          ${kv(L('Source'), response.source === 'web_ui' ? L('Web UI override') : L('Configuration file'))}
+        </div>
+        <div class="actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class="secondary" id="export-settings-btn">${icon('download', 13)} ${L('Export configuration')}</button>
+          <button type="button" class="secondary" id="import-settings-btn">${icon('upload', 13)} ${L('Import configuration')}</button>
+          <button type="button" class="secondary" id="history-settings-btn">${icon('history', 13)} ${L('Configuration history')}</button>
+        </div>
+      </div>
     </div>
+
+    <div id="history-panel" class="panel hidden" style="margin-bottom: 1.5rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+        <h2>${icon('history', 18)} ${L('Configuration Version History')}</h2>
+        <button type="button" class="secondary btn-sm" id="close-history-btn">${L('Close')}</button>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>${L('Version')}</th>
+              <th>${L('Time')}</th>
+              <th>${L('Triggered by')}</th>
+              <th>${L('Source')}</th>
+              <th>${L('Description')}</th>
+              <th>${L('Actions')}</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody">
+            <tr><td colspan="6" class="muted">${L('Loading history...')}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <form id="settings-form" class="settings-form">
       ${groups}
       <footer>
@@ -177,6 +323,269 @@ export async function loadSettings() {
         </footer>
       </form>
     </div>`;
+
+  // Attach Table Row Event Listeners for Client Networks & Regions
+  const addNetBtn = $('#add-net-row-btn');
+  if (addNetBtn) {
+    addNetBtn.addEventListener('click', () => {
+      const tbody = $('#client-networks-tbody');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" class="net-cidr" placeholder="10.0.0.0/8"></td>
+        <td><input type="text" class="net-region" placeholder="ap-east"></td>
+        <td class="table-actions"><button type="button" class="link danger remove-net-row">${icon('trash', 12)} ${L('Remove')}</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  const addRegBtn = $('#add-reg-row-btn');
+  if (addRegBtn) {
+    addRegBtn.addEventListener('click', () => {
+      const tbody = $('#regions-tbody');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" class="reg-code" placeholder="ap-east"></td>
+        <td><input type="text" class="reg-countries" placeholder="HK, TW, JP"></td>
+        <td class="table-actions"><button type="button" class="link danger remove-reg-row">${icon('trash', 12)} ${L('Remove')}</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('.remove-net-row')) {
+      e.target.closest('tr').remove();
+    }
+    if (e.target.closest('.remove-reg-row')) {
+      e.target.closest('tr').remove();
+    }
+  });
+
+  // Export Dialog handlers
+  const exportDialog = $('#export-dialog');
+  const exportBtn = $('#export-settings-btn');
+  const closeExportDialog = $('#close-export-dialog');
+  const downloadYamlBtn = $('#download-yaml-btn');
+  const copyYamlBtn = $('#copy-yaml-btn');
+
+  if (exportBtn && exportDialog) {
+    exportBtn.addEventListener('click', () => {
+      $('#export-mode-standard').checked = true;
+      $('#export-full-warning').classList.add('hidden');
+      exportDialog.showModal();
+    });
+    if (closeExportDialog) closeExportDialog.addEventListener('click', () => exportDialog.close());
+
+    $('#export-mode-standard').addEventListener('change', () => {
+      $('#export-full-warning').classList.add('hidden');
+    });
+    $('#export-mode-full').addEventListener('change', () => {
+      $('#export-full-warning').classList.remove('hidden');
+    });
+
+    if (downloadYamlBtn) {
+      downloadYamlBtn.addEventListener('click', async () => {
+        const fullBackup = $('#export-mode-full').checked;
+        const endpoint = `/settings/export?full_backup=${fullBackup}`;
+        try {
+          const res = await fetch(api.baseURL + endpoint, {
+            headers: api.headers()
+          });
+          if (!res.ok) throw new Error('Export failed: ' + res.statusText);
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fullBackup ? 'mirrorrelay-full-backup.yaml' : 'mirrorrelay-config.yaml';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+          exportDialog.close();
+          notice(L('Downloaded YAML configuration.'));
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
+
+    if (copyYamlBtn) {
+      copyYamlBtn.addEventListener('click', async () => {
+        const fullBackup = $('#export-mode-full').checked;
+        const endpoint = `/settings/export?full_backup=${fullBackup}`;
+        try {
+          const res = await fetch(api.baseURL + endpoint, {
+            headers: api.headers()
+          });
+          if (!res.ok) throw new Error('Export failed: ' + res.statusText);
+          const text = await res.text();
+          await navigator.clipboard.writeText(text);
+          notice(L('YAML copied to clipboard.'));
+          exportDialog.close();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
+  }
+
+  // Import Dialog handlers
+  const importDialog = $('#import-dialog');
+  const importBtn = $('#import-settings-btn');
+  const closeImportDialog = $('#close-import-dialog');
+  const importFileInput = $('#import-file-input');
+  const importYamlText = $('#import-yaml-text');
+  const importPreviewBtn = $('#import-preview-btn');
+  const importApplyBtn = $('#import-apply-btn');
+  const importDiffContainer = $('#import-diff-container');
+  const importDiffTbody = $('#import-diff-tbody');
+  const importDiffSummary = $('#import-diff-summary');
+  const importError = $('#import-error');
+
+  if (importBtn && importDialog) {
+    importBtn.addEventListener('click', () => {
+      importYamlText.value = '';
+      importFileInput.value = '';
+      importDiffContainer.classList.add('hidden');
+      importApplyBtn.classList.add('hidden');
+      importError.textContent = '';
+      importDialog.showModal();
+    });
+    if (closeImportDialog) closeImportDialog.addEventListener('click', () => importDialog.close());
+
+    if (importFileInput) {
+      importFileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = ev => {
+            importYamlText.value = ev.target.result;
+          };
+          reader.readAsText(file);
+        }
+      });
+    }
+
+    if (importPreviewBtn) {
+      importPreviewBtn.addEventListener('click', async () => {
+        importError.textContent = '';
+        const yaml = importYamlText.value.trim();
+        if (!yaml) {
+          importError.textContent = L('Enter or upload YAML configuration content.');
+          return;
+        }
+        try {
+          importPreviewBtn.disabled = true;
+          const res = await api('/settings/import/preview', {
+            method: 'POST',
+            body: JSON.stringify({ yaml })
+          });
+          if (res.valid) {
+            importDiffTbody.innerHTML = (res.diff || []).map(d => `
+              <tr>
+                <td><code>${esc(d.path)}</code></td>
+                <td><span class="muted">${esc(d.old_value || '—')}</span></td>
+                <td><strong>${esc(d.new_value || '—')}</strong></td>
+              </tr>
+            `).join('') || `<tr><td colspan="3" class="muted">${L('No changes detected')}</td></tr>`;
+
+            importDiffSummary.innerHTML = `<strong>${esc(res.summary)}</strong> · ${res.restart_required ? L('Restart required') : L('Immediate')}`;
+            importDiffContainer.classList.remove('hidden');
+            importApplyBtn.classList.remove('hidden');
+          }
+        } catch (err) {
+          importError.textContent = err.message;
+          importDiffContainer.classList.add('hidden');
+          importApplyBtn.classList.add('hidden');
+        } finally {
+          importPreviewBtn.disabled = false;
+        }
+      });
+    }
+
+    if (importApplyBtn) {
+      importApplyBtn.addEventListener('click', async () => {
+        importError.textContent = '';
+        const yaml = importYamlText.value.trim();
+        if (!yaml) return;
+        try {
+          importApplyBtn.disabled = true;
+          const res = await api('/settings/import', {
+            method: 'POST',
+            body: JSON.stringify({ yaml })
+          });
+          notice(res.restart_required ? L('Configuration saved. Restart MirrorRelay to take effect.') : L('Configuration imported successfully.'));
+          importDialog.close();
+          await loadSettings();
+        } catch (err) {
+          importError.textContent = err.message;
+        } finally {
+          importApplyBtn.disabled = false;
+        }
+      });
+    }
+  }
+
+  // Configuration History handlers
+  const historyPanel = $('#history-panel');
+  const historyBtn = $('#history-settings-btn');
+  const closeHistoryBtn = $('#close-history-btn');
+
+  async function loadHistory() {
+    try {
+      const versions = await api('/settings/history');
+      const tbody = $('#history-tbody');
+      if (!versions || versions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="muted">${L('No configuration history recorded yet.')}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = versions.map(v => `
+        <tr>
+          <td><strong>v${v.version}</strong></td>
+          <td>${esc(new Date(v.created_at).toLocaleString())}</td>
+          <td>${esc(v.operator || 'system')}</td>
+          <td><span class="status-pill status-healthy">${esc(v.source)}</span></td>
+          <td>${esc(v.description || '')}</td>
+          <td class="table-actions">
+            <button type="button" class="link rollback-history-btn" data-version="${v.version}">
+              ${icon('refresh', 12)} ${L('Rollback')}
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('.rollback-history-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ver = btn.dataset.version;
+          if (!confirm(L('Confirm rollback to version %s?', ver))) return;
+          try {
+            const res = await api(`/settings/history/${ver}/rollback`, { method: 'POST' });
+            notice(res.restart_required ? L('Configuration saved. Restart MirrorRelay to take effect.') : L('Configuration rolled back successfully.'));
+            await loadSettings();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+      });
+    } catch (err) {
+      $('#history-tbody').innerHTML = `<tr><td colspan="6" class="error">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  if (historyBtn && historyPanel) {
+    historyBtn.addEventListener('click', async () => {
+      historyPanel.classList.toggle('hidden');
+      if (!historyPanel.classList.contains('hidden')) {
+        await loadHistory();
+      }
+    });
+    if (closeHistoryBtn) {
+      closeHistoryBtn.addEventListener('click', () => {
+        historyPanel.classList.add('hidden');
+      });
+    }
+  }
 
   const restartNoticeBtn = $('#restart-service-btn');
   if (restartNoticeBtn) restartNoticeBtn.addEventListener('click', triggerRestart);
@@ -217,9 +626,18 @@ export async function loadSettings() {
       else value = input.value.trim();
       setNestedValue(next, input.dataset.settingPath, value);
     });
+
+    // Merge interactive tables for distributed routing
+    const clientNetworks = parseClientNetworksTable();
+    const regions = parseRegionsTable();
+    if (!next.distributed) next.distributed = {};
+    if (!next.distributed.routing) next.distributed.routing = {};
+    next.distributed.routing.client_networks = clientNetworks;
+    next.distributed.routing.regions = regions;
+
     try {
       const saved = await api('/settings', {method: 'PUT', body: JSON.stringify(next)});
-      notice(saved.restart_required ? L('Settings saved; restart MirrorRelay to apply them.') : L('Settings already match the running process.'));
+      notice(saved.restart_required ? L('Configuration saved. Restart MirrorRelay to take effect.') : L('Settings already match the running process.'));
       await loadSettings();
     } catch (error) {
       $('#settings-error').textContent = error.message;

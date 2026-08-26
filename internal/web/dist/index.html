@@ -464,6 +464,75 @@
     </form>
   </dialog>
 
+  <dialog id="export-dialog">
+    <div class="dialog-body">
+      <header>
+        <h2 id="export-dialog-title" data-i18n="Export YAML configuration">Export YAML configuration</h2>
+        <button type="button" class="icon" id="close-export-dialog" aria-label="Close">×</button>
+      </header>
+      <div class="dialog-scroll-body">
+        <div class="form-grid">
+          <label class="check wide">
+            <input type="radio" name="export-mode" id="export-mode-standard" value="standard" checked>
+            <span data-i18n="Standard export (Omit sensitive tokens and local base URLs)">Standard export (Omit sensitive tokens and local base URLs)</span>
+          </label>
+          <label class="check wide">
+            <input type="radio" name="export-mode" id="export-mode-full" value="full">
+            <span data-i18n="Full backup export (Include sensitive tokens and keys)">Full backup export (Include sensitive tokens and keys)</span>
+          </label>
+          <div id="export-full-warning" class="notice error wide hidden">
+            <span data-i18n="Warning: Full backup contains sensitive credentials. Store securely!">Warning: Full backup contains sensitive credentials. Store securely!</span>
+          </div>
+        </div>
+      </div>
+      <footer>
+        <button type="button" class="secondary" id="copy-yaml-btn" data-i18n="Copy YAML">Copy YAML</button>
+        <button type="button" class="btn-primary" id="download-yaml-btn" data-i18n="Download YAML">Download YAML</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="import-dialog" class="wide-dialog">
+    <form id="import-form" method="dialog">
+      <header>
+        <h2 id="import-dialog-title" data-i18n="Import YAML configuration">Import YAML configuration</h2>
+        <button type="button" class="icon" id="close-import-dialog" aria-label="Close">×</button>
+      </header>
+      <div class="dialog-scroll-body">
+        <p class="muted" data-i18n="Upload file or paste YAML configuration to import and apply.">Upload file or paste YAML configuration to import and apply.</p>
+        <div class="form-grid">
+          <label class="wide">
+            <span data-i18n="Choose file">Choose file</span>
+            <input type="file" id="import-file-input" accept=".yaml,.yml">
+          </label>
+          <label class="wide">
+            <span data-i18n="YAML Configuration">YAML configuration content</span>
+            <textarea id="import-yaml-text" class="code-editor" rows="12" placeholder="# Paste config.yaml here..." spellcheck="false"></textarea>
+          </label>
+        </div>
+        <div id="import-diff-container" class="hidden" style="margin-top: 1rem;">
+          <h3 data-i18n="Configuration Diff Preview">Configuration Diff Preview</h3>
+          <div id="import-diff-summary" class="info-callout" style="margin-bottom: 0.5rem;"></div>
+          <table class="data-table" id="import-diff-table">
+            <thead>
+              <tr>
+                <th data-i18n="Path">Path</th>
+                <th data-i18n="Current value">Current value</th>
+                <th data-i18n="Imported value">Imported value</th>
+              </tr>
+            </thead>
+            <tbody id="import-diff-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <footer>
+        <div id="import-error" class="error"></div>
+        <button type="button" class="secondary" id="import-preview-btn" data-i18n="Validate & Preview Diff">Validate &amp; Preview Diff</button>
+        <button type="button" class="btn-primary hidden" id="import-apply-btn" data-i18n="Apply configuration">Apply configuration</button>
+      </footer>
+    </form>
+  </dialog>
+
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

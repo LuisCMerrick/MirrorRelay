@@ -172,21 +172,54 @@ Viewers can read the audit log but cannot access the Managed Upstream Nginx acce
 
 ## Settings
 
-The Admin-only **Settings** page manages most operational values that also exist in `config.yaml`: local Unix/TCP endpoints, ingress mode, HTTP/TLS behavior, performance, metadata, redirects, cache defaults, security and administrator CIDRs, transport pools and timeouts, concurrency and bandwidth limits, log rotation, health scheduling, shutdown and Managed Upstream Nginx lifecycle settings. Configuration groups use consistent disclosure sections; the first group opens initially and the remaining groups stay collapsed until needed.
+The Admin-only **Settings** page provides complete operational and architectural configuration management across all 20 sections in `config.yaml`: server and runtime endpoints, ingress mode, standalone HTTP/TLS, performance, metadata adapters, redirects, database, cache policies, security, admin CIDRs, transport connection pools, limits, logging, health scheduling, graceful shutdown, Managed Upstream Nginx lifecycle, distributed cluster routing, webhook notifications, and cache warm-up.
 
-Selecting **Validate and save** validates the complete merged configuration before storing the override in SQLite. The saved Web UI values take precedence over matching YAML values on the next MirrorRelay start. They do not hot-reload the running process. You can select **Restart now** / **Restart MirrorRelay** directly in the Web UI or execute the displayed CLI command:
+### Configuration effective indicators
+
+The Web UI indicates the effective mechanism for configuration changes:
+- **Restart required** (`[Restart required]`): Process-level listeners, memory limits, timeouts, and daemon parameters take effect when MirrorRelay is restarted.
+- **Reload required** (`[Reload required]`): Managed Upstream Nginx routing changes take effect upon graceful reload.
+- **Immediate** (`[Immediate]`): Repositories, appearance settings, and instant cache purges take effect immediately.
+
+When saving settings that require a restart, MirrorRelay displays:
+> "Configuration saved. Restart MirrorRelay to take effect."
+
+Selecting **Validate and save** validates the candidate configuration with startup-level checks before storing it in SQLite. You can select **Restart now** / **Restart MirrorRelay** directly in the Web UI or execute:
 
 ```sh
 sudo systemctl restart mirrorrelay
 ```
 
-After restart, the page automatically reconnects and reports that the running process matches the saved values. A **Restart service** button is also available directly on the **System** page. **Reset to YAML after restart** removes the Web UI override; restart again to make the YAML values active.
+### Configuration export
 
-Credential, filesystem and executable locations remain file-only so the running service cannot relocate its own trust boundary or database. The page displays the exact protected list, including socket paths/modes, runtime paths, ingress snippet path, TLS key/certificate paths, database/cache/log paths, the cluster mutation-token keyring, and Managed Upstream Nginx binary, prefix, PID, log, socket and CA-bundle paths.
+Administrators can export running configuration as valid YAML:
+- **Standard export** (default): Omits sensitive credentials (`distributed.token`, `distributed.mutation_token`, `webhook.secret`, edge node mutation tokens) and local instance public base URLs (`http.public_base_url`, `distributed.node.public_base_url`).
+- **Full backup export**: Admin-only complete backup including secrets for full disaster recovery.
 
-Repository Desired/Active changes are separate from this page and continue to validate and activate immediately.
+### Configuration import
 
-The Webhook section configures one active notification destination. MirrorRelay detects DingTalk, Feishu/Lark, WeCom and Slack formats from the URL and uses generic JSON for other hosts. The test panel separates the running destination from one-time platform targets; selecting a one-time target does not save or add another channel.
+The **Import configuration** action supports uploading `.yaml` files or pasting YAML text:
+1. **Startup-level validation**: Verifies YAML syntax, structure, constraints, and dependencies.
+2. **Diff preview**: Displays a detailed diff table (`Path`, `Current value`, `Imported value`) and indicates whether a restart is required.
+3. **Local instance and credential preservation**: If local host URLs or tokens are omitted in the imported YAML, running values are preserved.
+4. **Apply**: Saves the validated candidate into the configuration override store and creates a new history version.
+
+### Configuration versioning and rollback
+
+Every modification via Web UI, import, reset, or rollback is recorded in the configuration history:
+- Records version ID, timestamp, operator, source (`web_ui`, `configuration_import`, `settings_rollback`, `settings_reset`), diff summary, and safe snapshot.
+- Sensitive credentials are never stored in plaintext history logs.
+- Administrators can review past changes and select **Rollback** to restore any previous configuration state.
+
+### Distributed cluster and routing settings
+
+The Settings page provides full management for distributed cluster topologies:
+- **Cluster identity and security**: Role (`standalone`, `coordinator`, `edge`), join token, mutation token, and coordinator ID.
+- **Node attributes**: Local node name, public base URL, region, and country.
+- **Routing policies**: Mode (`hybrid`, `cidr`, `geo`, `priority`), with interactive table management for **Client network routing mappings** (CIDR to Region) and **Region country mappings** (Region code to Country codes).
+- **Health checks**: Interval, timeout, and healthy/unhealthy failure thresholds.
+
+The Webhook section configures one active notification destination with automatic provider format detection (DingTalk, Feishu/Lark, WeCom, Slack, or Generic JSON) and an integrated testing panel.
 
 ## Appearance and Branding
 

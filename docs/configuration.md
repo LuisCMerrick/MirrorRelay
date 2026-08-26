@@ -23,29 +23,17 @@ Environment variables override only the documented deployment/runtime values:
 
 Configuration loading is strict: unknown YAML keys and multiple YAML documents are rejected so a misspelled safety or transport switch cannot silently fall back to its default.
 
-## Web UI overrides
+## Web UI overrides and configuration management
 
-The **Settings** page can manage most operational keys documented below. It saves one strictly validated settings document in the existing SQLite database. On process start, MirrorRelay loads YAML first and then applies the stored Web UI values over the matching fields, so the precedence is:
+The **Settings** page provides full management across all 20 configuration sections in `config.yaml`. It saves strictly validated settings documents in SQLite and maintains an immutable version history for inspection and one-click rollback. On process start, MirrorRelay loads YAML first and then applies the stored Web UI values over the matching fields, so the precedence is:
 
 ```text
 documented environment variables -> saved Web UI operational values -> YAML
 ```
 
-Saving or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the change. Repository Desired/Active changes use a separate immediate validation and activation path.
+Saving, importing, or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the changes. Repository Desired/Active changes use a separate immediate validation and activation path.
 
-The Web UI covers endpoint enablement, the frontend listen IP and local ports, ingress behavior, safe HTTP/TLS values, performance, metadata, redirect policy, cache limits/TTLs, operational security, transport, limits, health, logging, shutdown, webhook delivery and Managed Upstream Nginx lifecycle values. YAML remains authoritative for trust-boundary locations:
-
-```text
-server.frontend_socket, server.frontend_socket_mode, runtime.*,
-ingress.snippet_path, redirect.pin_validated_ip, tls.certificate,
-tls.private_key, database.path,
-cache.path, logging.path, admin.*, upstream_nginx.binary,
-upstream_nginx.prefix, upstream_nginx.pid, upstream_nginx.log_path,
-upstream_nginx.upstream_socket, upstream_nginx.upstream_socket_mode,
-upstream_nginx.ca_bundle, distributed.mutation_token_key_files
-```
-
-Use **Reset to YAML after restart** to delete the stored override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML.
+Use **Export configuration** to download standard or full backup YAML, and **Import configuration** to upload/paste YAML candidates with full validation and diff preview. Use **Reset to YAML after restart** to delete the stored override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML.
 
 ## Local endpoints
 

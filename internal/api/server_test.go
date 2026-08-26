@@ -527,3 +527,111 @@ func TestSystemRestartEndpoint(t *testing.T) {
 		t.Fatal("restart trigger was not called")
 	}
 }
+
+func TestSettingsExportImportAndHistoryRollback(t *testing.T) {
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cfg := config.Default()
+	cfg.HTTP.PublicBaseURL = "https://original-host.example.com"
+	cfg.Distributed.Token = "secret-token"
+	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
+
+	// 1. Test Export standard vs full backup
+	expRec := httptest.NewRecorder()
+	server.exportSettings(expRec, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings/export", nil), auth.Session{Role: "admin", Username: "admin"})
+	if expRec.Code != http.StatusOK {
+		t.Fatalf("export standard failed: code=%d body=%s", expRec.Code, expRec.Body.String())
+	}
+	if strings.Contains(expRec.Body.String(), "secret-token") || strings.Contains(expRec.Body.String(), "original-host.example.com") {
+		t.Fatal("standard export contained secret or public base URL")
+	}
+
+	expFullRec := httptest.NewRecorder()
+	server.exportSettings(expFullRec, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings/export?full_backup=true", nil), auth.Session{Role: "admin", Username: "admin"})
+	if expFullRec.Code != http.StatusOK || !strings.Contains(expFullRec.Body.String(), "secret-token") {
+		t.Fatalf("full export failed to include token: code=%d body=%s", expFullRec.Code, expFullRec.Body.String())
+	}
+
+	// 2. Test Import Preview
+	importYAML := `
+server:
+  local_port: 19088
+security:
+  login_max_failures: 9
+`
+	previewPayload, _ := json.Marshal(map[string]string{"yaml": importYAML})
+	prevRec := httptest.NewRecorder()
+	server.previewImportSettings(prevRec, httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/import/preview", bytes.NewReader(previewPayload)), auth.Session{Role: "admin", Username: "admin"})
+	if prevRec.Code != http.StatusOK {
+		t.Fatalf("import preview failed: code=%d body=%s", prevRec.Code, prevRec.Body.String())
+	}
+	var previewRes struct {
+		Valid           bool                     `json:"valid"`
+		Diff            []model.SettingDiffEntry `json:"diff"`
+		RestartRequired bool                     `json:"restart_required"`
+	}
+	if err := json.Unmarshal(prevRec.Body.Bytes(), &previewRes); err != nil || !previewRes.Valid || len(previewRes.Diff) == 0 {
+		t.Fatalf("invalid preview result: %+v, err=%v", previewRes, err)
+	}
+
+	// 3. Test Apply Import
+	applyRec := httptest.NewRecorder()
+	server.applyImportSettings(applyRec, httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/import", bytes.NewReader(previewPayload)), auth.Session{Role: "admin", Username: "admin"})
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply import failed: code=%d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+
+	// Verify imported settings in DB preserved public base URL and secrets
+	stored, found, err := store.Setting(context.Background(), config.WebSettingsKey)
+	if err != nil || !found {
+		t.Fatalf("stored setting not found after import: %v", err)
+	}
+	ws, err := config.DecodeWebSettings([]byte(stored))
+	if err != nil {
+		t.Fatalf("decode stored settings failed: %v", err)
+	}
+	if ws.Server.LocalPort != 19088 || ws.Security.LoginMaxFailures != 9 {
+		t.Fatalf("imported fields were not applied: %+v", ws)
+	}
+	if ws.HTTP.PublicBaseURL != "https://original-host.example.com" {
+		t.Fatalf("local instance base URL was wiped on import: %s", ws.HTTP.PublicBaseURL)
+	}
+
+	// 4. Test History and Rollback
+	histRec := httptest.NewRecorder()
+	server.listSettingsHistory(histRec, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings/history", nil), auth.Session{Role: "admin", Username: "admin"})
+	if histRec.Code != http.StatusOK {
+		t.Fatalf("history failed: code=%d body=%s", histRec.Code, histRec.Body.String())
+	}
+	var versions []model.SettingVersion
+	if err := json.Unmarshal(histRec.Body.Bytes(), &versions); err != nil || len(versions) == 0 {
+		t.Fatalf("expected version records: %+v, err=%v", versions, err)
+	}
+
+	// Make another change
+	ws.Server.LocalPort = 19099
+	encodedWS, _ := json.Marshal(ws)
+	updRec := httptest.NewRecorder()
+	server.updateWebSettings(updRec, httptest.NewRequest(http.MethodPut, "/admin/api/v1/settings", bytes.NewReader(encodedWS)), auth.Session{Role: "admin", Username: "admin"})
+	if updRec.Code != http.StatusOK {
+		t.Fatalf("update settings failed: %s", updRec.Body.String())
+	}
+
+	// Rollback to version 1 (which was the import)
+	rbRec := httptest.NewRecorder()
+	server.rollbackSettingsHistory(rbRec, httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/history/1/rollback", nil), auth.Session{Role: "admin", Username: "admin"}, "1")
+	if rbRec.Code != http.StatusOK {
+		t.Fatalf("rollback failed: code=%d body=%s", rbRec.Code, rbRec.Body.String())
+	}
+
+	// Check that port was rolled back to 19088
+	storedAfterRB, _, _ := store.Setting(context.Background(), config.WebSettingsKey)
+	wsAfterRB, _ := config.DecodeWebSettings([]byte(storedAfterRB))
+	if wsAfterRB.Server.LocalPort != 19088 {
+		t.Fatalf("rollback did not restore previous value: got port %d", wsAfterRB.Server.LocalPort)
+	}
+}

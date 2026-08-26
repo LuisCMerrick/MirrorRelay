@@ -23,29 +23,17 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 配置采用严格解析：未知 YAML Key 和多 YAML Document 会被拒绝，避免拼错安全或传输开关后静默回退到默认值。
 
-## Web UI 覆盖
+## Web UI 覆盖与配置管理
 
-**设置** 页面可以管理下文大部分运行配置，并把一份经过严格验证的设置文档保存在现有 SQLite 数据库中。进程启动时，MirrorRelay 先加载 YAML，再把保存的 Web UI 值覆盖到对应字段，因此优先级为：
+**设置** 页面提供对 `config.yaml` 全部 20 个配置块的完整管理能力。设置修改经过启动级严格验证并持久化于 SQLite 数据库中，同时维护不可变版本历史以供审计与一键回滚。进程启动时，MirrorRelay 先加载 YAML，再把保存的 Web UI 值覆盖到对应字段，因此优先级为：
 
 ```text
 已记录的环境变量 -> Web UI 保存的运行值 -> YAML
 ```
 
-保存或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
+保存、导入或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
-Web UI 覆盖端点启用状态、前端监听 IP 与本地端口、入口行为、安全的 HTTP/TLS 配置、性能、Metadata、重定向策略、缓存限制/TTL、运行安全、传输、限流、健康检查、日志、退出、Webhook 投递及 Managed Upstream Nginx 生命周期。信任边界路径仍以 YAML 为准：
-
-```text
-server.frontend_socket, server.frontend_socket_mode, runtime.*,
-ingress.snippet_path, redirect.pin_validated_ip, tls.certificate,
-tls.private_key, database.path,
-cache.path, logging.path, admin.*, upstream_nginx.binary,
-upstream_nginx.prefix, upstream_nginx.pid, upstream_nginx.log_path,
-upstream_nginx.upstream_socket, upstream_nginx.upstream_socket_mode,
-upstream_nginx.ca_bundle, distributed.mutation_token_key_files
-```
-
-使用 **重启后恢复 YAML** 删除保存的覆盖值。保存数据无效时，启动会明确失败，不会静默回退到 YAML。
+可使用 **导出配置** 下载标准或完整备份 YAML，使用 **导入配置** 上传/粘贴 YAML 文本并进行严格校验与 Diff 差异预览。使用 **重启后恢复 YAML** 删除保存的覆盖值。保存数据无效时，启动会明确失败，不会静默回退到 YAML。
 
 ## 本地端点
 

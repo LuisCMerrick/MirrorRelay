@@ -213,6 +213,32 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.resetWebSettings(w, r, session)
+	case path == "/settings/export" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
+		s.exportSettings(w, r, session)
+	case path == "/settings/import/preview" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
+		s.previewImportSettings(w, r, session)
+	case path == "/settings/import" && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
+		s.applyImportSettings(w, r, session)
+	case path == "/settings/history" && r.Method == http.MethodGet:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
+		s.listSettingsHistory(w, r, session)
+	case strings.HasPrefix(path, "/settings/history/") && strings.HasSuffix(path, "/rollback") && r.Method == http.MethodPost:
+		if !s.requireRole(w, session, "admin") {
+			return
+		}
+		raw := strings.TrimSuffix(strings.TrimPrefix(path, "/settings/history/"), "/rollback")
+		s.rollbackSettingsHistory(w, r, session, raw)
 	case path == "/appearance" && r.Method == http.MethodGet:
 		writeJSON(w, 200, s.appearanceConfig())
 	case path == "/appearance" && r.Method == http.MethodPut:

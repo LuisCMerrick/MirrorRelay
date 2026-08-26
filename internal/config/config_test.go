@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -152,6 +153,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	settings.Webhook.Enabled = true
 	settings.Webhook.URL = "http://127.0.0.1/hooks"
 	settings.Webhook.Secret = "webhook-secret"
+	settings.Webhook.SecretConfigured = true
 	settings.Webhook.Events = []string{"config_change", "security_alert"}
 	settings.Webhook.Timeout = "9s"
 	settings.Webhook.AllowHTTP = true
@@ -499,6 +501,79 @@ func TestLoadRejectsUnknownKeysAndMultipleDocuments(t *testing.T) {
 		}
 		if _, err := Load(path, true); err == nil {
 			t.Fatalf("unsupported configuration was accepted: %q", content)
+		}
+	}
+}
+
+func TestExportYAMLOmissionAndFullBackup(t *testing.T) {
+	cfg := Default()
+	cfg.HTTP.PublicBaseURL = "https://mirror.example.com"
+	cfg.Distributed.Node.PublicBaseURL = "https://node.example.com"
+	cfg.Distributed.Token = "super-cluster-token"
+	cfg.Distributed.MutationToken = "super-mutation-token"
+	cfg.Webhook.Secret = "super-webhook-secret"
+	cfg.Distributed.Nodes = []DistributedNodeSeed{
+		{
+			Name:          "edge-1",
+			URL:           "https://edge1.example.com",
+			MutationToken: "edge-1-secret",
+			Region:        "us-west",
+			Priority:      100,
+			Weight:        100,
+			Enabled:       true,
+		},
+	}
+
+	// Normal Export (Standard)
+	standardYAML, err := ExportYAML(cfg, false)
+	if err != nil {
+		t.Fatalf("ExportYAML standard error: %v", err)
+	}
+	if strings.Contains(standardYAML, "https://mirror.example.com") {
+		t.Fatal("standard export contains http.public_base_url")
+	}
+	if strings.Contains(standardYAML, "https://node.example.com") {
+		t.Fatal("standard export contains distributed.node.public_base_url")
+	}
+	if strings.Contains(standardYAML, "super-cluster-token") || strings.Contains(standardYAML, "super-mutation-token") || strings.Contains(standardYAML, "super-webhook-secret") || strings.Contains(standardYAML, "edge-1-secret") {
+		t.Fatal("standard export leaked sensitive credentials")
+	}
+	if !strings.Contains(standardYAML, "https://edge1.example.com") {
+		t.Fatal("standard export omitted topology node URL")
+	}
+
+	// Full Backup Export
+	fullYAML, err := ExportYAML(cfg, true)
+	if err != nil {
+		t.Fatalf("ExportYAML full error: %v", err)
+	}
+	if strings.Contains(fullYAML, "https://mirror.example.com") {
+		t.Fatal("full export contains http.public_base_url")
+	}
+	if strings.Contains(fullYAML, "https://node.example.com") {
+		t.Fatal("full export contains distributed.node.public_base_url")
+	}
+	if !strings.Contains(fullYAML, "super-cluster-token") || !strings.Contains(fullYAML, "super-mutation-token") || !strings.Contains(fullYAML, "super-webhook-secret") || !strings.Contains(fullYAML, "edge-1-secret") {
+		t.Fatal("full export failed to include sensitive credentials needed for backup")
+	}
+}
+
+func TestComputeSettingsDiffRedactsSensitiveChanges(t *testing.T) {
+	oldWS := WebSettingsFrom(Default())
+	newWS := WebSettingsFrom(Default())
+	newWS.Server.LocalPort = 19081
+	newWS.Distributed.Token = "new-token"
+	newWS.Webhook.Secret = "new-secret"
+
+	diff := ComputeSettingsDiff(oldWS, newWS)
+	if len(diff) != 3 {
+		t.Fatalf("expected 3 diff entries, got %d: %+v", len(diff), diff)
+	}
+	for _, d := range diff {
+		if d.Path == "distributed.token" || d.Path == "webhook.secret" {
+			if d.NewValue != "[REDACTED]" {
+				t.Fatalf("diff for %s leaked secret: %s", d.Path, d.NewValue)
+			}
 		}
 	}
 }

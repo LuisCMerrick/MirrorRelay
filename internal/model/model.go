@@ -108,6 +108,23 @@ type ConfigVersion struct {
 	Configuration     string    `json:"configuration,omitempty"`
 }
 
+type SettingVersion struct {
+	ID          int64     `json:"id"`
+	Version     int64     `json:"version"`
+	CreatedAt   time.Time `json:"created_at"`
+	Operator    string    `json:"operator"`
+	Source      string    `json:"source"`
+	Description string    `json:"description"`
+	DiffSummary string    `json:"diff_summary"`
+	Settings    string    `json:"settings,omitempty"`
+}
+
+type SettingDiffEntry struct {
+	Path     string `json:"path"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+}
+
 type CustomConfig struct {
 	ID           int64     `json:"id"`
 	Name         string    `json:"name"`

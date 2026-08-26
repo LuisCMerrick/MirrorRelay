@@ -57,6 +57,9 @@ type Store interface {
 	Setting(context.Context, string) (string, bool, error)
 	PutSetting(context.Context, string, string) error
 	DeleteSetting(context.Context, string) error
+	AddSettingVersion(context.Context, model.SettingVersion, int) (model.SettingVersion, error)
+	ListSettingVersions(context.Context, int) ([]model.SettingVersion, error)
+	GetSettingVersion(context.Context, int64) (model.SettingVersion, error)
 	ListClusterNodes(context.Context) ([]model.ClusterNode, error)
 	GetClusterNode(context.Context, int64) (model.ClusterNode, error)
 	GetClusterNodeByURL(context.Context, string) (model.ClusterNode, error)
