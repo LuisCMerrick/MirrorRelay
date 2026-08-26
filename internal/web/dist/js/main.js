@@ -15,7 +15,10 @@ import { loadProfilesData } from './pages/profiles.js';
 import { initCustom } from './pages/custom.js';
 import { initCluster } from './pages/cluster.js';
 
+import { loginWithPasskey } from './passkey.js';
+
 let initialRegistrationRequired = false;
+let recoveryMode = false;
 
 function refreshLoginMode() {
   const dictionary = getLocale().dictionary || {};
@@ -26,6 +29,9 @@ function refreshLoginMode() {
   $('#login-password-confirmation-group').classList.toggle('hidden', !initialRegistrationRequired);
   $('#login-password-confirmation').required = initialRegistrationRequired;
   $('#login-password').autocomplete = initialRegistrationRequired ? 'new-password' : 'current-password';
+  if (initialRegistrationRequired) {
+    $('#login-alt-actions')?.classList.add('hidden');
+  }
 }
 
 function refreshRoleUI() {
@@ -43,6 +49,14 @@ async function loadInitialRegistrationStatus() {
   const status = await api('/auth/bootstrap');
   initialRegistrationRequired = Boolean(status?.required);
   refreshLoginMode();
+  if (!initialRegistrationRequired) {
+    try {
+      const passkeyStatus = await api('/auth/passkey/status');
+      if (passkeyStatus?.enabled) {
+        $('#login-alt-actions')?.classList.remove('hidden');
+      }
+    } catch (_) {}
+  }
 }
 
 async function boot() {
@@ -99,14 +113,39 @@ onRestartCompleted(renderCurrentPage);
 
 document.querySelectorAll('.language-switch button').forEach(button => button.addEventListener('click', () => applyLanguage(button.dataset.lang, true)));
 
+$('#login-passkey-btn')?.addEventListener('click', async () => {
+  $('#login-error').textContent = '';
+  try {
+    const username = $('#login-user').value;
+    const session = await loginWithPasskey(username);
+    state.csrf = session.csrf_token;
+    await boot();
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+  }
+});
+
+$('#login-recovery-toggle')?.addEventListener('click', () => {
+  recoveryMode = !recoveryMode;
+  $('#login-password-group').classList.toggle('hidden', recoveryMode);
+  $('#login-recovery-group').classList.toggle('hidden', !recoveryMode);
+  const dictionary = getLocale().dictionary || {};
+  $('#login-recovery-toggle').textContent = recoveryMode ? (dictionary.usePassword || 'Use Password') : (dictionary.useRecoveryCode || 'Use Recovery Code');
+  if (recoveryMode) {
+    $('#login-recovery-code').focus();
+  } else {
+    $('#login-password').focus();
+  }
+});
+
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
   $('#login-error').textContent = '';
   try {
     const username = $('#login-user').value;
-    const password = $('#login-password').value;
     let session;
     if (initialRegistrationRequired) {
+      const password = $('#login-password').value;
       const confirmation = $('#login-password-confirmation').value;
       if (password !== confirmation) {
         const dictionary = getLocale().dictionary || {};
@@ -116,12 +155,20 @@ $('#login-form').addEventListener('submit', async event => {
         method: 'POST',
         body: JSON.stringify({username, password, password_confirmation: confirmation})
       });
+    } else if (recoveryMode) {
+      const recovery_code = $('#login-recovery-code').value;
+      session = await api('/auth/recovery/login', {
+        method: 'POST',
+        body: JSON.stringify({username, recovery_code})
+      });
     } else {
+      const password = $('#login-password').value;
       session = await api('/auth/login', {method: 'POST', body: JSON.stringify({username, password})});
     }
     state.csrf = session.csrf_token;
     $('#login-password').value = '';
     $('#login-password-confirmation').value = '';
+    $('#login-recovery-code').value = '';
     await boot();
   } catch (error) {
     $('#login-error').textContent = error.message;

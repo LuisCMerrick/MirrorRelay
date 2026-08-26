@@ -522,7 +522,14 @@ func compilePackagePatterns(field string, values []string) ([]model.PackagePatte
 			return nil, nil, fmt.Errorf("%s[%d] contains control characters", field, index)
 		}
 		_, globErr := path.Match(pattern, "")
-		expression, regexpErr := regexp.Compile(pattern)
+		anchored := pattern
+		if !strings.HasPrefix(anchored, "^") {
+			anchored = "^(?:" + anchored + ")"
+		}
+		if !strings.HasSuffix(anchored, "$") {
+			anchored = anchored + "$"
+		}
+		expression, regexpErr := regexp.Compile(anchored)
 		if globErr != nil && regexpErr != nil {
 			return nil, nil, fmt.Errorf("%s[%d] is neither a valid glob nor RE2 expression", field, index)
 		}

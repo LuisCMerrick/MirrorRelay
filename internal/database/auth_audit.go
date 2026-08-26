@@ -46,7 +46,7 @@ func (s *Store) CreateUser(ctx context.Context, username, passwordHash, role str
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,username,role,created_at,updated_at FROM users ORDER BY username`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,username,role,password_login_disabled,created_at,updated_at FROM users ORDER BY username`)
 	if err != nil {
 		return nil, err
 	}
@@ -54,13 +54,15 @@ func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 	var users []model.User
 	for rows.Next() {
 		var user model.User
+		var disabled int
 		var created, updated string
-		if err := rows.Scan(&user.ID, &user.Username, &user.Role, &created, &updated); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.Role, &disabled, &created, &updated); err != nil {
 			return nil, err
 		}
 		if user.Role == "" {
 			user.Role = "admin"
 		}
+		user.PasswordLoginDisabled = disabled != 0
 		user.CreatedAt, user.UpdatedAt = parseTime(created), parseTime(updated)
 		users = append(users, user)
 	}
@@ -115,18 +117,29 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID int64, exceptIDHa
 
 func (s *Store) UserByName(ctx context.Context, username string) (model.User, error) {
 	var u model.User
+	var disabled int
 	var created, updated string
-	err := s.db.QueryRowContext(ctx, `SELECT id,username,password_hash,role,created_at,updated_at FROM users WHERE username=?`, username).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &created, &updated)
+	err := s.db.QueryRowContext(ctx, `SELECT id,username,password_hash,role,password_login_disabled,created_at,updated_at FROM users WHERE username=?`, username).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &disabled, &created, &updated)
 	if u.Role == "" {
 		u.Role = "admin"
 	}
+	u.PasswordLoginDisabled = disabled != 0
 	u.CreatedAt, u.UpdatedAt = parseTime(created), parseTime(updated)
 	return u, err
 }
 
+func (s *Store) SetPasswordLoginDisabled(ctx context.Context, id int64, disabled bool) error {
+	val := 0
+	if disabled {
+		val = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_login_disabled=?,updated_at=? WHERE id=?`, val, nowText(), id)
+	return err
+}
+
 func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash=?,updated_at=? WHERE id=?`, hash, nowText(), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash=?,password_login_disabled=0,updated_at=? WHERE id=?`, hash, nowText(), id)
 	return err
 }
 

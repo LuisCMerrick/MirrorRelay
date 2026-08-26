@@ -150,9 +150,17 @@ type WebHealthSettings struct {
 	WorkerInterval string `json:"worker_interval"`
 }
 
+type WebPasskeySettings struct {
+	Enabled bool     `json:"enabled"`
+	RPName  string   `json:"rp_name"`
+	RPID    string   `json:"rp_id"`
+	Origins []string `json:"origins"`
+}
+
 type WebAdminSettings struct {
-	Host string `json:"host"`
-	Path string `json:"path"`
+	Host    string             `json:"host"`
+	Path    string             `json:"path"`
+	Passkey WebPasskeySettings `json:"passkey"`
 }
 
 type WebShutdownSettings struct {
@@ -339,6 +347,12 @@ func WebSettingsFrom(c Config) WebSettings {
 		Admin: WebAdminSettings{
 			Host: c.Admin.Host,
 			Path: c.Admin.Path,
+			Passkey: WebPasskeySettings{
+				Enabled: c.Admin.Passkey.Enabled,
+				RPName:  c.Admin.Passkey.RPName,
+				RPID:    c.Admin.Passkey.RPID,
+				Origins: append([]string{}, c.Admin.Passkey.Origins...),
+			},
 		},
 		Shutdown: WebShutdownSettings{
 			GracePeriod: c.Shutdown.GracePeriod.String(),
@@ -542,6 +556,12 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	if w.Admin.Path != "" {
 		candidate.Admin.Path = w.Admin.Path
 	}
+	candidate.Admin.Passkey.Enabled = w.Admin.Passkey.Enabled
+	candidate.Admin.Passkey.RPName = w.Admin.Passkey.RPName
+	candidate.Admin.Passkey.RPID = w.Admin.Passkey.RPID
+	if w.Admin.Passkey.Origins != nil {
+		candidate.Admin.Passkey.Origins = append([]string{}, w.Admin.Passkey.Origins...)
+	}
 
 	// Upstream Nginx
 	if w.UpstreamNginx.Mode != "" {
@@ -723,6 +743,8 @@ func ExportYAML(cfg Config, fullBackup bool) (string, error) {
 		c.Distributed.Token = ""
 		c.Distributed.MutationToken = ""
 		c.Webhook.Secret = ""
+		c.Admin.Passkey.RPID = ""
+		c.Admin.Passkey.Origins = nil
 		nodes := make([]DistributedNodeSeed, len(c.Distributed.Nodes))
 		for i, n := range c.Distributed.Nodes {
 			nodes[i] = n
@@ -882,6 +904,10 @@ func ComputeSettingsDiff(oldWS, newWS WebSettings) []model.SettingDiffEntry {
 	// Admin
 	check("admin.host", oldWS.Admin.Host, newWS.Admin.Host, false)
 	check("admin.path", oldWS.Admin.Path, newWS.Admin.Path, false)
+	check("admin.passkey.enabled", oldWS.Admin.Passkey.Enabled, newWS.Admin.Passkey.Enabled, false)
+	check("admin.passkey.rp_name", oldWS.Admin.Passkey.RPName, newWS.Admin.Passkey.RPName, false)
+	check("admin.passkey.rp_id", oldWS.Admin.Passkey.RPID, newWS.Admin.Passkey.RPID, false)
+	checkSlice("admin.passkey.origins", oldWS.Admin.Passkey.Origins, newWS.Admin.Passkey.Origins, false)
 
 	// Shutdown
 	check("shutdown.grace_period", oldWS.Shutdown.GracePeriod, newWS.Shutdown.GracePeriod, false)

@@ -314,4 +314,19 @@ func TestPackageFilteringGuard(t *testing.T) {
 	if blocked, _ := isPackageBlocked(repo, "/packages/untrusted-tool.rpm"); !blocked {
 		t.Fatal("untrusted-tool should be blocked because it is not in whitelist")
 	}
+
+	// Verify foo-* glob does not mistakenly match evilfoo.rpm as regex substring
+	repoGlob := model.Mirror{
+		Name:            "glob-test",
+		AllowedPackages: []string{"foo-*"},
+	}
+	if err := mirror.CompilePackagePolicy(&repoGlob); err != nil {
+		t.Fatal(err)
+	}
+	if blocked, _ := isPackageBlocked(repoGlob, "/packages/foo-1.0.rpm"); blocked {
+		t.Fatal("foo-1.0.rpm should be allowed by foo-* whitelist")
+	}
+	if blocked, _ := isPackageBlocked(repoGlob, "/packages/evilfoo.rpm"); !blocked {
+		t.Fatal("evilfoo.rpm should be blocked because it does not match foo-*")
+	}
 }

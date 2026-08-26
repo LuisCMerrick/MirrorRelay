@@ -20,39 +20,30 @@ APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy 
    │
    ▼
 外部共享 Nginx (入口接入: 80 / 443)
-   │ (默认 TCP 127.0.0.1:9081 / 显式启用后使用 Unix Socket 0660)
-   ▼
-MirrorRelay (Go 控制平面与路由器)
-   ├── Web UI 与管理 API (/admin/)
-   ├── 容器镜像 Token Broker 与重定向 Broker
-   ├── 有界元数据与 HTML 重写器
-   ├── SQLite 持久化期望状态
-   └── 候选配置生成与原子发布
-   │ (默认 Unix Socket 0660 / 显式关闭后使用回环 TCP)
-   ▼
-受管上游 Nginx (独立静态链接 Musl 数据平面)
-   ├── 代理缓存与本地内容存储
-   ├── SSL 证书验证与 DNS 固定
-   └── 多上游故障转移
    │
    ▼
-原始上游源 (Debian, Ubuntu, Rocky, PyPI, Docker Hub 等)
+MirrorRelay (Go 控制平面与路由器)
+   │
+   ▼
+受管上游 Nginx (独立数据平面) ──► 原始上游源
 ```
+
+![MirrorRelay Web UI 控制面板](docs/images/web-ui.jpg)
 
 ---
 
 ## 为什么选择 MirrorRelay？
 
-传统的仓库镜像方案通常面临**全量镜像同步占用庞大**或**手动配置 Nginx `proxy_pass` 维护困难且功能受限**的问题。MirrorRelay 从根本上解决了两者的痛点：
+常见方案包括全量镜像同步、仓库管理器或手动维护的反向代理。MirrorRelay 从根本上解决了这些方案的痛点：
 
 | 挑战 | 全量同步镜像站 (如 `apt-mirror`, `bandersnatch`) | 手动 Nginx `proxy_pass` | MirrorRelay |
 |---|---|---|---|
 | **磁盘占用** | 初始即需数百 GB 甚至数 TB 磁盘 | 较低（按需缓存） | **低**：按需拉取磁盘缓存，冷热自动淘汰 |
 | **初始同步延迟** | 初次同步需数小时至数天 | 无延迟 | **零延迟**：配置后立即对外提供服务 |
 | **仓库管理维护** | 复杂的同步脚本与定时任务 | 手工修改配置文件并重载 | **Web UI 与 API**：全功能可视化 CRUD 与审计日志 |
-| **Docker / OCI 镜像** | 难以镜像私有/公有 Registry | 无法处理 Bearer 鉴权与 CDN 302 重定向 | **内置 Token Broker 与重定向安全代理** |
-| **数据平面安全** | 不适用 | 语法配置错误易导致整站瘫痪 | **期望/生效分离**（`nginx -t` 严格验证后原子热重载） |
-| **上游请求安全** | 不适用 | 存在 SSRF 与 DNS 重绑定风险 | **严格 CIDR 过滤、IP 地址固定与 TLS SNI 验证** |
+| **Docker / OCI 镜像** | 难以镜像私有/公有 Registry | 需额外处理 Bearer 鉴权与 CDN 302 重定向 | **内置 Token Broker 与重定向安全代理** |
+| **配置生命周期** | 不适用 | 需在运维流程中自行实现验证与重载 | **内置候选配置验证与原子发布**（`nginx -t` 严格验证后热重载） |
+| **上游请求安全** | 不适用 | 动态上游配置需要显式的 SSRF 与 DNS 重绑定防御 | **严格 CIDR 过滤、IP 地址固定与 TLS SNI 验证** |
 | **多节点协同调度** | 依赖复杂 DNS / CDN 配置 | 难以多节点智能调度 | **Coordinator / Edge 分布式 307 智能重定向调度** |
 
 ---
@@ -61,7 +52,7 @@ MirrorRelay (Go 控制平面与路由器)
 
 | 功能特性 | 支持状态 | 说明 |
 |---|---|---|
-| **软件包仓库代理与缓存** | ✅ 支持 | APT、RPM/DNF、APK、OPKG、PyPI、npm、Maven、Cargo、Go Proxy、Conda |
+| **软件包仓库代理与缓存** | ✅ 支持 | APT、RPM/DNF、APK、OPKG、PyPI、npm、Maven、NuGet、Cargo、Go Proxy、Conda |
 | **Docker / OCI 镜像拉取代理** | ✅ 支持 | 完整 `/v2/` 鉴权挑战处理、Token 代理、多上游回退、S3/CDN 重定向代理 |
 | **多上游故障转移** | ✅ 支持 | 自动健康检查、权重、优先级配置与故障自动降级 |
 | **期望与生效状态分离** | ✅ 支持 | 候选配置生成、`nginx -t` 预检、原子覆盖与平滑无中断重载（Graceful Reload） |
@@ -74,7 +65,7 @@ MirrorRelay (Go 控制平面与路由器)
 
 ## 目标兼容性 (Target Compatibility)
 
-| 软件包生态 | 代理模式 | 动态缓存 | 元数据 / URL 重写 | 已验证客户端与系统 |
+| 软件包生态 | 代理模式 | 动态缓存 | 元数据 / URL 重写 | 已验证版本 |
 |---|:---:|:---:|:---:|---|
 | **APT** | ✅ | ✅ | 可选 HTML 目录重写 | Debian 11/12, Ubuntu 22.04/24.04 |
 | **RPM / DNF** | ✅ | ✅ | 可选 HTML 目录重写 | Rocky Linux 8/9, AlmaLinux 9, Fedora 40/41 |
@@ -84,8 +75,11 @@ MirrorRelay (Go 控制平面与路由器)
 | **npm** | ✅ | ✅ | ✅ JSON 注册表元数据重写 | `npm` 9.x/10.x, `pnpm`, `yarn` |
 | **Go Modules** | ✅ | ✅ | 不适用 | Go 1.22/1.23/1.24 |
 | **Rust Cargo** | ✅ | ✅ | 不适用 | Cargo / `crates.io` index |
+| **NuGet** | ✅ | ✅ | 可选 V3 索引重写 | `nuget.exe`, `dotnet` CLI |
 | **Maven / Gradle** | ✅ | ✅ | 可选 HTML 目录重写 | Maven 3.8/3.9, Gradle 8.x |
 | **Docker / OCI** | ✅ 拉取代理 | ✅ 分层与 Blob | ✅ Token Broker 与 S3/CDN 重定向代理 | Docker Engine 24.x/26.x/27.x, Podman 4.x/5.x |
+
+> *表中列出的均为已显式验证的版本；更新的兼容版本通常也可直接支持。*
 
 ---
 

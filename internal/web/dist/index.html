@@ -53,10 +53,16 @@
           <input id="login-user" autocomplete="username" required placeholder="admin" spellcheck="false">
         </label>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="login-password-group">
         <label>
           <span data-i18n="password">Password</span>
-          <input id="login-password" type="password" autocomplete="current-password" required placeholder="••••••••">
+          <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••">
+        </label>
+      </div>
+      <div id="login-recovery-group" class="form-group hidden">
+        <label>
+          <span data-i18n="recoveryCode">Emergency Recovery Code</span>
+          <input id="login-recovery-code" type="text" placeholder="XXXX-XXXX-XXXX" spellcheck="false" autocomplete="off">
         </label>
       </div>
       <div id="login-password-confirmation-group" class="form-group hidden">
@@ -66,7 +72,26 @@
         </label>
       </div>
       <button id="login-submit" type="submit" class="btn-primary" data-i18n="signIn">Sign in</button>
+
+      <div id="login-alt-actions" class="hidden">
+        <div class="login-divider" data-i18n="or">OR</div>
+        <button id="login-passkey-btn" type="button" class="login-alt-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M7 12h10"/><path d="M12 7v10"/><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/></svg>
+          <span data-i18n="signInWithPasskey">Sign in with Passkey</span>
+        </button>
+        <button id="login-recovery-toggle" type="button" class="login-alt-btn" style="margin-top: 6px;">
+          <span data-i18n="useRecoveryCode">Use Recovery Code</span>
+        </button>
+      </div>
+
       <div id="login-error" class="error" role="alert" aria-live="polite"></div>
+
+      <div class="login-footer">
+        <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer" class="login-github-link" title="GitHub Repository">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
     </form>
   </main>
 

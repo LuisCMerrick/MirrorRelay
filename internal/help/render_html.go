@@ -350,7 +350,7 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 			</div>
 		</main>
 		<footer>
-			<p><a href="/">← Return to Repository Index / 返回镜像列表</a> &bull; Powered by %s</p>
+			<p><a href="/">← Return to Repository Index / 返回镜像列表</a> &bull; Powered by <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer">%s</a></p>
 		</footer>
 	</div>
 	<script>
@@ -618,7 +618,7 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 		</main>
 
 		<footer>
-			<p><a href="/help/">← All Repository Help / 全部仓库帮助</a> &bull; Powered by %s</p>
+			<p><a href="/help/">← All Repository Help / 全部仓库帮助</a> &bull; Powered by <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer">%s</a></p>
 		</footer>
 	</div>
 

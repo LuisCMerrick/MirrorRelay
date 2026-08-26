@@ -115,6 +115,25 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid trusted proxy CIDR %q: %w", cidr, err)
 		}
 	}
+	if c.Admin.Passkey.Enabled {
+		if c.Admin.Passkey.RPName == "" {
+			c.Admin.Passkey.RPName = "MirrorRelay"
+		}
+		if c.Admin.Passkey.RPID != "" {
+			if strings.Contains(c.Admin.Passkey.RPID, "/") || strings.Contains(c.Admin.Passkey.RPID, ":") {
+				return errors.New("admin.passkey.rp_id must be a valid hostname without scheme, port or path")
+			}
+		}
+		for _, origin := range c.Admin.Passkey.Origins {
+			if origin == "*" {
+				return errors.New("admin.passkey.origins cannot be wildcard (*)")
+			}
+			u, err := url.Parse(origin)
+			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+				return fmt.Errorf("invalid admin.passkey origin %q", origin)
+			}
+		}
+	}
 	if c.TLS.MinVersion != "1.2" && c.TLS.MinVersion != "1.3" {
 		return errors.New("tls.min_version must be 1.2 or 1.3")
 	}

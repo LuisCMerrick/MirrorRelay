@@ -19,6 +19,7 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/accesslog"
 	"github.com/LuisCMerrick/MirrorRelay/internal/api"
 	"github.com/LuisCMerrick/MirrorRelay/internal/applog"
+	"github.com/LuisCMerrick/MirrorRelay/internal/auth"
 	"github.com/LuisCMerrick/MirrorRelay/internal/buildinfo"
 	"github.com/LuisCMerrick/MirrorRelay/internal/cachectl"
 	"github.com/LuisCMerrick/MirrorRelay/internal/config"
@@ -65,6 +66,9 @@ func run() error {
 	build := buildinfo.New(version, gitCommit, buildTimestamp, buildID)
 	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
 		return printVersion(build, os.Args[2:])
+	}
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		return handleAdminCLI(os.Args[2:])
 	}
 	var configPath string
 	var dev bool
@@ -311,4 +315,79 @@ func runProduct(
 		return errRestartRequested
 	}
 	return nil
+}
+
+func handleAdminCLI(args []string) error {
+	if len(args) == 0 {
+		return errors.New("admin subcommand required: reset-password or reset-passkeys")
+	}
+	subcmd := args[0]
+	fs := flag.NewFlagSet("admin "+subcmd, flag.ContinueOnError)
+	configPath := fs.String("config", "/etc/mirrorrelay/config.yaml", "path to configuration file")
+	username := fs.String("username", "", "admin username")
+	password := fs.String("password", "", "new password (for reset-password)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *username == "" {
+		return errors.New("-username is required")
+	}
+	cfg, err := config.Load(*configPath, false)
+	if err != nil {
+		cfg = config.Default()
+	}
+	store, err := database.Open(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open database %s: %w", cfg.Database.Path, err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	user, err := store.UserByName(ctx, *username)
+	if err != nil {
+		return fmt.Errorf("user %q not found: %w", *username, err)
+	}
+
+	switch subcmd {
+	case "reset-password":
+		if *password == "" {
+			return errors.New("-password is required for reset-password")
+		}
+		hash, err := auth.HashPassword(*password)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+		if err := store.UpdatePassword(ctx, user.ID, hash); err != nil {
+			return fmt.Errorf("update password: %w", err)
+		}
+		_ = store.AddAudit(ctx, model.AuditEntry{
+			Username:  "CLI",
+			Action:    "password_reset_by_cli",
+			Object:    "user",
+			Detail:    "password reset for user " + user.Username,
+			Succeeded: true,
+		})
+		fmt.Printf("Successfully reset password and enabled password login for user %q\n", user.Username)
+		return nil
+
+	case "reset-passkeys":
+		if err := store.DeleteAllPasskeysByUserID(ctx, user.ID); err != nil {
+			return fmt.Errorf("delete passkeys: %w", err)
+		}
+		if err := store.SetPasswordLoginDisabled(ctx, user.ID, false); err != nil {
+			return fmt.Errorf("enable password login: %w", err)
+		}
+		_ = store.AddAudit(ctx, model.AuditEntry{
+			Username:  "CLI",
+			Action:    "passkey_reset_by_cli",
+			Object:    "user",
+			Detail:    "all passkeys cleared and password login enabled for user " + user.Username,
+			Succeeded: true,
+		})
+		fmt.Printf("Successfully cleared all passkeys and re-enabled password login for user %q\n", user.Username)
+		return nil
+
+	default:
+		return fmt.Errorf("unknown admin subcommand: %s (valid: reset-password, reset-passkeys)", subcmd)
+	}
 }

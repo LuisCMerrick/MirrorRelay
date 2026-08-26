@@ -64,6 +64,22 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		s.login(w, r)
 		return
 	}
+	if path == "/auth/passkey/status" && r.Method == http.MethodGet {
+		s.passkeyStatus(w, r)
+		return
+	}
+	if path == "/auth/passkey/login/options" && r.Method == http.MethodPost {
+		s.passkeyLoginOptions(w, r)
+		return
+	}
+	if path == "/auth/passkey/login/verify" && r.Method == http.MethodPost {
+		s.passkeyLoginVerify(w, r)
+		return
+	}
+	if path == "/auth/recovery/login" && r.Method == http.MethodPost {
+		s.recoveryLogin(w, r)
+		return
+	}
 	session, ok := s.sessions.Get(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
@@ -88,6 +104,20 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	case path == "/auth/password" && r.Method == http.MethodPut:
 		s.password(w, r, session)
+	case path == "/account/passkeys" && r.Method == http.MethodGet:
+		s.listAccountPasskeys(w, r, session)
+	case path == "/account/passkeys/register/options" && r.Method == http.MethodPost:
+		s.registerPasskeyOptions(w, r, session)
+	case path == "/account/passkeys/register/verify" && r.Method == http.MethodPost:
+		s.registerPasskeyVerify(w, r, session)
+	case strings.HasPrefix(path, "/account/passkeys/") && r.Method == http.MethodPut:
+		s.updatePasskey(w, r, session, strings.TrimPrefix(path, "/account/passkeys/"))
+	case strings.HasPrefix(path, "/account/passkeys/") && r.Method == http.MethodDelete:
+		s.deletePasskey(w, r, session, strings.TrimPrefix(path, "/account/passkeys/"))
+	case path == "/account/recovery/generate" && r.Method == http.MethodPost:
+		s.generateRecoveryCodes(w, r, session)
+	case path == "/account/security/password-login" && r.Method == http.MethodPut:
+		s.setPasswordLoginDisabled(w, r, session)
 	case path == "/webhooks/test" && r.Method == http.MethodPost:
 		s.testWebhook(w, r, session)
 	case path == "/users" && r.Method == http.MethodGet:
@@ -600,6 +630,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		_ = s.audit(r, in.Username, "login", "session", "invalid credentials", false)
 		time.Sleep(250 * time.Millisecond)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if user.PasswordLoginDisabled {
+		release(false)
+		_ = s.audit(r, in.Username, "login", "session", "password login disabled for account", false)
+		writeError(w, http.StatusForbidden, "password login is disabled for this account, please use Passkey or recovery code")
 		return
 	}
 	release(true)

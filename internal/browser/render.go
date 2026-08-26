@@ -278,6 +278,7 @@ func RenderHTML(listing *ParsedListing, repo model.Mirror, reqPath string, brand
 			<div class="header-right">
 				<input type="text" id="fileFilter" class="search-input" placeholder="Filter files..." oninput="filterTable()">
 				%s
+				<a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer" class="btn" style="border: 1px solid var(--mr-border); color: var(--mr-text);" title="GitHub Repository">GitHub</a>
 			</div>
 		</header>
 
@@ -303,7 +304,7 @@ func RenderHTML(listing *ParsedListing, repo model.Mirror, reqPath string, brand
 		</main>
 
 		<footer>
-			<p><a href="/">← Return to Repository Index / 返回镜像列表</a> &bull; Powered by %s</p>
+			<p><a href="/">← Return to Repository Index / 返回镜像列表</a> &bull; Powered by <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer">%s</a></p>
 		</footer>
 	</div>
 

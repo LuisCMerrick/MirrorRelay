@@ -517,3 +517,93 @@ func TestLoadClusterMutationTokenKeyFiles(t *testing.T) {
 		t.Fatal("malformed cluster key file was accepted")
 	}
 }
+
+func TestPasskeysAndRecoveryCodes(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	user, ok, err := store.CreateInitialAdmin(ctx, "admin", "hash")
+	if err != nil || !ok {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	// Create Passkey
+	pk := model.PasskeyCredential{
+		UserID:         user.ID,
+		CredentialID:   "cred-id-123",
+		PublicKey:      "pk-data-456",
+		SignCount:      0,
+		AAGUID:         "aaguid-789",
+		Transports:     []string{"internal", "usb"},
+		BackupEligible: true,
+		BackupState:    false,
+		DisplayName:    "My Security Key",
+	}
+	if err := store.CreatePasskey(ctx, pk); err != nil {
+		t.Fatalf("failed to create passkey: %v", err)
+	}
+
+	// Retrieve Passkey
+	loaded, err := store.GetPasskeyByCredentialID(ctx, "cred-id-123")
+	if err != nil {
+		t.Fatalf("failed to get passkey: %v", err)
+	}
+	if loaded.DisplayName != "My Security Key" || loaded.UserID != user.ID || len(loaded.Transports) != 2 {
+		t.Fatalf("loaded passkey mismatch: %+v", loaded)
+	}
+
+	// Update sign count
+	if err := store.UpdatePasskeySignCount(ctx, "cred-id-123", 5); err != nil {
+		t.Fatalf("failed to update sign count: %v", err)
+	}
+	loaded, _ = store.GetPasskeyByCredentialID(ctx, "cred-id-123")
+	if loaded.SignCount != 5 || loaded.LastUsedAt == nil {
+		t.Fatalf("expected sign count 5 and non-nil last_used_at, got: %+v", loaded)
+	}
+
+	// Rename passkey
+	if err := store.UpdatePasskeyDisplayName(ctx, loaded.ID, user.ID, "Renamed Key"); err != nil {
+		t.Fatalf("failed to rename passkey: %v", err)
+	}
+	loaded, _ = store.GetPasskeyByCredentialID(ctx, "cred-id-123")
+	if loaded.DisplayName != "Renamed Key" {
+		t.Fatalf("rename failed: %s", loaded.DisplayName)
+	}
+
+	// Recovery codes
+	hashes := []string{"hash1", "hash2", "hash3"}
+	if err := store.SaveRecoveryCodes(ctx, user.ID, hashes); err != nil {
+		t.Fatalf("failed to save recovery codes: %v", err)
+	}
+	count, err := store.CountValidRecoveryCodes(ctx, user.ID)
+	if err != nil || count != 3 {
+		t.Fatalf("expected 3 valid codes, got %d (err: %v)", count, err)
+	}
+
+	// Use recovery code
+	used, err := store.VerifyAndUseRecoveryCode(ctx, user.ID, "hash1")
+	if err != nil || !used {
+		t.Fatalf("failed to use recovery code: %v", err)
+	}
+	// Using again should fail
+	if _, err := store.VerifyAndUseRecoveryCode(ctx, user.ID, "hash1"); err == nil {
+		t.Fatal("reusing recovery code should fail")
+	}
+	count, _ = store.CountValidRecoveryCodes(ctx, user.ID)
+	if count != 2 {
+		t.Fatalf("expected 2 remaining codes, got %d", count)
+	}
+
+	// Delete passkey
+	if err := store.DeletePasskey(ctx, loaded.ID, user.ID); err != nil {
+		t.Fatalf("failed to delete passkey: %v", err)
+	}
+	total, err := store.CountPasskeysByUserID(ctx, user.ID)
+	if err != nil || total != 0 {
+		t.Fatalf("expected 0 passkeys after delete, got %d", total)
+	}
+}

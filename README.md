@@ -16,43 +16,34 @@ No full mirror synchronization required.
 ```
 
 ```text
-Client (apt / dnf / pip / npm / docker)
+Clients (apt / dnf / pip / npm / docker)
    │
    ▼
 External Shared Nginx (Ingress: 80 / 443)
-   │ (TCP 127.0.0.1:9081 by default / Unix socket 0660 when enabled)
-   ▼
-MirrorRelay (Go Control Plane & Router)
-   ├── Web UI & Management API (/admin/)
-   ├── Token Broker & Redirect Broker (Docker / OCI)
-   ├── Bounded Metadata & HTML Rewriter
-   ├── SQLite Persistent Desired State
-   └── Candidate Generator & Atomic Publication
-   │ (Unix socket 0660 by default / Loopback TCP when disabled)
-   ▼
-Managed Upstream Nginx (Dedicated Musl Data Plane)
-   ├── Proxy Cache & Content Store
-   ├── SSL Verification & DNS Pinning
-   └── Multi-Upstream Failover
    │
    ▼
-Original Upstreams (Debian, Ubuntu, Rocky, PyPI, Docker Hub, etc.)
+MirrorRelay (Go Control Plane & Router)
+   │
+   ▼
+Managed Upstream Nginx (Isolated Data Plane) ──► Original Upstreams
 ```
+
+![MirrorRelay Web UI Dashboard](docs/images/web-ui.jpg)
 
 ---
 
 ## Why MirrorRelay?
 
-Traditional repository setups require either **full mirror synchronization** or **manual Nginx `proxy_pass` rules**. MirrorRelay solves the fundamental drawbacks of both approaches:
+Common approaches include full mirror synchronization, repository managers, or manually maintained reverse-proxy configurations. MirrorRelay solves the fundamental drawbacks of these approaches:
 
 | Challenge | Full Mirror Sync (e.g. `apt-mirror`, `bandersnatch`) | Manual Nginx `proxy_pass` | MirrorRelay |
 |---|---|---|---|
 | **Storage Consumption** | Requires hundreds of gigabytes or terabytes upfront | Low (caches on demand) | **Low**: Pull-through on-demand disk cache |
 | **Initial Sync Delay** | Hours to days before first use | Zero delay | **Zero delay**: Immediate availability |
 | **Repository Management** | Complex sync scripts and cron jobs | Manual config editing and reloads | **Web UI & API**: Real-time CRUD with audit log |
-| **Docker / OCI Registry** | Difficult to mirror private/public registries | Breaks on Bearer token & CDN 302 redirects | **Built-in Token & Redirect Broker** |
-| **Data Plane Safety** | N/A | Syntax errors break entire web server | **Desired/Active separation** (`nginx -t` before atomic reload) |
-| **Upstream Security** | N/A | Vulnerable to SSRF and DNS rebinding | **Strict CIDR filtering, IP pinning & TLS SNI verification** |
+| **Docker / OCI Registry** | Difficult to mirror private/public registries | Requires additional handling for Bearer-token authentication and redirected blob downloads | **Built-in Token & Redirect Broker** |
+| **Configuration Lifecycle** | N/A | Validation/reload must be implemented operationally | **Built-in candidate validation and atomic publication** (`nginx -t` before reload) |
+| **Upstream Security** | N/A | Dynamic upstream configuration requires explicit SSRF and DNS-rebinding defenses | **Strict CIDR filtering, IP pinning & TLS SNI verification** |
 | **Multi-Node Routing** | Manual DNS / CDN configuration | Complex geo-DNS setup | **Coordinator / Edge distributed 307 routing** |
 
 ---
@@ -61,7 +52,7 @@ Traditional repository setups require either **full mirror synchronization** or 
 
 | Feature | Status | Details |
 |---|---|---|
-| **Package Repository Proxy & Cache** | ✅ Supported | APT, RPM/DNF, APK, OPKG, PyPI, npm, Maven, Cargo, Go Proxy, Conda |
+| **Package Repository Proxy & Cache** | ✅ Supported | APT, RPM/DNF, APK, OPKG, PyPI, npm, Maven, NuGet, Cargo, Go Proxy, Conda |
 | **Docker / OCI Registry Pull Proxy** | ✅ Supported | Full `/v2/` challenge handling, Token Brokerage, multi-upstream fallback, CDN redirect handling |
 | **Multi-Upstream Failover** | ✅ Supported | Automatic health checking, weight, priority, and backup upstream fallback |
 | **Desired / Active Separation** | ✅ Supported | Atomic configuration generation, `nginx -t` validation, and hitless graceful reload |
@@ -74,7 +65,7 @@ Traditional repository setups require either **full mirror synchronization** or 
 
 ## Target Compatibility
 
-| Ecosystem | Proxy Mode | Dynamic Cache | Metadata / URL Rewrite | Tested Client / OS |
+| Ecosystem | Proxy Mode | Dynamic Cache | Metadata / URL Rewrite | Verified Versions |
 |---|:---:|:---:|:---:|---|
 | **APT** | ✅ | ✅ | Optional HTML URL rewrite | Debian 11/12, Ubuntu 22.04/24.04 |
 | **RPM / DNF** | ✅ | ✅ | Optional HTML URL rewrite | Rocky Linux 8/9, AlmaLinux 9, Fedora 40/41 |
@@ -84,8 +75,11 @@ Traditional repository setups require either **full mirror synchronization** or 
 | **npm** | ✅ | ✅ | ✅ JSON Registry Metadata Rewrite | `npm` 9.x/10.x, `pnpm`, `yarn` |
 | **Go Modules** | ✅ | ✅ | N/A | Go 1.22/1.23/1.24 |
 | **Rust Cargo** | ✅ | ✅ | N/A | Cargo / `crates.io` index |
+| **NuGet** | ✅ | ✅ | Optional V3 Index Rewrite | `nuget.exe`, `dotnet` CLI |
 | **Maven / Gradle** | ✅ | ✅ | Optional HTML directory rewrite | Maven 3.8/3.9, Gradle 8.x |
 | **Docker / OCI** | ✅ Pull | ✅ Layers & Blobs | ✅ Token & S3/CDN Redirect Broker | Docker Engine 24.x/26.x/27.x, Podman 4.x/5.x |
+
+> *Versions listed here are explicitly tested; newer compatible versions may also work.*
 
 ---
 

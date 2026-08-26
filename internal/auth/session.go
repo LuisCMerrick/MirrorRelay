@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -249,12 +250,11 @@ func (l *LoginLimiter) Acquire(key string) (release func(success bool), allowed 
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	if len(l.items) > l.maxItems {
-		l.pruneLocked(now)
-	}
-
 	a := l.items[key]
 	if a == nil || now.Sub(a.start) > l.window {
+		if len(l.items) >= l.maxItems {
+			l.pruneLocked(now)
+		}
 		a = &attempt{start: now}
 		l.items[key] = a
 	}
@@ -304,9 +304,13 @@ func (l *LoginLimiter) Allowed(key string) bool {
 func (l *LoginLimiter) Failure(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	now := time.Now()
 	a := l.items[key]
-	if a == nil || time.Since(a.start) > l.window {
-		l.items[key] = &attempt{start: time.Now(), failures: 1}
+	if a == nil || now.Sub(a.start) > l.window {
+		if len(l.items) >= l.maxItems {
+			l.pruneLocked(now)
+		}
+		l.items[key] = &attempt{start: now, failures: 1}
 		return
 	}
 	a.failures++
@@ -319,9 +323,33 @@ func (l *LoginLimiter) Success(key string) {
 }
 
 func (l *LoginLimiter) pruneLocked(now time.Time) {
+	// Remove expired idle entries
 	for k, v := range l.items {
 		if now.Sub(v.start) > l.window && v.inFlight == 0 {
 			delete(l.items, k)
+		}
+	}
+	// If still at or over capacity, evict oldest entries
+	if len(l.items) >= l.maxItems {
+		type candidate struct {
+			key      string
+			start    time.Time
+			inFlight int
+		}
+		list := make([]candidate, 0, len(l.items))
+		for k, v := range l.items {
+			list = append(list, candidate{key: k, start: v.start, inFlight: v.inFlight})
+		}
+		sort.Slice(list, func(i, j int) bool {
+			// Prioritize evicting items with no in-flight requests first
+			if (list[i].inFlight == 0) != (list[j].inFlight == 0) {
+				return list[i].inFlight == 0
+			}
+			return list[i].start.Before(list[j].start)
+		})
+		toEvict := len(l.items) - l.maxItems + 1
+		for i := 0; i < len(list) && i < toEvict; i++ {
+			delete(l.items, list[i].key)
 		}
 	}
 }

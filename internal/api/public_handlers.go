@@ -252,9 +252,249 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	if themeAttr == "" {
 		themeAttr = "system"
 	}
+
+	customCSSLink := ""
+	if appearance.Enabled && appearance.CustomCSS.Enabled && appearance.CustomCSS.File != "" {
+		customCSSLink = `<link rel="stylesheet" href="/ui/custom.css">`
+	}
+
 	var body strings.Builder
-	fmt.Fprintf(&body, `<!doctype html><html lang="en" data-theme="%s"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s Repository Index</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:3rem auto;padding:0 1.25rem;color:#20242b}h1{margin-bottom:.25rem}p{color:#667085}table{width:100%%;border-collapse:collapse;margin-top:2rem}th,td{text-align:left;padding:.7rem;border-bottom:1px solid #dfe3e8}a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}code{font-family:ui-monospace,monospace}.btn-help{display:inline-block;padding:.2rem .5rem;font-size:12px;background:rgba(9,105,218,0.1);border-radius:4px;margin-left:.5rem}@media(prefers-color-scheme:dark){body{background:#11151b;color:#e6edf3}p{color:#9da7b3}th,td{border-color:#30363d}a{color:#58a6ff}}</style></head><body><h1>%s Repository Index</h1><p>Available repositories / 可用仓库</p><table><thead><tr><th>Repository / 仓库</th><th>Type / 类型</th><th>Description / 说明</th></tr></thead><tbody>`,
-		html.EscapeString(themeAttr), html.EscapeString(siteTitle), html.EscapeString(siteTitle))
+	fmt.Fprintf(&body, `<!doctype html>
+<html lang="zh-CN" data-theme="%s">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>%s - Repository Index / 镜像列表</title>
+	%s
+	<style>
+		:root {
+			--mr-primary: #2563eb;
+			--mr-primary-hover: #1d4ed8;
+			--mr-bg: #f8fafc;
+			--mr-surface: #ffffff;
+			--mr-text: #0f172a;
+			--mr-muted: #64748b;
+			--mr-border: #e2e8f0;
+			--mr-radius: 8px;
+		}
+		[data-theme="dark"] {
+			--mr-bg: #0f172a;
+			--mr-surface: #1e293b;
+			--mr-text: #f8fafc;
+			--mr-muted: #94a3b8;
+			--mr-border: #334155;
+			--mr-primary: #3b82f6;
+			--mr-primary-hover: #60a5fa;
+		}
+		@media (prefers-color-scheme: dark) {
+			[data-theme="system"] {
+				--mr-bg: #0f172a;
+				--mr-surface: #1e293b;
+				--mr-text: #f8fafc;
+				--mr-muted: #94a3b8;
+				--mr-border: #334155;
+				--mr-primary: #3b82f6;
+				--mr-primary-hover: #60a5fa;
+			}
+		}
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+			background: var(--mr-bg);
+			color: var(--mr-text);
+			margin: 0;
+			padding: 0;
+			line-height: 1.5;
+		}
+		.container {
+			max-width: 1140px;
+			margin: 2rem auto;
+			padding: 0 1.25rem;
+		}
+		header {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+			margin-bottom: 1.5rem;
+			padding-bottom: 1rem;
+			border-bottom: 1px solid var(--mr-border);
+		}
+		.header-left {
+			display: flex;
+			align-items: center;
+			gap: 1rem;
+		}
+		.site-brand {
+			font-size: 1.35rem;
+			font-weight: 700;
+			color: var(--mr-text);
+			text-decoration: none;
+		}
+		.header-right {
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+		}
+		.theme-select {
+			padding: 0.4rem 0.6rem;
+			border-radius: var(--mr-radius);
+			border: 1px solid var(--mr-border);
+			background: var(--mr-surface);
+			color: var(--mr-text);
+			font-size: 0.85rem;
+			cursor: pointer;
+		}
+		.github-link {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.35rem;
+			padding: 0.4rem 0.75rem;
+			border-radius: var(--mr-radius);
+			border: 1px solid var(--mr-border);
+			background: var(--mr-surface);
+			color: var(--mr-text);
+			text-decoration: none;
+			font-size: 0.85rem;
+			font-weight: 500;
+			transition: all 0.15s;
+		}
+		.github-link:hover {
+			border-color: var(--mr-primary);
+			color: var(--mr-primary);
+		}
+		.table-card {
+			background: var(--mr-surface);
+			border: 1px solid var(--mr-border);
+			border-radius: var(--mr-radius);
+			overflow: hidden;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+		}
+		table {
+			width: 100%%;
+			border-collapse: collapse;
+			text-align: left;
+		}
+		th, td {
+			padding: 0.85rem 1.25rem;
+			border-bottom: 1px solid var(--mr-border);
+		}
+		th {
+			background: rgba(0,0,0,0.02);
+			font-size: 0.8rem;
+			text-transform: uppercase;
+			color: var(--mr-muted);
+			letter-spacing: 0.05em;
+			font-weight: 600;
+		}
+		tr:last-child td {
+			border-bottom: none;
+		}
+		tr:hover td {
+			background: rgba(0,0,0,0.015);
+		}
+		.type-badge {
+			display: inline-block;
+			padding: 0.2rem 0.5rem;
+			font-size: 0.75rem;
+			font-weight: 600;
+			text-transform: uppercase;
+			background: rgba(37,99,235,0.08);
+			color: var(--mr-primary);
+			border-radius: 4px;
+		}
+		.btn-help {
+			display: inline-block;
+			padding: 0.25rem 0.55rem;
+			font-size: 0.8rem;
+			font-weight: 500;
+			background: rgba(37,99,235,0.1);
+			color: var(--mr-primary);
+			border-radius: 4px;
+			text-decoration: none;
+			margin-left: 0.5rem;
+			transition: all 0.15s;
+		}
+		.btn-help:hover {
+			background: var(--mr-primary);
+			color: #fff;
+		}
+		.repo-link {
+			color: var(--mr-primary);
+			text-decoration: none;
+			font-weight: 600;
+			font-size: 1rem;
+		}
+		.repo-link:hover {
+			text-decoration: underline;
+		}
+		code {
+			font-size: 0.85rem;
+			color: var(--mr-muted);
+			background: rgba(0,0,0,0.04);
+			padding: 0.15rem 0.35rem;
+			border-radius: 4px;
+		}
+		footer {
+			margin-top: 3rem;
+			text-align: center;
+			font-size: 0.85rem;
+			color: var(--mr-muted);
+		}
+		footer a {
+			color: var(--mr-muted);
+			text-decoration: none;
+		}
+		footer a:hover {
+			color: var(--mr-primary);
+		}
+	</style>
+	<script>
+		(function() {
+			var saved = localStorage.getItem('mr_public_theme');
+			if (saved) {
+				document.documentElement.setAttribute('data-theme', saved);
+			}
+		})();
+		function changeTheme(select) {
+			var val = select.value;
+			localStorage.setItem('mr_public_theme', val);
+			document.documentElement.setAttribute('data-theme', val);
+		}
+	</script>
+</head>
+<body>
+	<div class="container">
+		<header>
+			<div class="header-left">
+				<a href="/" class="site-brand">%s</a>
+			</div>
+			<div class="header-right">
+				<select class="theme-select" onchange="changeTheme(this)" aria-label="Theme">
+					<option value="system">Auto / 跟随系统</option>
+					<option value="light">Light / 浅色</option>
+					<option value="dark">Dark / 深色</option>
+				</select>
+				<a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer" class="github-link" title="GitHub Repository">
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+					GitHub
+				</a>
+			</div>
+		</header>
+
+		<main>
+			<div class="table-card">
+				<table>
+					<thead>
+						<tr>
+							<th>Repository / 仓库</th>
+							<th>Type / 类型</th>
+							<th>Description / 说明</th>
+						</tr>
+					</thead>
+					<tbody>`,
+		html.EscapeString(themeAttr), html.EscapeString(siteTitle), customCSSLink, html.EscapeString(siteTitle))
+
 	visible := 0
 	for _, repository := range repositories {
 		if !repository.Enabled || (repository.AccessPolicy == "admin" && !allowAdministrative) {
@@ -271,9 +511,13 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		helpBadge := ""
 		if repository.Help.Enabled && repository.Help.Template != "" {
-			helpBadge = fmt.Sprintf(`<a href="/help/%s/" class="btn-help" title="Help / 配置说明">Help</a>`, html.EscapeString(repository.Slug))
+			helpBadge = fmt.Sprintf(`<a href="/help/%s/" class="btn-help" title="Help / 配置说明">Help / 说明</a>`, html.EscapeString(repository.Slug))
 		}
-		fmt.Fprintf(&body, `<tr><td><a href="%s"><strong>%s</strong></a>%s<br><code>%s</code></td><td>%s</td><td>%s</td></tr>`,
+		fmt.Fprintf(&body, `<tr>
+			<td><a href="%s" class="repo-link">%s</a>%s<br><code>%s</code></td>
+			<td><span class="type-badge">%s</span></td>
+			<td>%s</td>
+		</tr>`,
 			html.EscapeString(href), html.EscapeString(repository.Name), helpBadge, html.EscapeString(label),
 			html.EscapeString(repository.Type), html.EscapeString(repository.Description))
 		visible++
@@ -281,7 +525,18 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	if visible == 0 {
 		body.WriteString(`<tr><td colspan="3">No repositories are currently available. / 当前没有可用仓库。</td></tr>`)
 	}
-	body.WriteString(`</tbody></table></body></html>`)
+	fmt.Fprintf(&body, `</tbody>
+				</table>
+			</div>
+		</main>
+
+		<footer>
+			<p>Powered by <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer">%s</a></p>
+		</footer>
+	</div>
+</body>
+</html>`, html.EscapeString(siteTitle))
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))

@@ -168,8 +168,9 @@ type HealthConfig struct {
 }
 
 type AdminConfig struct {
-	Host string `yaml:"host"`
-	Path string `yaml:"path"`
+	Host    string              `yaml:"host"`
+	Path    string              `yaml:"path"`
+	Passkey model.PasskeyConfig `yaml:"passkey"`
 }
 
 type ShutdownConfig struct {

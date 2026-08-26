@@ -635,3 +635,43 @@ security:
 		t.Fatalf("rollback did not restore previous value: got port %d", wsAfterRB.Server.LocalPort)
 	}
 }
+
+func TestPublicRepositoryIndexAndGitHubLinks(t *testing.T) {
+	cfg := config.Default()
+	registry := mirror.NewRegistry(nil)
+	registry.Replace([]model.Mirror{
+		{
+			ID:           1,
+			Name:         "Ubuntu",
+			Slug:         "ubuntu",
+			Type:         "apt",
+			PublicPath:   "/ubuntu/",
+			Description:  "Ubuntu Archive Mirror",
+			Enabled:      true,
+			AccessPolicy: "public",
+		},
+	})
+
+	srv := &Server{
+		cfg:      cfg,
+		registry: registry,
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	srv.repositoryIndex(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "https://github.com/LuisCMerrick/MirrorRelay") {
+		t.Fatalf("expected GitHub link in repository index HTML, got:\n%s", body)
+	}
+	if !strings.Contains(body, "theme-select") {
+		t.Fatalf("expected custom theme switcher in repository index HTML, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Ubuntu") || !strings.Contains(body, "/ubuntu/") {
+		t.Fatalf("expected Ubuntu repository listing in HTML, got:\n%s", body)
+	}
+}

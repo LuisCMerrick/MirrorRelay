@@ -236,7 +236,30 @@ CREATE TABLE IF NOT EXISTS setting_versions (
   settings_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_setting_versions_version ON setting_versions(version DESC);
-CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
+CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);
+CREATE TABLE IF NOT EXISTS passkey_credentials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key TEXT NOT NULL,
+  sign_count INTEGER NOT NULL DEFAULT 0,
+  aaguid TEXT NOT NULL DEFAULT '',
+  transports TEXT NOT NULL DEFAULT '[]',
+  backup_eligible INTEGER NOT NULL DEFAULT 0,
+  backup_state INTEGER NOT NULL DEFAULT 0,
+  display_name TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_user_id ON passkey_credentials(user_id);
+CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_user_id ON admin_recovery_codes(user_id);`
 	_, err := s.db.ExecContext(ctx, schema)
 	if err != nil {
 		return fmt.Errorf("migrate database: %w", err)
@@ -262,6 +285,9 @@ CREATE INDEX IF NOT EXISTS idx_warmup_mirror ON warmup_jobs(mirror_id);`
 		}
 	}
 	if err := s.ensureColumn(ctx, "users", "role", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "users", "password_login_disabled", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn(ctx, "sessions", "role", "TEXT NOT NULL DEFAULT 'admin'"); err != nil {

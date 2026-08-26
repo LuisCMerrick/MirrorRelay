@@ -77,6 +77,18 @@ type Store interface {
 	DeleteWarmupJob(context.Context, int64) error
 	UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error
 	UpdateWarmupJobSchedule(context.Context, int64, string) error
+	SetPasswordLoginDisabled(context.Context, int64, bool) error
+	CreatePasskey(context.Context, model.PasskeyCredential) error
+	GetPasskeyByCredentialID(context.Context, string) (model.PasskeyCredential, error)
+	ListPasskeysByUserID(context.Context, int64) ([]model.PasskeyCredential, error)
+	CountPasskeysByUserID(context.Context, int64) (int, error)
+	UpdatePasskeySignCount(context.Context, string, uint32) error
+	UpdatePasskeyDisplayName(context.Context, int64, int64, string) error
+	DeletePasskey(context.Context, int64, int64) error
+	DeleteAllPasskeysByUserID(context.Context, int64) error
+	SaveRecoveryCodes(context.Context, int64, []string) error
+	VerifyAndUseRecoveryCode(context.Context, int64, string) (bool, error)
+	CountValidRecoveryCodes(context.Context, int64) (int, error)
 }
 
 type Server struct {
@@ -96,6 +108,7 @@ type Server struct {
 	warmupEngine   *warmup.Engine
 	sessions       *auth.Sessions
 	loginLimiter   *auth.LoginLimiter
+	challengeMgr   *auth.ChallengeManager
 	adminCIDRs     security.CIDRList
 	trustedProxies security.CIDRList
 	webhook        *webhook.Dispatcher
@@ -142,6 +155,7 @@ func New(cfg, fileConfig config.Config, store Store, registry *mirror.Registry, 
 		checker:        checker,
 		sessions:       auth.NewSessionsWithPath(store, cfg.Security.SessionTimeout, cfg.Admin.Path),
 		loginLimiter:   auth.NewLoginLimiter(cfg.Security.LoginWindow, cfg.Security.LoginMaxFailures),
+		challengeMgr:   auth.NewChallengeManager(5 * time.Minute),
 		upstreamNginx:  upstreamNginx,
 		adminCIDRs:     cidrs,
 		trustedProxies: trustedProxies,

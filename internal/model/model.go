@@ -138,12 +138,43 @@ type CustomConfig struct {
 }
 
 type User struct {
-	ID           int64     `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                    int64     `json:"id"`
+	Username              string    `json:"username"`
+	PasswordHash          string    `json:"-"`
+	Role                  string    `json:"role"`
+	PasswordLoginDisabled bool      `json:"password_login_disabled"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type PasskeyCredential struct {
+	ID             int64      `json:"id"`
+	UserID         int64      `json:"user_id"`
+	CredentialID   string     `json:"credential_id"`
+	PublicKey      string     `json:"public_key"`
+	SignCount      uint32     `json:"sign_count"`
+	AAGUID         string     `json:"aaguid,omitempty"`
+	Transports     []string   `json:"transports,omitempty"`
+	BackupEligible bool       `json:"backup_eligible"`
+	BackupState    bool       `json:"backup_state"`
+	DisplayName    string     `json:"display_name"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
+}
+
+type RecoveryCode struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	CodeHash  string     `json:"-"`
+	CreatedAt time.Time  `json:"created_at"`
+	UsedAt    *time.Time `json:"used_at,omitempty"`
+}
+
+type PasskeyConfig struct {
+	Enabled bool     `json:"enabled" yaml:"enabled"`
+	RPName  string   `json:"rp_name,omitempty" yaml:"rp_name,omitempty"`
+	RPID    string   `json:"rp_id,omitempty" yaml:"rp_id,omitempty"`
+	Origins []string `json:"origins,omitempty" yaml:"origins,omitempty"`
 }
 
 type WebhookConfig struct {
