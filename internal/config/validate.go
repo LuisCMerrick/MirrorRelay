@@ -115,23 +115,29 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid trusted proxy CIDR %q: %w", cidr, err)
 		}
 	}
-	if c.Admin.Passkey.Enabled {
-		if c.Admin.Passkey.RPName == "" {
-			c.Admin.Passkey.RPName = "MirrorRelay"
+	if len(c.Admin.Passkey.RPName) > 128 {
+		return errors.New("admin.passkey.rp_name must not exceed 128 bytes")
+	}
+	if c.Admin.Passkey.RPID != "" && !validWebAuthnRPID(c.Admin.Passkey.RPID) {
+		return errors.New("admin.passkey.rp_id must be a lowercase hostname or IP address without scheme, port, path or trailing dot")
+	}
+	seenOrigins := make(map[string]bool, len(c.Admin.Passkey.Origins))
+	for _, origin := range c.Admin.Passkey.Origins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || !validURLAuthority(u.Host) {
+			return fmt.Errorf("admin.passkey origin %q must contain only an http or https scheme and authority", origin)
 		}
-		if c.Admin.Passkey.RPID != "" {
-			if strings.Contains(c.Admin.Passkey.RPID, "/") || strings.Contains(c.Admin.Passkey.RPID, ":") {
-				return errors.New("admin.passkey.rp_id must be a valid hostname without scheme, port or path")
-			}
+		host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+		if host == "" || (u.Scheme == "http" && !isLoopbackHostname(host)) {
+			return fmt.Errorf("admin.passkey origin %q must use https except on a loopback host", origin)
 		}
-		for _, origin := range c.Admin.Passkey.Origins {
-			if origin == "*" {
-				return errors.New("admin.passkey.origins cannot be wildcard (*)")
-			}
-			u, err := url.Parse(origin)
-			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-				return fmt.Errorf("invalid admin.passkey origin %q", origin)
-			}
+		canonical := strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host)
+		if seenOrigins[canonical] {
+			return fmt.Errorf("duplicate admin.passkey origin %q", origin)
+		}
+		seenOrigins[canonical] = true
+		if c.Admin.Passkey.RPID != "" && !webAuthnHostMatchesRPID(host, c.Admin.Passkey.RPID) {
+			return fmt.Errorf("admin.passkey origin host %q is outside rp_id %q", host, c.Admin.Passkey.RPID)
 		}
 	}
 	if c.TLS.MinVersion != "1.2" && c.TLS.MinVersion != "1.3" {
@@ -332,11 +338,45 @@ func ValidateUIEnhancement(c *model.UIEnhancementConfig) error {
 	if c.Branding.Title == "" {
 		c.Branding.Title = "MirrorRelay"
 	}
+	if len(c.Branding.Title) > 128 {
+		return errors.New("ui_enhancement.branding.title must be at most 128 characters")
+	}
+	if err := validateBrandAssetPath("ui_enhancement.branding.logo", c.Branding.Logo); err != nil {
+		return err
+	}
+	if err := validateBrandAssetPath("ui_enhancement.branding.favicon", c.Branding.Favicon); err != nil {
+		return err
+	}
 	if c.Login.Title == "" {
 		c.Login.Title = "MirrorRelay"
 	}
+	if len(c.Login.Title) > 128 {
+		return errors.New("ui_enhancement.login.title must be at most 128 characters")
+	}
+	if len(c.Login.Subtitle) > 256 {
+		return errors.New("ui_enhancement.login.subtitle must be at most 256 characters")
+	}
 	if c.CustomCSS.Enabled && c.CustomCSS.File == "" {
 		c.CustomCSS.File = "/var/lib/mirrorrelay/ui/custom.css"
+	}
+	if c.CustomCSS.File != "" {
+		if len(c.CustomCSS.File) > 4096 || !filepath.IsAbs(c.CustomCSS.File) || filepath.Clean(c.CustomCSS.File) != c.CustomCSS.File || filepath.Ext(c.CustomCSS.File) != ".css" || strings.ContainsAny(c.CustomCSS.File, "\x00\r\n\t") {
+			return errors.New("ui_enhancement.custom_css.file must be a clean absolute path ending in .css")
+		}
+	}
+	return nil
+}
+
+func validateBrandAssetPath(name, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if len(raw) > 2048 || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.ContainsAny(raw, "\\\r\n\t") {
+		return fmt.Errorf("%s must be an optional same-origin absolute path", name)
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" || parsed.Path == "" {
+		return fmt.Errorf("%s must be an optional same-origin absolute path", name)
 	}
 	return nil
 }
@@ -346,7 +386,7 @@ func validHexColor(v string) bool {
 		return false
 	}
 	hexStr := strings.TrimPrefix(v, "#")
-	if len(hexStr) != 3 && len(hexStr) != 6 && len(hexStr) != 8 {
+	if len(hexStr) != 3 && len(hexStr) != 6 {
 		return false
 	}
 	for _, ch := range hexStr {
@@ -398,6 +438,45 @@ func validWorkerUser(value string) bool {
 
 func safeNginxPath(value string) bool {
 	return value != "" && !strings.ContainsAny(value, "\x00\r\n\t {};'\"")
+}
+
+func validWebAuthnRPID(value string) bool {
+	if value == "" || value != strings.TrimSpace(value) || value != strings.ToLower(value) || strings.HasSuffix(value, ".") || len(value) > 253 {
+		return false
+	}
+	if ip := net.ParseIP(value); ip != nil {
+		return true
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func isLoopbackHostname(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+func webAuthnHostMatchesRPID(host, rpID string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	rpID = strings.ToLower(strings.TrimSuffix(rpID, "."))
+	if rpIP := net.ParseIP(rpID); rpIP != nil {
+		hostIP := net.ParseIP(host)
+		return hostIP != nil && hostIP.Equal(rpIP)
+	}
+	return host == rpID || strings.HasSuffix(host, "."+rpID)
 }
 
 func parseSocketMode(value string) (os.FileMode, error) {

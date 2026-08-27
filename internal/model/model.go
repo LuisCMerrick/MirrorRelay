@@ -116,7 +116,7 @@ type SettingVersion struct {
 	Source      string    `json:"source"`
 	Description string    `json:"description"`
 	DiffSummary string    `json:"diff_summary"`
-	Settings    string    `json:"settings,omitempty"`
+	Settings    string    `json:"-"`
 }
 
 type SettingDiffEntry struct {

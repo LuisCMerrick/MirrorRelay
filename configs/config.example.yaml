@@ -78,6 +78,11 @@ health:
 admin:
   host: ""
   path: /admin/
+  passkey:
+    enabled: false
+    rp_name: MirrorRelay
+    rp_id: ""
+    origins: []
 shutdown:
   grace_period: 30m
 upstream_nginx:

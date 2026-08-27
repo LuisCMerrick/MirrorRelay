@@ -1,12 +1,13 @@
 // Settings page: schema-driven form for the SQLite-backed operational
 // settings that override matching YAML values after restart.
-import { api } from '../api.js';
+import { api, apiResponse } from '../api.js';
 import { kv } from '../components.js';
-import { $, esc, notice } from '../dom.js';
+import { $, copyText, esc, notice } from '../dom.js';
 import { nestedValue, parseList, setNestedValue } from '../forms.js';
 import { icon } from '../icons.js';
-import { getLocale, L } from '../i18n.js';
+import { L } from '../i18n.js';
 import { triggerRestart } from '../restart.js';
+import { settingsGroups } from '../settings-schema.js';
 
 const webhookTestProviders = {
   configured: {
@@ -43,6 +44,8 @@ const webhookTestProviders = {
     help: 'Hosts not recognized as a built-in provider receive the standard MirrorRelay JSON payload.'
   }
 };
+
+let previewedImportYAML = null;
 
 function webhookProviderOptions() {
   return Object.entries(webhookTestProviders)
@@ -82,22 +85,30 @@ function webhookTestPayload() {
   return { url: value, secret: $('#webhook-test-secret').value };
 }
 
-function settingsInput(field, settings) {
+function fileOnlySetting(path, fileOnlyPaths) {
+  return fileOnlyPaths.some(rule => rule === path || (rule.endsWith('.*') && path.startsWith(rule.slice(0, -1))));
+}
+
+function settingsInput(field, settings, fileOnlyPaths) {
   const value = nestedValue(settings, field.path);
-  const label = field.label;
-  const attributes = `data-setting-path="${esc(field.path)}" data-setting-type="${esc(field.valueType || field.type)}"`;
+  const label = L(field.label);
+  const fileOnly = fileOnlySetting(field.path, fileOnlyPaths);
+  const redacted = value === '[REDACTED]';
+  const attributes = `data-setting-path="${esc(field.path)}" data-setting-type="${esc(field.valueType || field.type)}"${redacted ? ' data-redacted="true"' : ''}${fileOnly ? ' disabled aria-disabled="true"' : ''}`;
+  const help = fileOnly ? `<small class="field-help">${L('Configured only through YAML or environment variables because it is needed before the settings database opens.')}</small>` : '';
   if (field.type === 'boolean') {
-    return `<label class="check"><input type="checkbox" ${attributes}${value ? ' checked' : ''}><span>${esc(label)}</span></label>`;
+    return `<label class="check${fileOnly ? ' setting-file-only' : ''}"><input type="checkbox" ${attributes}${value ? ' checked' : ''}><span>${esc(label)}</span>${help}</label>`;
   }
   if (field.type === 'select') {
-    const options = field.options.map(option => `<option value="${esc(option[0])}"${String(option[0]) === String(value) ? ' selected' : ''}>${esc(option[1])}</option>`).join('');
-    return `<label><span>${esc(label)}</span><select ${attributes}>${options}</select></label>`;
+    const options = field.options.map(option => `<option value="${esc(option[0])}"${String(option[0]) === String(value) ? ' selected' : ''}>${esc(L(option[1]))}</option>`).join('');
+    return `<label class="${fileOnly ? 'setting-file-only' : ''}"><span>${esc(label)}</span><select ${attributes}>${options}</select>${help}</label>`;
   }
   if (field.type === 'list') {
-    return `<label class="wide"><span>${esc(label)}</span><textarea rows="3" ${attributes}>${esc((value || []).join('\n'))}</textarea></label>`;
+    return `<label class="wide${fileOnly ? ' setting-file-only' : ''}"><span>${esc(label)}</span><textarea rows="3" ${attributes}>${esc((value || []).join('\n'))}</textarea>${help}</label>`;
   }
   const limits = `${field.min !== undefined ? ` min="${field.min}"` : ''}${field.max !== undefined ? ` max="${field.max}"` : ''}`;
-  return `<label><span>${esc(label)}</span><input type="${field.type}" value="${esc(value ?? '')}" placeholder="${esc(field.placeholder || '')}" ${attributes}${limits}></label>`;
+  const placeholder = redacted ? L('Configured; leave blank to keep the current value') : (field.placeholder || '');
+  return `<label class="${fileOnly ? 'setting-file-only' : ''}"><span>${esc(label)}</span><input type="${field.type}" value="${redacted ? '' : esc(value ?? '')}" placeholder="${esc(placeholder)}" ${attributes}${limits}>${help}</label>`;
 }
 
 function renderClientNetworksManager(networks) {
@@ -111,12 +122,12 @@ function renderClientNetworksManager(networks) {
   `).join('');
 
   return `
-    <div class="wide" style="margin-top: 1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+    <div class="wide mapping-manager">
+      <div class="mapping-manager-header">
         <strong>${L('Client network routing mappings')}</strong>
         <button type="button" class="secondary btn-sm" id="add-net-row-btn">${icon('plus', 12)} ${L('Add mapping')}</button>
       </div>
-      <table class="data-table" id="client-networks-table">
+      <div class="table-responsive"><table class="data-table" id="client-networks-table">
         <thead>
           <tr>
             <th>${L('CIDR')}</th>
@@ -125,9 +136,9 @@ function renderClientNetworksManager(networks) {
           </tr>
         </thead>
         <tbody id="client-networks-tbody">
-          ${rows || `<tr><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
+          ${rows || `<tr class="mapping-empty-row"><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
         </tbody>
-      </table>
+      </table></div>
     </div>
   `;
 }
@@ -143,12 +154,12 @@ function renderRegionsManager(regions) {
   `).join('');
 
   return `
-    <div class="wide" style="margin-top: 1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+    <div class="wide mapping-manager">
+      <div class="mapping-manager-header">
         <strong>${L('Region country mappings')}</strong>
         <button type="button" class="secondary btn-sm" id="add-reg-row-btn">${icon('plus', 12)} ${L('Add mapping')}</button>
       </div>
-      <table class="data-table" id="regions-table">
+      <div class="table-responsive"><table class="data-table" id="regions-table">
         <thead>
           <tr>
             <th>${L('Region Code')}</th>
@@ -157,9 +168,9 @@ function renderRegionsManager(regions) {
           </tr>
         </thead>
         <tbody id="regions-tbody">
-          ${rows || `<tr><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
+          ${rows || `<tr class="mapping-empty-row"><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`}
         </tbody>
-      </table>
+      </table></div>
     </div>
   `;
 }
@@ -202,8 +213,7 @@ function parseRegionsTable() {
 export async function loadSettings() {
   const response = await api('/settings');
   const settings = response.settings;
-  const loc = getLocale();
-  const settingsGroups = loc.settingsGroups || [];
+  const fileOnlyPaths = response.file_only || [];
 
   const restart = response.restart_required
     ? `<div class="notice error">
@@ -219,7 +229,7 @@ export async function loadSettings() {
 
   const groups = settingsGroups.map((group, index) => {
     let extraHTML = '';
-    if (group.title && (group.title.includes('Distributed') || group.title.includes('分布式'))) {
+    if (group.fields.some(field => field.path.startsWith('distributed.'))) {
       const networks = settings.distributed?.routing?.client_networks || [];
       const regions = settings.distributed?.routing?.regions || [];
       extraHTML = renderClientNetworksManager(networks) + renderRegionsManager(regions);
@@ -231,13 +241,13 @@ export async function loadSettings() {
       <details class="disclosure-panel settings-section"${index === 0 ? ' open' : ''}>
         <summary>
           <span class="disclosure-heading">
-            <span class="disclosure-title">${icon('settings', 17)} ${esc(group.title)}</span>
-            <span class="${badgeClass}" style="margin-left: 0.5rem; font-size: 0.75rem;">${badgeText}</span>
+            <span class="disclosure-title">${icon('settings', 17)} ${esc(L(group.title))}</span>
+            <span class="${badgeClass} settings-effect-badge">${badgeText}</span>
           </span>
           <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
         </summary>
         <div class="disclosure-content form-grid">
-          ${group.fields.map(field => settingsInput(field, settings)).join('')}
+          ${group.fields.map(field => settingsInput(field, settings, fileOnlyPaths)).join('')}
           ${extraHTML}
         </div>
       </details>
@@ -247,13 +257,13 @@ export async function loadSettings() {
   $('#page-settings').innerHTML = `
     ${restart}
     <div class="panel">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+      <div class="settings-overview-header">
         <div>
           <h2>${icon('settings', 18)} ${L('Operational settings')}</h2>
-          <p>${L('These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.')}</p>
+          <p>${L('These operational settings are stored in SQLite and strictly validated. Environment variables remain highest priority, followed by the Web UI override and YAML. Saved operational changes take effect after restart; repository changes continue to use the Desired/Active validation workflow.')}</p>
           ${kv(L('Source'), response.source === 'web_ui' ? L('Web UI override') : L('Configuration file'))}
         </div>
-        <div class="actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <div class="actions settings-overview-actions">
           <button type="button" class="secondary" id="export-settings-btn">${icon('download', 13)} ${L('Export configuration')}</button>
           <button type="button" class="secondary" id="import-settings-btn">${icon('upload', 13)} ${L('Import configuration')}</button>
           <button type="button" class="secondary" id="history-settings-btn">${icon('history', 13)} ${L('Configuration history')}</button>
@@ -261,8 +271,8 @@ export async function loadSettings() {
       </div>
     </div>
 
-    <div id="history-panel" class="panel hidden" style="margin-bottom: 1.5rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+    <div id="history-panel" class="panel settings-history-panel hidden">
+      <div class="settings-history-header">
         <h2>${icon('history', 18)} ${L('Configuration Version History')}</h2>
         <button type="button" class="secondary btn-sm" id="close-history-btn">${L('Close')}</button>
       </div>
@@ -288,7 +298,7 @@ export async function loadSettings() {
     <form id="settings-form" class="settings-form">
       ${groups}
       <footer>
-        <div id="settings-error" class="error"></div>
+        <div id="settings-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="reset-settings">${icon('refresh', 13)} ${L('Reset to YAML after restart')}</button>
         <button type="button" class="secondary" id="restart-settings-btn">${icon('restart', 13)} ${L('Restart MirrorRelay')}</button>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Validate and save')}</button>
@@ -324,11 +334,21 @@ export async function loadSettings() {
       </form>
     </div>`;
 
-  // Attach Table Row Event Listeners for Client Networks & Regions
+  function removeMappingPlaceholder(tbody) {
+    tbody.querySelector('.mapping-empty-row')?.remove();
+  }
+
+  function restoreMappingPlaceholder(tbody) {
+    if (tbody.querySelector('input')) return;
+    tbody.innerHTML = `<tr class="mapping-empty-row"><td colspan="3" class="muted">${L('No mappings configured')}</td></tr>`;
+  }
+
+  // Attach table row controls for client networks and regions.
   const addNetBtn = $('#add-net-row-btn');
   if (addNetBtn) {
     addNetBtn.addEventListener('click', () => {
       const tbody = $('#client-networks-tbody');
+      removeMappingPlaceholder(tbody);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" class="net-cidr" placeholder="10.0.0.0/8"></td>
@@ -343,6 +363,7 @@ export async function loadSettings() {
   if (addRegBtn) {
     addRegBtn.addEventListener('click', () => {
       const tbody = $('#regions-tbody');
+      removeMappingPlaceholder(tbody);
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><input type="text" class="reg-code" placeholder="ap-east"></td>
@@ -353,12 +374,16 @@ export async function loadSettings() {
     });
   }
 
-  document.addEventListener('click', e => {
+  $('#settings-form').addEventListener('click', e => {
     if (e.target.closest('.remove-net-row')) {
+      const tbody = $('#client-networks-tbody');
       e.target.closest('tr').remove();
+      restoreMappingPlaceholder(tbody);
     }
     if (e.target.closest('.remove-reg-row')) {
+      const tbody = $('#regions-tbody');
       e.target.closest('tr').remove();
+      restoreMappingPlaceholder(tbody);
     }
   });
 
@@ -373,8 +398,12 @@ export async function loadSettings() {
     exportBtn.addEventListener('click', () => {
       $('#export-mode-standard').checked = true;
       $('#export-full-warning').classList.add('hidden');
+      $('#export-error').textContent = '';
       exportDialog.showModal();
     });
+  }
+  if (exportDialog && !exportDialog.dataset.bound) {
+    exportDialog.dataset.bound = 'true';
     if (closeExportDialog) closeExportDialog.addEventListener('click', () => exportDialog.close());
 
     $('#export-mode-standard').addEventListener('change', () => {
@@ -389,10 +418,10 @@ export async function loadSettings() {
         const fullBackup = $('#export-mode-full').checked;
         const endpoint = `/settings/export?full_backup=${fullBackup}`;
         try {
-          const res = await fetch(api.baseURL + endpoint, {
-            headers: api.headers()
-          });
-          if (!res.ok) throw new Error('Export failed: ' + res.statusText);
+          downloadYamlBtn.disabled = true;
+          downloadYamlBtn.setAttribute('aria-busy', 'true');
+          $('#export-error').textContent = '';
+          const res = await apiResponse(endpoint, { method: fullBackup ? 'POST' : 'GET' });
           const blob = await res.blob();
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -405,7 +434,11 @@ export async function loadSettings() {
           exportDialog.close();
           notice(L('Downloaded YAML configuration.'));
         } catch (err) {
-          alert(err.message);
+          $('#export-error').textContent = err.message;
+          $('#export-error').focus();
+        } finally {
+          downloadYamlBtn.disabled = false;
+          downloadYamlBtn.removeAttribute('aria-busy');
         }
       });
     }
@@ -415,16 +448,20 @@ export async function loadSettings() {
         const fullBackup = $('#export-mode-full').checked;
         const endpoint = `/settings/export?full_backup=${fullBackup}`;
         try {
-          const res = await fetch(api.baseURL + endpoint, {
-            headers: api.headers()
-          });
-          if (!res.ok) throw new Error('Export failed: ' + res.statusText);
+          copyYamlBtn.disabled = true;
+          copyYamlBtn.setAttribute('aria-busy', 'true');
+          $('#export-error').textContent = '';
+          const res = await apiResponse(endpoint, { method: fullBackup ? 'POST' : 'GET' });
           const text = await res.text();
-          await navigator.clipboard.writeText(text);
+          await copyText(text);
           notice(L('YAML copied to clipboard.'));
           exportDialog.close();
         } catch (err) {
-          alert(err.message);
+          $('#export-error').textContent = err.message;
+          $('#export-error').focus();
+        } finally {
+          copyYamlBtn.disabled = false;
+          copyYamlBtn.removeAttribute('aria-busy');
         }
       });
     }
@@ -445,6 +482,7 @@ export async function loadSettings() {
 
   if (importBtn && importDialog) {
     importBtn.addEventListener('click', () => {
+      previewedImportYAML = null;
       importYamlText.value = '';
       importFileInput.value = '';
       importDiffContainer.classList.add('hidden');
@@ -452,16 +490,37 @@ export async function loadSettings() {
       importError.textContent = '';
       importDialog.showModal();
     });
+  }
+  if (importDialog && !importDialog.dataset.bound) {
+    importDialog.dataset.bound = 'true';
+    const invalidateImportPreview = () => {
+      previewedImportYAML = null;
+      importDiffContainer.classList.add('hidden');
+      importApplyBtn.classList.add('hidden');
+    };
+    const showImportError = message => {
+      importError.textContent = message;
+      if (message) importError.focus();
+    };
     if (closeImportDialog) closeImportDialog.addEventListener('click', () => importDialog.close());
+
+    importYamlText.addEventListener('input', invalidateImportPreview);
 
     if (importFileInput) {
       importFileInput.addEventListener('change', e => {
         const file = e.target.files[0];
         if (file) {
+          if (file.size > 1024 * 1024) {
+            invalidateImportPreview();
+            showImportError(L('YAML files must not exceed 1 MiB.'));
+            return;
+          }
           const reader = new FileReader();
           reader.onload = ev => {
             importYamlText.value = ev.target.result;
+            invalidateImportPreview();
           };
+          reader.onerror = () => showImportError(L('Unable to read the selected YAML file.'));
           reader.readAsText(file);
         }
       });
@@ -469,14 +528,19 @@ export async function loadSettings() {
 
     if (importPreviewBtn) {
       importPreviewBtn.addEventListener('click', async () => {
-        importError.textContent = '';
+        showImportError('');
         const yaml = importYamlText.value.trim();
         if (!yaml) {
-          importError.textContent = L('Enter or upload YAML configuration content.');
+          showImportError(L('Enter or upload YAML configuration content.'));
+          return;
+        }
+        if (new TextEncoder().encode(yaml).length > 1024 * 1024) {
+          showImportError(L('YAML files must not exceed 1 MiB.'));
           return;
         }
         try {
           importPreviewBtn.disabled = true;
+          importPreviewBtn.setAttribute('aria-busy', 'true');
           const res = await api('/settings/import/preview', {
             method: 'POST',
             body: JSON.stringify({ yaml })
@@ -491,26 +555,35 @@ export async function loadSettings() {
             `).join('') || `<tr><td colspan="3" class="muted">${L('No changes detected')}</td></tr>`;
 
             importDiffSummary.innerHTML = `<strong>${esc(res.summary)}</strong> · ${res.restart_required ? L('Restart required') : L('Immediate')}`;
+            previewedImportYAML = yaml;
             importDiffContainer.classList.remove('hidden');
             importApplyBtn.classList.remove('hidden');
           }
         } catch (err) {
-          importError.textContent = err.message;
+          previewedImportYAML = null;
+          showImportError(err.message);
           importDiffContainer.classList.add('hidden');
           importApplyBtn.classList.add('hidden');
         } finally {
           importPreviewBtn.disabled = false;
+          importPreviewBtn.removeAttribute('aria-busy');
         }
       });
     }
 
     if (importApplyBtn) {
       importApplyBtn.addEventListener('click', async () => {
-        importError.textContent = '';
+        showImportError('');
         const yaml = importYamlText.value.trim();
         if (!yaml) return;
+        if (yaml !== previewedImportYAML) {
+          invalidateImportPreview();
+          showImportError(L('The YAML changed after validation. Validate and preview it again before applying.'));
+          return;
+        }
         try {
           importApplyBtn.disabled = true;
+          importApplyBtn.setAttribute('aria-busy', 'true');
           const res = await api('/settings/import', {
             method: 'POST',
             body: JSON.stringify({ yaml })
@@ -519,9 +592,10 @@ export async function loadSettings() {
           importDialog.close();
           await loadSettings();
         } catch (err) {
-          importError.textContent = err.message;
+          showImportError(err.message);
         } finally {
           importApplyBtn.disabled = false;
+          importApplyBtn.removeAttribute('aria-busy');
         }
       });
     }
@@ -560,11 +634,19 @@ export async function loadSettings() {
           const ver = btn.dataset.version;
           if (!confirm(L('Confirm rollback to version %s?', ver))) return;
           try {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
             const res = await api(`/settings/history/${ver}/rollback`, { method: 'POST' });
             notice(res.restart_required ? L('Configuration saved. Restart MirrorRelay to take effect.') : L('Configuration rolled back successfully.'));
             await loadSettings();
           } catch (err) {
-            alert(err.message);
+            $('#settings-error').textContent = err.message;
+            $('#settings-error').focus();
+          } finally {
+            if (btn.isConnected) {
+              btn.disabled = false;
+              btn.removeAttribute('aria-busy');
+            }
           }
         });
       });
@@ -602,6 +684,7 @@ export async function loadSettings() {
       $('#webhook-test-error').textContent = '';
       try {
         webhookTestBtn.disabled = true;
+        webhookTestBtn.setAttribute('aria-busy', 'true');
         await api('/webhooks/test', {
           method: 'POST',
           body: JSON.stringify(webhookTestPayload())
@@ -609,16 +692,22 @@ export async function loadSettings() {
         notice(L('Test Webhook notification delivered successfully.'));
       } catch (err) {
         $('#webhook-test-error').textContent = err.message;
+        $('#webhook-test-error').setAttribute('tabindex', '-1');
+        $('#webhook-test-error').focus();
       } finally {
         webhookTestBtn.disabled = false;
+        webhookTestBtn.removeAttribute('aria-busy');
       }
     });
   }
 
   $('#settings-form').addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    $('#settings-error').textContent = '';
     const next = JSON.parse(JSON.stringify(settings));
     event.target.querySelectorAll('[data-setting-path]').forEach(input => {
+      if (input.disabled) return;
       let value;
       if (input.dataset.settingType === 'boolean') value = input.checked;
       else if (input.dataset.settingType === 'number') value = Number(input.value);
@@ -636,22 +725,37 @@ export async function loadSettings() {
     next.distributed.routing.regions = regions;
 
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       const saved = await api('/settings', {method: 'PUT', body: JSON.stringify(next)});
       notice(saved.restart_required ? L('Configuration saved. Restart MirrorRelay to take effect.') : L('Settings already match the running process.'));
       await loadSettings();
     } catch (error) {
       $('#settings-error').textContent = error.message;
+      $('#settings-error').focus();
+    } finally {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
     }
   });
 
-  $('#reset-settings').addEventListener('click', async () => {
+  $('#reset-settings').addEventListener('click', async event => {
     if (!confirm(L('Discard the Web UI override and restore YAML values after restart?'))) return;
+    const button = event.currentTarget;
     try {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
       await api('/settings', {method: 'DELETE'});
       notice(L('Web UI override removed; restart MirrorRelay.'));
       await loadSettings();
     } catch (error) {
       $('#settings-error').textContent = error.message;
+      $('#settings-error').focus();
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
     }
   });
 }

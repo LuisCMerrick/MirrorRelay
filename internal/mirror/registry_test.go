@@ -112,8 +112,31 @@ func TestCompilePackagePolicyValidatesBoundsAndPrecompiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if repository.PackagePolicy == nil || len(repository.PackagePolicy.Blocked) != 2 ||
-		repository.PackagePolicy.Blocked[0].Regexp == nil || !repository.PackagePolicy.Blocked[1].Glob {
+		repository.PackagePolicy.Blocked[0].Regexp == nil || repository.PackagePolicy.Blocked[0].Glob ||
+		!repository.PackagePolicy.Blocked[1].Glob || repository.PackagePolicy.Blocked[1].Regexp != nil {
 		t.Fatalf("package policy was not precompiled: %+v", repository.PackagePolicy)
+	}
+	alternation := model.Mirror{AllowedPackages: []string{"^trusted|safe$"}}
+	if err := CompilePackagePolicy(&alternation); err != nil {
+		t.Fatal(err)
+	}
+	expression := alternation.PackagePolicy.Allowed[0].Regexp
+	for _, bypass := range []string{"trusted-extra", "unsafe", "prefix-safe"} {
+		if expression.MatchString(bypass) {
+			t.Fatalf("anchored alternation matched bypass value %q", bypass)
+		}
+	}
+	for _, exact := range []string{"trusted", "safe"} {
+		if !expression.MatchString(exact) {
+			t.Fatalf("anchored alternation did not match %q", exact)
+		}
+	}
+	ambiguous := model.Mirror{AllowedPackages: []string{"numpy*"}}
+	if err := CompilePackagePolicy(&ambiguous); err != nil {
+		t.Fatal(err)
+	}
+	if !ambiguous.PackagePolicy.Allowed[0].Glob || ambiguous.PackagePolicy.Allowed[0].Regexp != nil {
+		t.Fatalf("unanchored wildcard was not compiled exclusively as a glob: %+v", ambiguous.PackagePolicy.Allowed[0])
 	}
 
 	for _, patterns := range [][]string{{"["}, {""}, {strings.Repeat("a", maxPackagePatternBytes+1)}} {

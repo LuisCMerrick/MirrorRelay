@@ -17,6 +17,18 @@ import (
 
 const WebSettingsKey = "web_settings_v1"
 
+var webSettingsFileOnlyPaths = []string{
+	"database.path",
+	"distributed.mutation_token_key_files",
+}
+
+// WebSettingsFileOnlyPaths returns bootstrap settings that must be loaded
+// before the settings database can be opened. They cannot be overridden by a
+// value stored in that same database.
+func WebSettingsFileOnlyPaths() []string {
+	return append([]string{}, webSettingsFileOnlyPaths...)
+}
+
 type WebSettings struct {
 	Server        WebServerSettings         `json:"server"`
 	Runtime       WebRuntimeSettings        `json:"runtime"`
@@ -218,6 +230,7 @@ type WebDistributedHealthSettings struct {
 type WebWebhookSettings struct {
 	Enabled          bool     `json:"enabled"`
 	URL              string   `json:"url"`
+	URLConfigured    bool     `json:"url_configured,omitempty"`
 	Secret           string   `json:"secret,omitempty"`
 	SecretConfigured bool     `json:"secret_configured,omitempty"`
 	Events           []string `json:"events"`
@@ -409,6 +422,7 @@ func WebSettingsFrom(c Config) WebSettings {
 		Webhook: &WebWebhookSettings{
 			Enabled:          c.Webhook.Enabled,
 			URL:              c.Webhook.URL,
+			URLConfigured:    c.Webhook.URL != "",
 			Secret:           c.Webhook.Secret,
 			SecretConfigured: c.Webhook.Secret != "",
 			Events:           append([]string{}, c.Webhook.Events...),
@@ -433,7 +447,10 @@ func mergeNodeSeeds(existing, input []DistributedNodeSeed) []DistributedNodeSeed
 		out[i] = seed
 		if seed.MutationToken == "" || seed.MutationToken == "[REDACTED]" {
 			for _, prev := range existing {
-				if prev.URL == seed.URL || prev.Name == seed.Name {
+				// A name is presentation metadata, not a trust identity. Never
+				// carry a credential to a different origin merely because a new
+				// node reused the previous display name.
+				if prev.URL == seed.URL {
 					out[i].MutationToken = prev.MutationToken
 					break
 				}
@@ -509,10 +526,8 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 		candidate.TLS.MinVersion = w.TLS.MinVersion
 	}
 
-	// Database
-	if w.Database.Path != "" {
-		candidate.Database.Path = w.Database.Path
-	}
+	// Database path is needed to locate this stored configuration and therefore
+	// remains a file/environment-only bootstrap setting.
 
 	// Cache
 	if w.Cache.Path != "" {
@@ -610,9 +625,8 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	if w.Distributed.MutationToken != "" && w.Distributed.MutationToken != "[REDACTED]" {
 		candidate.Distributed.MutationToken = w.Distributed.MutationToken
 	}
-	if w.Distributed.MutationTokenKeyFiles != nil {
-		candidate.Distributed.MutationTokenKeyFiles = append([]string{}, w.Distributed.MutationTokenKeyFiles...)
-	}
+	// Mutation-token key files are loaded before the settings database and
+	// therefore remain a file/environment-only bootstrap setting.
 	candidate.Distributed.CoordinatorID = w.Distributed.CoordinatorID
 	candidate.Distributed.AllowHTTP = w.Distributed.AllowHTTP
 	candidate.Distributed.Node = w.Distributed.Node
@@ -631,7 +645,9 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 		candidate.Distributed.Nodes = mergeNodeSeeds(base.Distributed.Nodes, w.Distributed.Nodes)
 	}
 
-	// UI Enhancement
+	// UI Enhancement. New settings mutations keep the operational copy at its
+	// YAML fallback and persist the live value in the dedicated appearance
+	// record, while retaining this assignment for existing stored settings.
 	candidate.UIEnhancement = w.UIEnhancement
 
 	// Warmup
@@ -691,7 +707,9 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 
 	if w.Webhook != nil {
 		candidate.Webhook.Enabled = w.Webhook.Enabled
-		candidate.Webhook.URL = w.Webhook.URL
+		if w.Webhook.URL != "" && w.Webhook.URL != "[REDACTED]" {
+			candidate.Webhook.URL = w.Webhook.URL
+		}
 		if w.Webhook.Secret != "" && w.Webhook.Secret != "[REDACTED]" {
 			candidate.Webhook.Secret = w.Webhook.Secret
 		}
@@ -742,6 +760,7 @@ func ExportYAML(cfg Config, fullBackup bool) (string, error) {
 		// Omit sensitive credentials for standard export
 		c.Distributed.Token = ""
 		c.Distributed.MutationToken = ""
+		c.Webhook.URL = ""
 		c.Webhook.Secret = ""
 		c.Admin.Passkey.RPID = ""
 		c.Admin.Passkey.Origins = nil
@@ -974,6 +993,36 @@ func ComputeSettingsDiff(oldWS, newWS WebSettings) []model.SettingDiffEntry {
 		})
 	}
 
+	oldNodesJSON, _ := json.Marshal(oldWS.Distributed.Nodes)
+	newNodesJSON, _ := json.Marshal(newWS.Distributed.Nodes)
+	if string(oldNodesJSON) != string(newNodesJSON) {
+		redactNodes := func(nodes []DistributedNodeSeed) string {
+			safe := append([]DistributedNodeSeed{}, nodes...)
+			for i := range safe {
+				if safe[i].MutationToken != "" {
+					safe[i].MutationToken = "[REDACTED]"
+				}
+			}
+			encoded, _ := json.Marshal(safe)
+			return string(encoded)
+		}
+		diffs = append(diffs, model.SettingDiffEntry{
+			Path:     "distributed.nodes",
+			OldValue: redactNodes(oldWS.Distributed.Nodes),
+			NewValue: redactNodes(newWS.Distributed.Nodes),
+		})
+	}
+
+	oldUIJSON, _ := json.Marshal(oldWS.UIEnhancement)
+	newUIJSON, _ := json.Marshal(newWS.UIEnhancement)
+	if string(oldUIJSON) != string(newUIJSON) {
+		diffs = append(diffs, model.SettingDiffEntry{
+			Path:     "ui_enhancement",
+			OldValue: string(oldUIJSON),
+			NewValue: string(newUIJSON),
+		})
+	}
+
 	// Webhook
 	if oldWS.Webhook != nil || newWS.Webhook != nil {
 		var oldHook, newHook WebWebhookSettings
@@ -984,7 +1033,7 @@ func ComputeSettingsDiff(oldWS, newWS WebSettings) []model.SettingDiffEntry {
 			newHook = *newWS.Webhook
 		}
 		check("webhook.enabled", oldHook.Enabled, newHook.Enabled, false)
-		check("webhook.url", oldHook.URL, newHook.URL, false)
+		check("webhook.url", oldHook.URL, newHook.URL, true)
 		check("webhook.secret", oldHook.Secret, newHook.Secret, true)
 		checkSlice("webhook.events", oldHook.Events, newHook.Events, false)
 		check("webhook.timeout", oldHook.Timeout, newHook.Timeout, false)

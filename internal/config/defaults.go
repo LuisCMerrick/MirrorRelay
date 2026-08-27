@@ -280,3 +280,17 @@ func applyEnvironment(cfg *Config) {
 		cfg.Distributed.Node.Region = v
 	}
 }
+
+// ApplyEnvironment reapplies documented environment overrides and validates
+// the resulting configuration. Callers use this after loading Web UI settings
+// so explicit process configuration retains the highest precedence.
+func ApplyEnvironment(cfg Config) (Config, error) {
+	applyEnvironment(&cfg)
+	if err := cfg.NormalizeRuntime(); err != nil {
+		return cfg, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}

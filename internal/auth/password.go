@@ -19,6 +19,9 @@ const (
 	argonMemory  uint32 = 64 * 1024
 	argonKeyLen  uint32 = 32
 	argonSaltLen        = 16
+	// MaxPasswordBytes bounds password input before it reaches Argon2 or a
+	// long-lived request buffer.
+	MaxPasswordBytes = 1024
 )
 
 var argonSem = make(chan struct{}, 4)
@@ -31,6 +34,9 @@ func acquireArgon() func() {
 func HashPassword(password string) (string, error) {
 	if len(password) < 10 {
 		return "", errors.New("password must be at least 10 characters")
+	}
+	if len(password) > MaxPasswordBytes {
+		return "", fmt.Errorf("password must be at most %d bytes", MaxPasswordBytes)
 	}
 	release := acquireArgon()
 	defer release()
@@ -53,6 +59,9 @@ func HashPassword(password string) (string, error) {
 }
 
 func VerifyPassword(encoded, password string) bool {
+	if len(password) > MaxPasswordBytes {
+		return false
+	}
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" {
 		return false

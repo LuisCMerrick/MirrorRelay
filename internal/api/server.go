@@ -58,6 +58,9 @@ type Store interface {
 	PutSetting(context.Context, string, string) error
 	DeleteSetting(context.Context, string) error
 	AddSettingVersion(context.Context, model.SettingVersion, int) (model.SettingVersion, error)
+	PutSettingWithVersion(context.Context, string, string, model.SettingVersion, int) (model.SettingVersion, error)
+	PutSettingsWithVersion(context.Context, map[string]string, model.SettingVersion, int) (model.SettingVersion, error)
+	DeleteSettingWithVersion(context.Context, string, model.SettingVersion, int) (model.SettingVersion, error)
 	ListSettingVersions(context.Context, int) ([]model.SettingVersion, error)
 	GetSettingVersion(context.Context, int64) (model.SettingVersion, error)
 	ListClusterNodes(context.Context) ([]model.ClusterNode, error)
@@ -78,11 +81,12 @@ type Store interface {
 	UpdateWarmupJobProgress(ctx context.Context, id int64, status string, total, completed, failed int, downloadedBytes int64, errMsg, lastRun, nextRun string) error
 	UpdateWarmupJobSchedule(context.Context, int64, string) error
 	SetPasswordLoginDisabled(context.Context, int64, bool) error
+	DisablePasswordLogin(context.Context, int64) (bool, error)
 	CreatePasskey(context.Context, model.PasskeyCredential) error
 	GetPasskeyByCredentialID(context.Context, string) (model.PasskeyCredential, error)
 	ListPasskeysByUserID(context.Context, int64) ([]model.PasskeyCredential, error)
 	CountPasskeysByUserID(context.Context, int64) (int, error)
-	UpdatePasskeySignCount(context.Context, string, uint32) error
+	AdvancePasskeySignCount(context.Context, string, uint32) (bool, error)
 	UpdatePasskeyDisplayName(context.Context, int64, int64, string) error
 	DeletePasskey(context.Context, int64, int64) error
 	DeleteAllPasskeysByUserID(context.Context, int64) error

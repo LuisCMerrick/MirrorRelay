@@ -8,7 +8,7 @@ Thank you for your interest in contributing to MirrorRelay! We welcome bug repor
 
 ### Prerequisites
 - Go 1.26.6+
-- Node.js (for syntax checking `node --check`)
+- Node.js (for Web UI asset, locale, and Markdown documentation checks)
 - Docker (for building musl Managed Upstream Nginx binaries via Buildx)
 
 ### Running in Development Mode
@@ -33,10 +33,11 @@ Open `https://127.0.0.1:8443/admin/` and complete the one-time initial-administr
 ### Web UI Guidelines
 - Keep the Web UI zero-dependency (vanilla JavaScript, HTML5, and CSS).
 - Maintain bilingual resource decoupling: all user-facing strings must be defined in both `internal/web/dist/locales/en.js` and `locales/zh.js`.
-- Always validate JavaScript syntax: `find internal/web/dist -name "*.js" -exec node --check {} +`.
+- Always validate the complete embedded asset graph and locales with `./scripts/verify-web-assets.sh`.
 
 ### Documentation Parity
 - When modifying user-visible features, configuration options, or APIs, always update both the English documentation (`docs/*.md`) and the paired Chinese translation (`docs/*.zh-CN.md`).
+- Run `node scripts/verify-docs.mjs` to check paired structure and local links.
 
 ---
 

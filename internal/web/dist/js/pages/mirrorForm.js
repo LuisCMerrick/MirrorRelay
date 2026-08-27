@@ -84,10 +84,14 @@ function openMirrorForm(repository = null) {
 
 async function submitMirrorForm(event) {
   event.preventDefault();
+  const submitButton = event.target.querySelector('button[type="submit"]');
+  $('#form-error').textContent = '';
   const id = $('#mirror-id').value;
   const templateValue = $('#template').value;
   const selectedProfile = templateValue === '' ? null : state.profiles[Number(templateValue)];
   try {
+    submitButton.disabled = true;
+    submitButton.setAttribute('aria-busy', 'true');
     const body = {
       name: $('#mirror-name').value, slug: $('#mirror-slug').value, type: $('#repository-type').value,
       profile_name: selectedProfile?.name || 'Custom', profile_version: selectedProfile?.version || '1.0.0',
@@ -119,7 +123,15 @@ async function submitMirrorForm(event) {
     $('#mirror-dialog').close();
     notice(L('Candidate validated and activated with a graceful reload.'));
     await Promise.all([loadMirrors(), loadDashboard()]);
-  } catch (error) { $('#form-error').textContent = error.message; }
+  } catch (error) {
+    $('#form-error').textContent = error.message;
+    $('#form-error').focus();
+  } finally {
+    if (submitButton.isConnected) {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
+    }
+  }
 }
 
 export function initMirrorForm() {

@@ -173,8 +173,8 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), `"source":"web_ui"`) {
 		t.Fatalf("settings read: status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
 	}
-	if !strings.Contains(getRecorder.Body.String(), cfg.Webhook.Secret) {
-		t.Fatalf("admin settings response unexpectedly redacted webhook secret: %s", getRecorder.Body.String())
+	if strings.Contains(getRecorder.Body.String(), cfg.Webhook.Secret) || strings.Contains(getRecorder.Body.String(), "viewer-must-not-see-url") || !strings.Contains(getRecorder.Body.String(), `"file_only":["database.path","distributed.mutation_token_key_files"]`) {
+		t.Fatalf("admin settings response leaked credentials or omitted file-only fields: %s", getRecorder.Body.String())
 	}
 	viewerRecorder := httptest.NewRecorder()
 	server.webSettings(viewerRecorder, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings", nil), auth.Session{Role: "viewer"})
@@ -189,6 +189,43 @@ func TestWebSettingsValidatePersistAndReset(t *testing.T) {
 	}
 	if _, found, err := store.Setting(request.Context(), config.WebSettingsKey); err != nil || found {
 		t.Fatalf("settings override survived reset: found=%v err=%v", found, err)
+	}
+}
+
+func TestWebSettingsRedactionDoesNotChangeRestartComparison(t *testing.T) {
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cfg := config.Default()
+	cfg.Webhook.Enabled = true
+	cfg.Webhook.URL = "https://hooks.example.test/secret-path"
+	cfg.Webhook.Secret = "webhook-secret"
+	cfg.Distributed.Token = "cluster-token"
+	cfg.Distributed.Nodes = []config.DistributedNodeSeed{{
+		Name: "edge", URL: "https://edge.example.test", MutationToken: "node-secret", Enabled: true,
+	}}
+	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
+	settings := config.WebSettingsFrom(cfg)
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.updateWebSettings(recorder, httptest.NewRequest(http.MethodPut, "/admin/api/v1/settings", bytes.NewReader(encoded)), auth.Session{Username: "admin"})
+	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), `"restart_required":true`) {
+		t.Fatalf("unchanged redacted settings reported a pending restart: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	for _, secret := range []string{cfg.Webhook.URL, cfg.Webhook.Secret, cfg.Distributed.Token, cfg.Distributed.Nodes[0].MutationToken} {
+		if strings.Contains(recorder.Body.String(), secret) {
+			t.Fatalf("settings response leaked %q: %s", secret, recorder.Body.String())
+		}
+	}
+	if settings.Webhook.URL != cfg.Webhook.URL || settings.Webhook.Secret != cfg.Webhook.Secret || settings.Distributed.Nodes[0].MutationToken != cfg.Distributed.Nodes[0].MutationToken {
+		t.Fatal("redaction mutated the source settings value")
 	}
 }
 
@@ -259,6 +296,12 @@ func TestWebSettingsEqualIgnoresAppearanceAndNormalizesDurations(t *testing.T) {
 	right.Logging.KeepDays += 7
 	if webSettingsEqual(left, right) {
 		t.Fatalf("expected webSettingsEqual to be false when operational settings differ")
+	}
+
+	right = left
+	right.Warmup.RetryCount++
+	if webSettingsEqual(left, right) {
+		t.Fatal("expected a warmup change to require restart")
 	}
 }
 
@@ -538,6 +581,8 @@ func TestSettingsExportImportAndHistoryRollback(t *testing.T) {
 	cfg := config.Default()
 	cfg.HTTP.PublicBaseURL = "https://original-host.example.com"
 	cfg.Distributed.Token = "secret-token"
+	cfg.Webhook.URL = "https://hooks.example.test/service?access_token=webhook-token"
+	cfg.Webhook.Secret = "webhook-signing-secret"
 	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
 
 	// 1. Test Export standard vs full backup
@@ -546,13 +591,15 @@ func TestSettingsExportImportAndHistoryRollback(t *testing.T) {
 	if expRec.Code != http.StatusOK {
 		t.Fatalf("export standard failed: code=%d body=%s", expRec.Code, expRec.Body.String())
 	}
-	if strings.Contains(expRec.Body.String(), "secret-token") || strings.Contains(expRec.Body.String(), "original-host.example.com") {
+	if strings.Contains(expRec.Body.String(), "secret-token") || strings.Contains(expRec.Body.String(), "original-host.example.com") ||
+		strings.Contains(expRec.Body.String(), "webhook-token") || strings.Contains(expRec.Body.String(), "webhook-signing-secret") {
 		t.Fatal("standard export contained secret or public base URL")
 	}
 
 	expFullRec := httptest.NewRecorder()
-	server.exportSettings(expFullRec, httptest.NewRequest(http.MethodGet, "/admin/api/v1/settings/export?full_backup=true", nil), auth.Session{Role: "admin", Username: "admin"})
-	if expFullRec.Code != http.StatusOK || !strings.Contains(expFullRec.Body.String(), "secret-token") {
+	server.exportSettings(expFullRec, httptest.NewRequest(http.MethodPost, "/admin/api/v1/settings/export?full_backup=true", nil), auth.Session{Role: "admin", Username: "admin"})
+	if expFullRec.Code != http.StatusOK || !strings.Contains(expFullRec.Body.String(), "secret-token") ||
+		!strings.Contains(expFullRec.Body.String(), "webhook-token") || !strings.Contains(expFullRec.Body.String(), "webhook-signing-secret") {
 		t.Fatalf("full export failed to include token: code=%d body=%s", expFullRec.Code, expFullRec.Body.String())
 	}
 
@@ -562,6 +609,11 @@ server:
   local_port: 19088
 security:
   login_max_failures: 9
+ui_enhancement:
+  enabled: true
+  theme: dark
+  branding:
+    title: Restored Mirrors
 `
 	previewPayload, _ := json.Marshal(map[string]string{"yaml": importYAML})
 	prevRec := httptest.NewRecorder()
@@ -576,6 +628,15 @@ security:
 	}
 	if err := json.Unmarshal(prevRec.Body.Bytes(), &previewRes); err != nil || !previewRes.Valid || len(previewRes.Diff) == 0 {
 		t.Fatalf("invalid preview result: %+v, err=%v", previewRes, err)
+	}
+	appearanceDiff := false
+	for _, entry := range previewRes.Diff {
+		if entry.Path == "ui_enhancement" {
+			appearanceDiff = true
+		}
+	}
+	if !appearanceDiff {
+		t.Fatalf("preview omitted the appearance change: %+v", previewRes.Diff)
 	}
 
 	// 3. Test Apply Import
@@ -600,6 +661,15 @@ security:
 	if ws.HTTP.PublicBaseURL != "https://original-host.example.com" {
 		t.Fatalf("local instance base URL was wiped on import: %s", ws.HTTP.PublicBaseURL)
 	}
+	if ws.Webhook == nil || ws.Webhook.URL != cfg.Webhook.URL || ws.Webhook.Secret != cfg.Webhook.Secret {
+		t.Fatalf("webhook credentials were wiped on import: %+v", ws.Webhook)
+	}
+	if active := server.appearanceConfig(); !active.Enabled || active.Theme != "dark" || active.Branding.Title != "Restored Mirrors" {
+		t.Fatalf("imported appearance was not published immediately: %+v", active)
+	}
+	if rawAppearance, found, err := store.Setting(context.Background(), database.AppearanceSettingsKey); err != nil || !found || !strings.Contains(rawAppearance, "Restored Mirrors") {
+		t.Fatalf("imported appearance was not persisted: found=%v value=%s err=%v", found, rawAppearance, err)
+	}
 
 	// 4. Test History and Rollback
 	histRec := httptest.NewRecorder()
@@ -611,8 +681,29 @@ security:
 	if err := json.Unmarshal(histRec.Body.Bytes(), &versions); err != nil || len(versions) == 0 {
 		t.Fatalf("expected version records: %+v, err=%v", versions, err)
 	}
+	if strings.Contains(histRec.Body.String(), `"settings"`) || strings.Contains(histRec.Body.String(), "secret-token") || strings.Contains(histRec.Body.String(), "webhook-token") {
+		t.Fatalf("settings history response exposed a rollback snapshot: %s", histRec.Body.String())
+	}
+	storedVersion, err := store.GetSettingVersion(context.Background(), versions[0].Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(storedVersion.Settings, "secret-token") || strings.Contains(storedVersion.Settings, "webhook-token") || strings.Contains(storedVersion.Settings, "webhook-signing-secret") {
+		t.Fatalf("settings history persisted a plaintext credential: %s", storedVersion.Settings)
+	}
 
-	// Make another change
+	// Make another appearance and operational change so rollback must restore
+	// both records from the same history snapshot.
+	changedAppearance := server.appearanceConfig()
+	changedAppearance.Theme = "light"
+	changedAppearance.Branding.Title = "Changed Mirrors"
+	appearanceBody, _ := json.Marshal(changedAppearance)
+	appearanceRec := httptest.NewRecorder()
+	server.updateAppearance(appearanceRec, httptest.NewRequest(http.MethodPut, "/admin/api/v1/appearance", bytes.NewReader(appearanceBody)), auth.Session{Role: "admin", Username: "admin"})
+	if appearanceRec.Code != http.StatusOK {
+		t.Fatalf("appearance change failed: code=%d body=%s", appearanceRec.Code, appearanceRec.Body.String())
+	}
+	ws.UIEnhancement = changedAppearance
 	ws.Server.LocalPort = 19099
 	encodedWS, _ := json.Marshal(ws)
 	updRec := httptest.NewRecorder()
@@ -633,6 +724,87 @@ security:
 	wsAfterRB, _ := config.DecodeWebSettings([]byte(storedAfterRB))
 	if wsAfterRB.Server.LocalPort != 19088 {
 		t.Fatalf("rollback did not restore previous value: got port %d", wsAfterRB.Server.LocalPort)
+	}
+	if active := server.appearanceConfig(); active.Theme != "dark" || active.Branding.Title != "Restored Mirrors" {
+		t.Fatalf("rollback did not restore appearance: %+v", active)
+	}
+}
+
+func TestDecodeSettingsImportLimitsDecodedYAML(t *testing.T) {
+	yamlText := "{}\n" + strings.Repeat("#\n", (maxSettingsImportYAMLBytes-3)/2)
+	payload, err := json.Marshal(importPayload{YAML: yamlText})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) <= 1<<20 {
+		t.Fatalf("test payload did not exercise JSON escaping: %d bytes", len(payload))
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/settings/import/preview", bytes.NewReader(payload))
+	var decoded importPayload
+	if err := decodeSettingsImport(recorder, request, &decoded); err != nil {
+		t.Fatalf("valid near-limit YAML was rejected: code=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
+	if decoded.YAML != yamlText {
+		t.Fatal("decoded near-limit YAML changed")
+	}
+
+	tooLarge, err := json.Marshal(importPayload{YAML: strings.Repeat("x", maxSettingsImportYAMLBytes+1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/settings/import/preview", bytes.NewReader(tooLarge))
+	if err := decodeSettingsImport(recorder, request, &decoded); err == nil || recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized YAML was not rejected with 413: code=%d err=%v", recorder.Code, err)
+	}
+}
+
+func TestStandardExportReimportsAfterCredentialPreservation(t *testing.T) {
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	cfg := config.Default()
+	cfg.Distributed.Enabled = true
+	cfg.Distributed.Role = "coordinator"
+	cfg.Distributed.Token = "probe-secret"
+	cfg.Distributed.MutationTokenKeyFiles = []string{"/etc/mirrorrelay/cluster.key"}
+	cfg.Distributed.Node.Name = "coordinator"
+	cfg.Distributed.Nodes = []config.DistributedNodeSeed{{
+		Name: "edge-1", URL: "https://edge.example.test", MutationToken: "edge-secret", Enabled: true,
+	}}
+	cfg.Webhook.Enabled = true
+	cfg.Webhook.URL = "https://hooks.example.test/mirrorrelay"
+	cfg.Webhook.Secret = "webhook-secret"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{cfg: cfg, fileConfig: cfg, store: store}
+	standard, err := config.ExportYAML(cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{cfg.Distributed.Token, cfg.Distributed.Nodes[0].MutationToken, cfg.Webhook.URL, cfg.Webhook.Secret} {
+		if strings.Contains(standard, secret) {
+			t.Fatalf("standard export leaked %q", secret)
+		}
+	}
+
+	candidate, err := server.parseCandidateFromYAML(t.Context(), standard)
+	if err != nil {
+		t.Fatalf("standard export could not be reimported: %v", err)
+	}
+	if candidate.Distributed.Token != cfg.Distributed.Token || candidate.Distributed.Nodes[0].MutationToken != cfg.Distributed.Nodes[0].MutationToken ||
+		candidate.Webhook.URL != cfg.Webhook.URL || candidate.Webhook.Secret != cfg.Webhook.Secret {
+		t.Fatalf("reimport did not preserve omitted credentials: %+v", candidate)
+	}
+
+	relocated := strings.Replace(standard, "https://edge.example.test", "https://new-edge.example.test", 1)
+	if _, err := server.parseCandidateFromYAML(t.Context(), relocated); err == nil || !strings.Contains(err.Error(), "requires a unique mutation_token") {
+		t.Fatalf("a node credential was carried to a changed origin: %v", err)
 	}
 }
 

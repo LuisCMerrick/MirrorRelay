@@ -25,15 +25,15 @@ Configuration loading is strict: unknown YAML keys and multiple YAML documents a
 
 ## Web UI overrides and configuration management
 
-The **Settings** page provides full management across all 20 configuration sections in `config.yaml`. It saves strictly validated settings documents in SQLite and maintains an immutable version history for inspection and one-click rollback. On process start, MirrorRelay loads YAML first and then applies the stored Web UI values over the matching fields, so the precedence is:
+The **Settings** lifecycle can import and export all 22 top-level sections in `config.yaml`. Its structured form exposes the operational sections, while the dedicated **Appearance** page manages `ui_enhancement`. The bootstrap fields `database.path` and `distributed.mutation_token_key_files` must be loaded before the settings database and credential keyring can be opened, so the UI shows them as file-only and never persists an override. Other changes are strictly validated and stored in SQLite. Settings values and their redacted history entry are committed atomically; history is append-only while retained and pruned to `upstream_nginx.history_limit`. On process start, MirrorRelay loads YAML first and then applies the stored Web UI values over the matching fields, so the precedence is:
 
 ```text
 documented environment variables -> saved Web UI operational values -> YAML
 ```
 
-Saving, importing, or resetting the Web UI override does not hot-reload the running process. Restart MirrorRelay to apply the changes. Repository Desired/Active changes use a separate immediate validation and activation path.
+Operational settings saved, imported, reset, or rolled back do not hot-reload the running process; restart MirrorRelay to apply them. The `ui_enhancement` portion of an import or rollback is committed in the same transaction and published immediately through the dedicated appearance state. Repository Desired/Active changes use a separate immediate validation and activation path.
 
-Use **Export configuration** to download standard or full backup YAML, and **Import configuration** to upload/paste YAML candidates with full validation and diff preview. Use **Reset to YAML after restart** to delete the stored override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML.
+Use **Export configuration** to download standard or full-backup YAML. Both forms omit the instance-local `http.public_base_url` and `distributed.node.public_base_url`. Standard export also omits cluster credentials, the Webhook URL/signing secret, and the passkey RP ID/origins; full backup is a CSRF-protected `POST` that includes those credentials and must be stored as a secret. Import accepts at most 1 MiB of decoded YAML, validates the exact previewed content, preserves omitted local URLs, passkey bindings and credentials, and always preserves the file-only database/keyring paths. An omitted Edge mutation token is preserved only when that node URL is unchanged; a different origin requires an explicit new credential. Use **Reset to YAML after restart** to delete the stored operational override; use **Appearance → Restore defaults** for the separate immediate appearance override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML. History responses never return their stored settings snapshot, and rollback uses its redacted snapshot while preserving the running credential values represented by redaction sentinels.
 
 ## Local endpoints
 
@@ -67,7 +67,7 @@ Go reaches Managed Upstream Nginx over its Unix socket by default. Only an expli
 | `http.read_timeout`, `http.idle_timeout` | MirrorRelay HTTP server header/request and keepalive limits |
 | `http.write_timeout` | MirrorRelay HTTP write limit; `0` intentionally permits long streaming responses |
 | `tls.certificate`, `tls.private_key`, `tls.min_version` | Used only by managed standalone ingress; TLS minimum is `1.2` or `1.3` |
-| `admin.path` | File-only administration prefix; defaults to `/admin/`, contains the UI and its nested `api/v1/`, and requires a restart after changes |
+| `admin.path` | Administration prefix; defaults to `/admin/`, contains the UI and its nested `api/v1/`, and requires a restart plus an updated ingress snippet after changes |
 
 External mode neither tests nor binds public ports and never reloads the shared External Shared Nginx process. Generated host-mode blocks contain certificate placeholders that must be completed by the ingress administrator.
 
@@ -85,7 +85,7 @@ External mode neither tests nor binds public ports and never reloads the shared 
 | `upstream_nginx.ca_bundle`, `upstream_nginx.tls_verify_depth` | Platform CA bundle and upstream certificate-chain verification depth; DEB uses `/etc/ssl/certs/ca-certificates.crt`, while RPM uses `/etc/pki/tls/certs/ca-bundle.crt` |
 | `upstream_nginx.resolver` | Resolver addresses embedded in the generated configuration |
 | `upstream_nginx.resolver_refresh` | Safe DNS re-resolution/reconcile interval |
-| `upstream_nginx.history_limit` | Immutable configuration versions retained |
+| `upstream_nginx.history_limit` | Maximum retained Managed Upstream Nginx, Active-state and Web UI settings-history entries |
 | `upstream_nginx.restart_*` | Supervisor failure window and exponential-backoff limits |
 | `upstream_nginx.worker_processes`, `upstream_nginx.worker_user`, `upstream_nginx.worker_connections` | Managed Upstream Nginx worker settings. `worker_user` is emitted only when the Nginx master runs as root; the packaged non-root service omits the redundant directive. |
 | `upstream_nginx.stop_on_mirrorrelay_exit` | Stop Managed Upstream Nginx on normal MirrorRelay exit; default `false` preserves the data plane for attach/restart |
@@ -145,7 +145,7 @@ Warm-up jobs accept either a five-field numeric cron expression evaluated in UTC
 |---|---|
 | `webhook.enabled` | Enable asynchronous event delivery |
 | `webhook.url` | Single active destination URL; HTTPS is required by default and the provider payload format is auto-detected from the host |
-| `webhook.secret` | Optional HMAC-SHA256 signing secret; the secret and target URL are hidden from non-admin settings responses |
+| `webhook.secret` | Optional HMAC-SHA256 signing secret; settings responses and history always redact both the secret and target URL |
 | `webhook.events` | Event names to deliver; an empty list enables every event |
 | `webhook.timeout` | Request, TLS handshake and response-header timeout |
 | `webhook.allow_http` | Independent explicit opt-in for plaintext HTTP; default `false` |
@@ -166,6 +166,10 @@ MirrorRelay delivers each event to one configured Webhook destination; DingTalk,
 | `security.login_window`, `security.login_max_failures` | Per-client login throttle |
 | `admin.host` | Dedicated hostname for administration console and metrics isolation |
 | `admin.path` | Base path for administration web console and REST API |
+| `admin.passkey.enabled` | Enable WebAuthn passkey registration and authentication |
+| `admin.passkey.rp_name` | Display name shown by the authenticator; at most 128 bytes |
+| `admin.passkey.rp_id` | Exact lowercase hostname/IP relying-party ID, without scheme, port or path |
+| `admin.passkey.origins` | Exact allowed `https://` origins; loopback development alone may use HTTP, and every host must match the RP ID |
 | `limits.max_total_concurrency` | Global request concurrency; `0` is unlimited |
 | `limits.max_ip_concurrency` | Per-client concurrency; `0` is unlimited |
 | `limits.bandwidth_limit_bps` | Global Managed Upstream Nginx upstream bandwidth ceiling; `0` is unlimited |
@@ -193,19 +197,19 @@ MirrorRelay provides optional appearance customization, color themes, directory 
 |---|---|
 | `ui_enhancement.enabled` | Public repository UI enhancement switch (default `false`). When `false`, upstream directory responses are not restyled or rewritten. The administration theme selector remains available. |
 | `ui_enhancement.theme` | Theme mode: `system` (default), `light`, or `dark` |
-| `ui_enhancement.accent_color` | Accent color hex code (e.g. `#2563eb`) |
+| `ui_enhancement.accent_color` | Opaque three- or six-digit accent color hex code (e.g. `#2563eb`) |
 | `ui_enhancement.branding.title` | Custom instance title / site name (default `MirrorRelay`) |
-| `ui_enhancement.branding.logo` | Custom logo image URL |
-| `ui_enhancement.branding.favicon` | Custom favicon image URL |
+| `ui_enhancement.branding.logo` | Optional same-origin absolute logo path beginning with `/`; the ingress must serve the asset |
+| `ui_enhancement.branding.favicon` | Optional same-origin absolute favicon path beginning with `/`; the ingress must serve the asset |
 | `ui_enhancement.login.title` | Login page heading title |
 | `ui_enhancement.login.subtitle` | Login page subtitle |
 | `ui_enhancement.custom_css.enabled` | Enable custom CSS stylesheet injection |
-| `ui_enhancement.custom_css.file` | Path to custom CSS file (served via `GET /ui/custom.css`) |
+| `ui_enhancement.custom_css.file` | Clean absolute path to a regular `.css` file (served via `GET /ui/custom.css`; symbolic links and files larger than 1 MiB are rejected) |
 | `ui_enhancement.repository_browser.enabled` | Enable modern responsive directory listing browser (default `true` when UI enhancement is active) |
 
 The administration UI also exposes a browser-local Light / Dark / Auto selector on the login page and in the header. Auto follows `prefers-color-scheme`; a saved browser preference overrides the instance default until changed locally.
 
-> **Safe Mode**: Append `?safe-ui=1` to any directory or help URL to bypass all UI enhancement styling and JavaScript, falling back directly to raw upstream HTML.
+> **Safe UI behavior**: On an upstream directory URL, `?safe-ui=1` skips MirrorRelay's generated directory browser and leaves the ordinary upstream-response path in place (a repository's separately enabled compatibility URL rewrite can still apply). On a generated `/help/` page, it suppresses optional custom CSS only; the built-in help layout and selector/copy script remain active.
 
 ## Client Configuration Help
 
@@ -219,7 +223,7 @@ MirrorRelay supports built-in and customized interactive client configuration do
 
 The Web UI and repository API expose profile/version, routing mode, multiple upstreams, strip/add prefixes, Host and request-header changes, connect/read/send timeouts, cache class TTLs, authenticated caching, metadata rewrite hosts/buffer limits, the per-repository `html_rewrite_enabled` switch, health policy, concurrency/bandwidth limits, access policy, client help documentation settings (`help.enabled`, `help.template`, `help.title`, `help.summary`), Registry auth/token/blob policy and the HTTP/private permission switches. Repository validation rejects root/system/administration/`/_mirrorrelay/` path conflicts, duplicate or overlapping repository paths, duplicate public hosts and a host-mode repository that claims the configured shared host.
 
-Each of `blocked_packages` and `allowed_packages` accepts at most 128 rules, and each rule is limited to 512 bytes. A rule must parse as a Go glob or RE2 regular expression. Rules are compiled when a repository candidate is validated and again when an Active routing snapshot is built; an invalid candidate is rejected, while unexpectedly invalid persisted state fails closed instead of silently skipping the policy.
+Each of `blocked_packages` and `allowed_packages` accepts at most 128 rules, and each rule is limited to 512 bytes. A rule beginning with `^` or ending with `$` is parsed as a whole-string RE2 regular expression; every other rule is parsed as a Go glob. Rules are compiled when a repository candidate is validated and again when an Active routing snapshot is built; an invalid candidate is rejected, while unexpectedly invalid persisted state fails closed instead of silently skipping the policy.
 
 `html_rewrite_enabled` defaults to `false`. When enabled for a browsable repository response, MirrorRelay resolves same-origin HTML URLs against the selected upstream page. URLs below the effective upstream base (including `add_prefix`) return to the public repository namespace (including `strip_prefix`). Other same-origin paths receive an opaque `/_mirrorrelay/upstream/<repository-id>/<upstream-id>/<signature>/<target>` URL. The HMAC covers the repository, exact selected upstream/Host policy, escaped target path, and query, so clients cannot substitute another upstream, root path, or query. Only targets emitted by MirrorRelay are accepted; cross-origin URLs remain unchanged. The request still uses the repository's access policy, pinned address, TLS verification, cache policy, and limits through Managed Upstream Nginx. The generated shared-ingress snippet contains the required auxiliary location for path-mode repositories.
 

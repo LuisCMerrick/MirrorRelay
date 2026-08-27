@@ -62,6 +62,8 @@ export function initCustom() {
   $('#cancel-custom')?.addEventListener('click', () => $('#custom-dialog')?.close());
   $('#custom-form')?.addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    $('#custom-error').textContent = '';
     const id = $('#custom-id').value;
     const body = {
       name: $('#custom-name').value,
@@ -71,12 +73,20 @@ export function initCustom() {
       content: $('#custom-content').value
     };
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       await api(id ? `/custom-configs/${id}` : '/custom-configs', {method: id ? 'PUT' : 'POST', body: JSON.stringify(body)});
       $('#custom-dialog').close();
       notice(L('Custom configuration validated and activated.'));
       await loadCustom();
     } catch (error) {
       $('#custom-error').textContent = error.message;
+      $('#custom-error').focus();
+    } finally {
+      if (submitButton.isConnected) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute('aria-busy');
+      }
     }
   });
 }

@@ -29,7 +29,7 @@ MirrorRelay includes built-in distributed clustering capabilities, allowing you 
                                           ▼               ▼
           ┌──────────────────────────────────┐ ┌──────────────────────────────────┐
           │        Edge Node 1 (US)          │ │        Edge Node 2 (EU)          │
-          │  - Autonomous Upstream Nginx     │ │  - Autonomous Upstream Nginx     │
+          │  - Managed Upstream Nginx        │ │  - Managed Upstream Nginx        │
           │  - Local Disk Cache Store        │ │  - Local Disk Cache Store        │
           │  - Direct Client Serving         │ │  - Direct Client Serving         │
           └────────────────┬─────────────────┘ └────────────────┬─────────────────┘

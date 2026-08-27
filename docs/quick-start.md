@@ -20,10 +20,10 @@ go run ./cmd/mirrorrelay -dev
 ### Option B: Production Package Deployment (DEB / RPM)
 ```bash
 # Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
 
 # RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
 
 # Review security.admin_cidrs, then enable the service:
 sudoedit /etc/mirrorrelay/config.yaml

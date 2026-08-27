@@ -131,6 +131,7 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 
 	var rewritten []byte
 	var changed bool
+	var generatedBrowser bool
 	safeUI := pageURL != nil && pageURL.Query().Get("safe-ui") == "1"
 
 	if uiEnhancement.Enabled && uiEnhancement.RepositoryBrowser.Enabled && !safeUI && browser.IsDirectoryIndex(source) {
@@ -139,9 +140,10 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 			reqPath = pageURL.Path
 		}
 		if listing, ok := browser.ParseDirectoryIndex(source, reqPath); ok {
-			rendered := browser.RenderHTML(listing, repository, reqPath, uiEnhancement.Branding, uiEnhancement.Theme, safeUI)
+			rendered := browser.RenderHTML(listing, repository, reqPath, uiEnhancement.Branding, uiEnhancement.Theme, uiEnhancement.AccentColor, safeUI)
 			rewritten = []byte(rendered)
 			changed = true
+			generatedBrowser = true
 		}
 	}
 
@@ -188,6 +190,13 @@ func rewriteHTMLResponseBody(response *http.Response, repository model.Mirror, u
 	}
 	if compressionMayVary {
 		addVary(response.Header, "Accept-Encoding")
+	}
+	if generatedBrowser {
+		response.Header.Set("X-Content-Type-Options", "nosniff")
+		response.Header.Set("X-Frame-Options", "DENY")
+		response.Header.Set("Referrer-Policy", "no-referrer")
+		response.Header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		response.Header.Set("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	}
 	return metadataValidator{ETag: etag}, true, nil
 }

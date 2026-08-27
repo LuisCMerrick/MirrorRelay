@@ -59,6 +59,115 @@ func TestCreateInitialAdminIsAtomic(t *testing.T) {
 	}
 }
 
+func TestDisablePasswordLoginRequiresPasskeyAndUnusedRecoveryCode(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ctx := t.Context()
+	user, created, err := store.CreateInitialAdmin(ctx, "admin", "hash")
+	if err != nil || !created {
+		t.Fatalf("create administrator: created=%v err=%v", created, err)
+	}
+	if updated, err := store.DisablePasswordLogin(ctx, user.ID); err != nil || updated {
+		t.Fatalf("disable without recovery methods: updated=%v err=%v", updated, err)
+	}
+	if err := store.CreatePasskey(ctx, model.PasskeyCredential{
+		UserID: user.ID, CredentialID: "credential", PublicKey: "key", DisplayName: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := store.DisablePasswordLogin(ctx, user.ID); err != nil || updated {
+		t.Fatalf("disable without recovery code: updated=%v err=%v", updated, err)
+	}
+	if err := store.SaveRecoveryCodes(ctx, user.ID, []string{"unused"}); err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := store.DisablePasswordLogin(ctx, user.ID); err != nil || !updated {
+		t.Fatalf("disable with passkey and recovery code: updated=%v err=%v", updated, err)
+	}
+	loaded, err := store.UserByName(ctx, user.Username)
+	if err != nil || !loaded.PasswordLoginDisabled {
+		t.Fatalf("password-login state: disabled=%v err=%v", loaded.PasswordLoginDisabled, err)
+	}
+	passkeys, err := store.ListPasskeysByUserID(ctx, user.ID)
+	if err != nil || len(passkeys) != 1 {
+		t.Fatalf("list passkeys: count=%d err=%v", len(passkeys), err)
+	}
+	if err := store.DeletePasskey(ctx, passkeys[0].ID, user.ID); err == nil {
+		t.Fatal("deleted the final passkey while password login was disabled")
+	}
+	if err := store.CreatePasskey(ctx, model.PasskeyCredential{
+		UserID: user.ID, CredentialID: "credential-2", PublicKey: "key", DisplayName: "second",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeletePasskey(ctx, passkeys[0].ID, user.ID); err != nil {
+		t.Fatalf("delete one of two passkeys: %v", err)
+	}
+	passkeys, err = store.ListPasskeysByUserID(ctx, user.ID)
+	if err != nil || len(passkeys) != 1 {
+		t.Fatalf("passkey count after safe deletion: count=%d err=%v", len(passkeys), err)
+	}
+	if err := store.DeletePasskey(ctx, passkeys[0].ID, user.ID); err == nil {
+		t.Fatal("deleted the remaining passkey after a safe deletion")
+	}
+
+	if err := store.SetPasswordLoginDisabled(ctx, user.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.VerifyAndUseRecoveryCode(ctx, user.ID, "unused"); err != nil {
+		t.Fatal(err)
+	}
+	if updated, err := store.DisablePasswordLogin(ctx, user.ID); err != nil || updated {
+		t.Fatalf("disable with only a used recovery code: updated=%v err=%v", updated, err)
+	}
+}
+
+func TestEmergencyRecoveryMutationsRevokeSessions(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := t.Context()
+	user, created, err := store.CreateInitialAdmin(ctx, "admin", "old-hash")
+	if err != nil || !created {
+		t.Fatalf("create administrator: created=%v err=%v", created, err)
+	}
+	if err := store.CreatePasskey(ctx, model.PasskeyCredential{UserID: user.ID, CredentialID: "credential", PublicKey: "key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutSession(ctx, "passkey-reset-session", user.ID, user.Username, user.Role, "csrf", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetPasskeysAndEnablePassword(ctx, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, _, err := store.GetSession(ctx, "passkey-reset-session"); err == nil {
+		t.Fatal("passkey recovery left an existing session active")
+	}
+	if count, err := store.CountPasskeysByUserID(ctx, user.ID); err != nil || count != 0 {
+		t.Fatalf("passkeys after recovery: count=%d err=%v", count, err)
+	}
+
+	if err := store.PutSession(ctx, "password-reset-session", user.ID, user.Username, user.Role, "csrf", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResetPasswordAndSessions(ctx, user.ID, "new-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, _, err := store.GetSession(ctx, "password-reset-session"); err == nil {
+		t.Fatal("password recovery left an existing session active")
+	}
+	updated, err := store.UserByName(ctx, user.Username)
+	if err != nil || updated.PasswordHash != "new-hash" || updated.PasswordLoginDisabled {
+		t.Fatalf("password recovery state: user=%+v err=%v", updated, err)
+	}
+}
+
 func TestAuxiliaryURLSigningKeyPersists(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "mirrorrelay.db")
 	store, err := Open(databasePath)
@@ -195,6 +304,53 @@ func TestSettingsRoundTripAndDelete(t *testing.T) {
 	}
 	if _, found, err := store.Setting(ctx, "web"); err != nil || found {
 		t.Fatalf("setting survived delete: found=%v err=%v", found, err)
+	}
+}
+
+func TestSettingAndHistoryMutationIsAtomic(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+
+	version := model.SettingVersion{Version: 1, Operator: "admin", Source: "test", Settings: `{}`}
+	if _, err := store.PutSettingWithVersion(ctx, "web", `{"version":1}`, version, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutSettingWithVersion(ctx, "web", `{"version":2}`, version, 10); err == nil {
+		t.Fatal("duplicate history version unexpectedly succeeded")
+	}
+	value, found, err := store.Setting(ctx, "web")
+	if err != nil || !found || value != `{"version":1}` {
+		t.Fatalf("failed history insert changed setting: value=%q found=%v err=%v", value, found, err)
+	}
+
+	if _, err := store.DeleteSettingWithVersion(ctx, "web", version, 10); err == nil {
+		t.Fatal("delete with duplicate history version unexpectedly succeeded")
+	}
+	value, found, err = store.Setting(ctx, "web")
+	if err != nil || !found || value != `{"version":1}` {
+		t.Fatalf("failed history insert deleted setting: value=%q found=%v err=%v", value, found, err)
+	}
+
+	pairVersion := model.SettingVersion{Version: 2, Operator: "admin", Source: "test", Settings: `{}`}
+	if _, err := store.PutSettingsWithVersion(ctx, map[string]string{
+		"web": `{"version":2}`, "appearance": `{"theme":"dark"}`,
+	}, pairVersion, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutSettingsWithVersion(ctx, map[string]string{
+		"web": `{"version":3}`, "appearance": `{"theme":"light"}`,
+	}, pairVersion, 10); err == nil {
+		t.Fatal("duplicate pair history version unexpectedly succeeded")
+	}
+	for key, want := range map[string]string{"web": `{"version":2}`, "appearance": `{"theme":"dark"}`} {
+		value, found, err := store.Setting(ctx, key)
+		if err != nil || !found || value != want {
+			t.Fatalf("failed pair history insert changed %s: value=%q found=%v err=%v", key, value, found, err)
+		}
 	}
 }
 
@@ -556,13 +712,25 @@ func TestPasskeysAndRecoveryCodes(t *testing.T) {
 		t.Fatalf("loaded passkey mismatch: %+v", loaded)
 	}
 
-	// Update sign count
-	if err := store.UpdatePasskeySignCount(ctx, "cred-id-123", 5); err != nil {
-		t.Fatalf("failed to update sign count: %v", err)
+	// Advance sign count and reject repeats or rollbacks, including a reset to
+	// zero after the authenticator has started using a positive counter.
+	if advanced, err := store.AdvancePasskeySignCount(ctx, "cred-id-123", 0); err != nil || !advanced {
+		t.Fatalf("zero-counter authenticator use: advanced=%v err=%v", advanced, err)
+	}
+	if advanced, err := store.AdvancePasskeySignCount(ctx, "cred-id-123", 5); err != nil || !advanced {
+		t.Fatalf("failed to advance sign count: advanced=%v err=%v", advanced, err)
 	}
 	loaded, _ = store.GetPasskeyByCredentialID(ctx, "cred-id-123")
 	if loaded.SignCount != 5 || loaded.LastUsedAt == nil {
 		t.Fatalf("expected sign count 5 and non-nil last_used_at, got: %+v", loaded)
+	}
+	for _, next := range []uint32{5, 4, 0} {
+		if advanced, err := store.AdvancePasskeySignCount(ctx, "cred-id-123", next); err != nil || advanced {
+			t.Fatalf("non-advancing sign count %d: advanced=%v err=%v", next, advanced, err)
+		}
+	}
+	if advanced, err := store.AdvancePasskeySignCount(ctx, "cred-id-123", 6); err != nil || !advanced {
+		t.Fatalf("failed to advance sign count to 6: advanced=%v err=%v", advanced, err)
 	}
 
 	// Rename passkey

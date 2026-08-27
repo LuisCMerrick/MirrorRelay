@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 )
 
 func TestLoadDurationsAndDevDefaults(t *testing.T) {
@@ -80,9 +82,78 @@ func TestValidateRequires0660ForBothUnixSockets(t *testing.T) {
 	}
 }
 
+func TestValidatePasskeyRelyingPartyAndOrigins(t *testing.T) {
+	valid := Default()
+	valid.Admin.Passkey.Enabled = true
+	valid.Admin.Passkey.RPID = "example.com"
+	valid.Admin.Passkey.Origins = []string{"https://admin.example.com"}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid passkey configuration rejected: %v", err)
+	}
+
+	for name, mutate := range map[string]func(*Config){
+		"RP ID with scheme": func(cfg *Config) { cfg.Admin.Passkey.RPID = "https://example.com" },
+		"uppercase RP ID":   func(cfg *Config) { cfg.Admin.Passkey.RPID = "Example.com" },
+		"origin path":       func(cfg *Config) { cfg.Admin.Passkey.Origins = []string{"https://admin.example.com/path"} },
+		"origin user info":  func(cfg *Config) { cfg.Admin.Passkey.Origins = []string{"https://user@admin.example.com"} },
+		"insecure remote":   func(cfg *Config) { cfg.Admin.Passkey.Origins = []string{"http://admin.example.com"} },
+		"unrelated origin":  func(cfg *Config) { cfg.Admin.Passkey.Origins = []string{"https://admin.other.test"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := valid
+			candidate.Admin.Passkey.Origins = append([]string{}, valid.Admin.Passkey.Origins...)
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatal("invalid passkey configuration was accepted")
+			}
+		})
+	}
+
+	loopback := Default()
+	loopback.Admin.Passkey.Enabled = true
+	loopback.Admin.Passkey.RPID = "localhost"
+	loopback.Admin.Passkey.Origins = []string{"http://localhost:8080"}
+	if err := loopback.Validate(); err != nil {
+		t.Fatalf("loopback development origin rejected: %v", err)
+	}
+}
+
+func TestValidateUIEnhancementBrandAssetsStaySameOrigin(t *testing.T) {
+	for _, value := range []string{"https://assets.example/logo.svg", "//assets.example/logo.svg", "logo.svg", "/logo.svg#fragment", "/logo.svg\\name"} {
+		candidate := Default()
+		candidate.UIEnhancement.Branding.Logo = value
+		if err := candidate.Validate(); err == nil {
+			t.Fatalf("invalid branding logo %q was accepted", value)
+		}
+	}
+
+	candidate := Default()
+	candidate.UIEnhancement.Branding.Logo = "/assets/logo.svg?v=2"
+	candidate.UIEnhancement.Branding.Favicon = "/assets/favicon.ico"
+	if err := candidate.Validate(); err != nil {
+		t.Fatalf("same-origin branding assets rejected: %v", err)
+	}
+
+	withAlpha := Default()
+	withAlpha.UIEnhancement.AccentColor = "#2563eb80"
+	if err := withAlpha.Validate(); err == nil {
+		t.Fatal("eight-digit accent color unsupported by the Web UI was accepted")
+	}
+
+	for _, value := range []string{"relative.css", "/etc/passwd", "/var/lib/mirrorrelay/ui/../secret.css", "/tmp/custom.css\nother"} {
+		candidate := Default()
+		candidate.UIEnhancement.CustomCSS = model.CustomCSSConfig{Enabled: true, File: value}
+		if err := candidate.Validate(); err == nil {
+			t.Fatalf("invalid custom CSS path %q was accepted", value)
+		}
+	}
+}
+
 func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T) {
 	base := Default()
 	settings := WebSettingsFrom(base)
+	settings.Database.Path = "/tmp/ignored-web-settings.db"
+	settings.Distributed.MutationTokenKeyFiles = []string{"/tmp/ignored-mutation-token.key"}
 	settings.Server.UnixSocketEnabled = false
 	settings.Server.LocalAddress = "127.0.0.2"
 	settings.Server.LocalPort = 19081
@@ -152,6 +223,7 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	settings.UpstreamNginx.StopOnMirrorRelayExit = true
 	settings.Webhook.Enabled = true
 	settings.Webhook.URL = "http://127.0.0.1/hooks"
+	settings.Webhook.URLConfigured = true
 	settings.Webhook.Secret = "webhook-secret"
 	settings.Webhook.SecretConfigured = true
 	settings.Webhook.Events = []string{"config_change", "security_alert"}
@@ -172,8 +244,11 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	if applied.Webhook.URL != settings.Webhook.URL || applied.Webhook.Secret != settings.Webhook.Secret || applied.Webhook.Timeout != 9*time.Second || !applied.Webhook.AllowHTTP || !applied.Webhook.AllowPrivate {
 		t.Fatalf("Webhook Web settings were not applied: %+v", applied.Webhook)
 	}
-	if got := WebSettingsFrom(applied); !reflect.DeepEqual(got, settings) {
-		t.Fatalf("Web settings did not round trip through Config:\n got: %#v\nwant: %#v", got, settings)
+	expected := settings
+	expected.Database.Path = base.Database.Path
+	expected.Distributed.MutationTokenKeyFiles = append([]string{}, base.Distributed.MutationTokenKeyFiles...)
+	if got := WebSettingsFrom(applied); !reflect.DeepEqual(got, expected) {
+		t.Fatalf("Web settings did not round trip through Config:\n got: %#v\nwant: %#v", got, expected)
 	}
 	if applied.Database.Path != base.Database.Path || applied.Cache.Path != base.Cache.Path || applied.Admin.Path != base.Admin.Path || applied.UpstreamNginx.Binary != base.UpstreamNginx.Binary {
 		t.Fatalf("Web settings changed a file-only path: %+v", applied)
@@ -186,6 +261,18 @@ func TestWebSettingsApplyOperationalValuesAndPreserveFileOnlyPaths(t *testing.T)
 	decoded, err := DecodeWebSettings(encoded)
 	if err != nil || decoded.HTTP.PublicBaseURL != settings.HTTP.PublicBaseURL {
 		t.Fatalf("Web settings round trip failed: %+v %v", decoded, err)
+	}
+}
+
+func TestMergeNodeSeedsPreservesCredentialsOnlyForSameOrigin(t *testing.T) {
+	existing := []DistributedNodeSeed{{Name: "edge-old", URL: "https://edge.example.test", MutationToken: "existing-secret"}}
+	renamed := mergeNodeSeeds(existing, []DistributedNodeSeed{{Name: "edge-renamed", URL: "https://edge.example.test"}})
+	if renamed[0].MutationToken != "existing-secret" {
+		t.Fatal("renaming a node on the same origin did not preserve its credential")
+	}
+	relocated := mergeNodeSeeds(existing, []DistributedNodeSeed{{Name: "edge-old", URL: "https://attacker.example.test"}})
+	if relocated[0].MutationToken != "" {
+		t.Fatal("node credential was carried to a different origin by display name")
 	}
 }
 

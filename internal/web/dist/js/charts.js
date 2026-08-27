@@ -130,7 +130,7 @@ export function renderDonutChart({
 
   const legend = slices.map(s => `
     <div class="donut-legend-item">
-      <span class="donut-legend-dot" style="background:${s.color}"></span>
+      <svg class="donut-legend-dot" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><circle cx="4" cy="4" r="4" fill="${esc(s.color)}"></circle></svg>
       <span class="donut-legend-label">${esc(s.label)}</span>
       <strong class="donut-legend-val">${s.value}</strong>
     </div>
@@ -139,7 +139,7 @@ export function renderDonutChart({
   return `<div class="chart-box donut-box">
     <div class="chart-header"><strong>${esc(title)}</strong></div>
     <div class="donut-wrap">
-      <svg width="${size}" height="${size}" viewBox="0 0 ${size}" ${size}" class="donut-svg">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="donut-svg">
         ${paths}
         <text x="${cx}" y="${cy - 3}" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="700" font-family="ui-monospace, monospace">${total}</text>
         <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--chart-label)" font-size="9" text-transform="uppercase">Total</text>

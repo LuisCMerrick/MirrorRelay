@@ -11,7 +11,7 @@ import { loadIngress } from './pages/ingress.js';
 import { loadCluster } from './pages/cluster.js';
 import { loadCache } from './pages/cache.js';
 import { loadHealth } from './pages/health.js';
-import { loadAccess, loadAudit } from './pages/logs.js';
+import { loadAccess, loadAudit, stopLogStreams } from './pages/logs.js';
 import { loadSystem } from './pages/system.js';
 import { loadSettings } from './pages/settings.js';
 import { loadAppearance } from './pages/appearance.js';
@@ -45,6 +45,7 @@ export function updatePageHeading() {
 }
 
 export async function renderCurrentPage() {
+  stopLogStreams();
   try { await (loaders[state.currentPage] || loadDashboard)(); } catch (error) { notice(error.message, true); }
 }
 

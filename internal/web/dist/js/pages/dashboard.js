@@ -21,6 +21,7 @@ export async function loadDashboard() {
   const denominator = today.cache_hits + today.cache_misses;
   const hitRate = denominator ? 100 * today.cache_hits / denominator : 0;
   const maximum = cache.maximum_bytes || cache.max_bytes || 0;
+  const cachePercent = Math.max(0, Math.min(100, maximum ? 100 * cache.bytes / maximum : 0));
 
   $('#status').textContent = `${L('Managed Upstream Nginx')} ${stateLabel(upstreamNginx.state)}`;
   $('#status').className = `status ${upstreamNginx.state === 'running' ? 'online' : ''}`;
@@ -82,9 +83,9 @@ export async function loadDashboard() {
       <div class="node-icon-wrap primary">${icon('layers', 20)}</div>
       <div class="node-content">
         <span class="node-title">MirrorRelay</span>
-        <span class="node-sub">Control Plane v${esc(dashboard.version || '0.0.5')}</span>
+        <span class="node-sub">Control Plane v${esc(dashboard.version || '—')}</span>
       </div>
-      <span class="node-protocol">UNIX Socket</span>
+      <span class="node-protocol">TCP / Unix</span>
     </div>
     <div class="topo-arrow">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -95,7 +96,7 @@ export async function loadDashboard() {
         <span class="node-title">Managed Upstream Nginx</span>
         <span class="node-sub">PID ${esc(upstreamNginx.pid || '—')}</span>
       </div>
-      <span class="node-protocol">${isNginxRunning ? 'Active' : 'Offline'}</span>
+      <span class="node-protocol">${isNginxRunning ? 'Unix / TCP' : 'Offline'}</span>
     </div>
     <div class="topo-arrow">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -106,7 +107,7 @@ export async function loadDashboard() {
         <span class="node-title">${L('Upstream Origins')}</span>
         <span class="node-sub">${dashboard.enabled_mirrors || 0} ${L('Repositories')}</span>
       </div>
-      <span class="node-protocol">HTTPS / TLS</span>
+      <span class="node-protocol">HTTP(S) policy</span>
     </div>
   </div>`;
 
@@ -190,8 +191,11 @@ export async function loadDashboard() {
     <h2>${icon('cache', 18)} ${L('Cache usage')}</h2>
     <div class="bar-row">
       <span>${number(cache.files)} ${L('files')}</span>
-      <div class="bar"><i style="width:${maximum ? Math.min(100, 100 * cache.bytes / maximum) : 0}%"></i></div>
-      <span class="bar-percent">${maximum ? (100 * cache.bytes / maximum).toFixed(1) : '0.0'}%</span>
+      <svg class="capacity-bar" viewBox="0 0 100 8" preserveAspectRatio="none" role="progressbar" aria-label="${L('Cache usage')}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${cachePercent.toFixed(1)}">
+        <rect class="capacity-bar-track" x="0" y="0" width="100" height="8" rx="4"></rect>
+        <rect class="capacity-bar-fill" x="0" y="0" width="${cachePercent}" height="8" rx="4"></rect>
+      </svg>
+      <span class="bar-percent">${cachePercent.toFixed(1)}%</span>
     </div>
     <p class="muted">${bytes(cache.bytes)} / ${bytes(maximum)}</p>
   </div>

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,6 +16,20 @@ func TestPasswordRoundTrip(t *testing.T) {
 	}
 	if VerifyPassword(hash, "wrong-password") {
 		t.Fatal("wrong password was accepted")
+	}
+}
+
+func TestPasswordLengthBound(t *testing.T) {
+	tooLong := strings.Repeat("x", MaxPasswordBytes+1)
+	if _, err := HashPassword(tooLong); err == nil {
+		t.Fatal("oversized password was accepted for hashing")
+	}
+	hash, err := HashPassword("SuperSecret123!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if VerifyPassword(hash, tooLong) {
+		t.Fatal("oversized password was accepted for verification")
 	}
 }
 

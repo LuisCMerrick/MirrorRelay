@@ -60,6 +60,21 @@ func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if path == "/auth/appearance" {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		appearance := s.appearanceConfig()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"theme":        appearance.Theme,
+			"accent_color": appearance.AccentColor,
+			"branding":     appearance.Branding,
+			"login":        appearance.Login,
+		})
+		return
+	}
 	if path == "/auth/login" && r.Method == http.MethodPost {
 		s.login(w, r)
 		return
@@ -618,13 +633,18 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return
 	}
-	key := ip + ":" + strings.TrimSpace(in.Username)
+	username := strings.TrimSpace(in.Username)
+	if !validUsername(username) || len(in.Password) > auth.MaxPasswordBytes {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	key := ip + ":" + username
 	release, allowed := s.loginLimiter.Acquire(key)
 	if !allowed {
 		writeError(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
-	user, err := s.store.UserByName(r.Context(), strings.TrimSpace(in.Username))
+	user, err := s.store.UserByName(r.Context(), username)
 	if err != nil || !auth.VerifyPassword(user.PasswordHash, in.Password) {
 		release(false)
 		_ = s.audit(r, in.Username, "login", "session", "invalid credentials", false)

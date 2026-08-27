@@ -38,7 +38,11 @@ type clientExample struct {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, out any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	return decodeJSONLimit(w, r, out, 1<<20)
+}
+
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, out any, maximum int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maximum)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {

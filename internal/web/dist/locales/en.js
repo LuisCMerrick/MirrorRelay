@@ -181,8 +181,8 @@ export default {
     "registry": "Registry",
     "registryBlob": "Registry Blob",
     "packageGuard": "Package Guard & Supply Chain Security",
-    "blockedPackages": "Blocked package patterns (Blacklist regex / wildcards, one per line)",
-    "allowedPackages": "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)"
+    "blockedPackages": "Blocked package patterns (anchor RE2 with ^ or $, otherwise Glob; one per line)",
+    "allowedPackages": "Allowed package patterns (anchor RE2 with ^ or $, otherwise Glob; empty = all permitted)"
 },
   pageMeta: {
     "dashboard": [
@@ -254,28 +254,6 @@ export default {
     "pending": "Pending",
     "failed": "Failed",
     "healthy": "Healthy",
-    ],
-    "settings": [
-        "Settings",
-        "Validated operational configuration saved through the Web UI"
-    ],
-    "users": [
-        "Users",
-        "Administrator account management"
-    ],
-    "account": [
-        "My account",
-        "Change the current password"
-    ]
-},
-  stateLabels: {
-    "match": "Match",
-    "mismatch": "Mismatch",
-
-    "active": "Active",
-    "pending": "Pending",
-    "failed": "Failed",
-    "healthy": "Healthy",
     "unhealthy": "Unhealthy",
     "unknown": "Unknown",
     "running": "Running",
@@ -283,330 +261,9 @@ export default {
     "disabled": "Disabled",
     "restarting": "Restarting"
 },
-  settingsGroups: [
-    {
-        "title": "Local endpoints and ingress",
-        "effect": "restart",
-        "fields": [
-            {
-                "path": "server.unix_socket_enabled",
-                "label": "Enable frontend Unix socket",
-                "type": "boolean"
-            },
-            {
-                "path": "server.frontend_socket",
-                "label": "Frontend Unix socket path",
-                "type": "text",
-                "placeholder": "/run/mirrorrelay/frontend.sock"
-            },
-            {
-                "path": "server.frontend_socket_mode",
-                "label": "Frontend socket file mode",
-                "type": "text",
-                "placeholder": "0660"
-            },
-            {
-                "path": "server.local_address",
-                "label": "Frontend listen IP",
-                "type": "text",
-                "placeholder": "127.0.0.1"
-            },
-            {
-                "path": "server.local_port",
-                "label": "Frontend listen port",
-                "type": "number",
-                "min": 1,
-                "max": 65535
-            },
-            {
-                "path": "runtime.root",
-                "label": "Runtime root directory",
-                "type": "text",
-                "placeholder": "/var/lib/mirrorrelay/runtime"
-            },
-            {
-                "path": "runtime.run_dir",
-                "label": "Runtime PID/socket directory",
-                "type": "text",
-                "placeholder": "/run/mirrorrelay"
-            }
-        ]
-    },
-    {
-        "title": "Ingress and standalone HTTP/TLS",
-        "effect": "restart",
-        "fields": [
-            {
-                "path": "ingress.mode",
-                "label": "Ingress mode",
-                "type": "select",
-                "options": [
-                    [
-                        "external",
-                        "External Shared Nginx"
-                    ],
-                    [
-                        "managed-standalone",
-                        "Managed standalone"
-                    ]
-                ]
-            },
-            {
-                "path": "ingress.generate_snippet",
-                "label": "Generate ingress snippet",
-                "type": "boolean"
-            },
-            {
-                "path": "ingress.snippet_path",
-                "label": "Ingress snippet output path",
-                "type": "text",
-                "placeholder": "/var/lib/mirrorrelay/integration/external-nginx"
-            },
-            {
-                "path": "http.listen",
-                "label": "Standalone HTTP listen",
-                "type": "text",
-                "placeholder": ":80"
-            },
-            {
-                "path": "http.https_listen",
-                "label": "Standalone HTTPS listen",
-                "type": "text",
-                "placeholder": ":443"
-            },
-            {
-                "path": "http.public_base_url",
-                "label": "Public base URL",
-                "type": "text",
-                "placeholder": "https://mirror.example.com"
-            },
-            {
-                "path": "tls.certificate",
-                "label": "TLS certificate file path",
-                "type": "text",
-                "placeholder": "/etc/mirrorrelay/certs/fullchain.pem"
-            },
-            {
-                "path": "tls.private_key",
-                "label": "TLS private key file path",
-                "type": "text",
-                "placeholder": "/etc/mirrorrelay/certs/privkey.pem"
-            },
-            {
-                "path": "tls.min_version",
-                "label": "Minimum TLS version",
-                "type": "select",
-                "options": [
-                    [
-                        "1.2",
-                        "TLS 1.2"
-                    ],
-                    [
-                        "1.3",
-                        "TLS 1.3"
-                    ]
-                ]
-            },
-            {
-                "path": "http.read_timeout",
-                "label": "HTTP read timeout",
-                "type": "text"
-            },
-            {
-                "path": "http.write_timeout",
-                "label": "HTTP write timeout",
-                "type": "text"
-            },
-            {
-                "path": "http.idle_timeout",
-                "label": "HTTP idle timeout",
-                "type": "text"
-            }
-        ]
-    },
-    {
-        "title": "Performance, metadata and redirects",
-        "effect": "restart",
-        "fields": [
-            {
-                "path": "performance.stream_buffer_size_bytes",
-                "label": "Streaming buffer bytes",
-                "type": "select",
-                "valueType": "number",
-                "options": [
-                    [
-                        32768,
-                        "32 KiB"
-                    ],
-                    [
-                        65536,
-                        "64 KiB"
-                    ],
-                    [
-                        131072,
-                        "128 KiB"
-                    ]
-                ]
-            },
-            {
-                "path": "performance.go_memory_limit_bytes",
-                "label": "Go memory limit bytes (0 = environment/default)",
-                "type": "number",
-                "min": 0
-            },
-            {
-                "path": "performance.gogc",
-                "label": "GOGC (-1..10000)",
-                "type": "number",
-                "min": -1,
-                "max": 10000
-            },
-            {
-                "path": "performance.zero_copy_bypass",
-                "label": "Zero-Copy X-Accel Acceleration (Pure binary bypass)",
-                "type": "boolean"
-            },
-            {
-                "path": "metadata.rewrite_buffer_limit_bytes",
-                "label": "Metadata rewrite limit bytes",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "metadata.output_compression",
-                "label": "Metadata output compression",
-                "type": "select",
-                "options": [
-                    [
-                        "auto",
-                        "Automatic"
-                    ],
-                    [
-                        "identity",
-                        "Identity"
-                    ],
-                    [
-                        "gzip",
-                        "Gzip"
-                    ]
-                ]
-            },
-            {
-                "path": "metadata.gzip_min_length_bytes",
-                "label": "Gzip minimum bytes",
-                "type": "number",
-                "min": 0
-            },
-            {
-                "path": "metadata.validator_entries",
-                "label": "Validator entries",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "redirect.max_hops",
-                "label": "Maximum redirect hops",
-                "type": "number",
-                "min": 1,
-                "max": 20
-            },
-            {
-                "path": "redirect.pin_validated_ip",
-                "label": "Pin validated IP for redirects",
-                "type": "boolean"
-            },
-            {
-                "path": "redirect.reject_mixed_dns_result",
-                "label": "Reject mixed permitted/forbidden DNS results",
-                "type": "boolean"
-            }
-        ]
-    },
-    {
-        "title": "Database and cache defaults",
-        "effect": "restart",
-        "fields": [
-            {
-                "path": "database.path",
-                "label": "SQLite database file path",
-                "type": "text",
-                "placeholder": "/var/lib/mirrorrelay/mirrorrelay.db"
-            },
-            {
-                "path": "cache.path",
-                "label": "Cache directory path",
-                "type": "text",
-                "placeholder": "/var/cache/mirrorrelay"
-            },
-            {
-                "path": "cache.max_size_bytes",
-                "label": "Maximum cache bytes",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "cache.max_files",
-                "label": "Maximum observed files",
-                "type": "number",
-                "min": 1
-            },
-            {
-                "path": "cache.minimum_free_bytes",
-                "label": "Minimum free bytes",
-                "type": "number",
-                "min": 0
-            },
-            {
-                "path": "cache.inactive",
-                "label": "Inactive window",
-                "type": "text"
-            },
-            {
-                "path": "cache.metadata_ttl",
-                "label": "Metadata TTL",
-                "type": "text"
-            },
-            {
-                "path": "cache.package_ttl",
-                "label": "Package TTL",
-                "type": "text"
-            },
-            {
-                "path": "cache.cleanup_interval",
-                "label": "Cleanup observation interval",
-                "type": "text"
-            },
-            {
-                "path": "cache.wait_for_fill",
-                "label": "Cache fill wait window",
-                "type": "text"
-            }
-        ]
-    },
-    {
-        "title": "Security and access control",
-        "effect": "restart",
-        "fields": [
-            {
-                "path": "security.allow_http_upstream",
-                "label": "Allow HTTP upstream globally",
-                "type": "boolean"
-            },
-            {
-                "path": "security.allow_private_upstream",
-                "label": "Allow private upstream globally",
-                "type": "boolean"
-            },
-            {
-                "path": "security.expose_client_ip",
-                "label": "Expose validated client IP internally",
-                "type": "boolean"
-            },
-            {
-                "path": "security.trusted_proxy_cidrs",
-                "label": "Trusted ingress CIDRs (one per line)",
-                "type": "list"
-            },
+  duration: function(days, hours, minutes) {
+    return days + 'd ' + hours + 'h ' + minutes + 'm';
+  },
   exitSummary: function(dateStr, code, reason) {
     var codeStr = code === -1 ? 'exit code unknown' : 'exit code ' + (code !== null && code !== undefined ? code : '—');
     return dateStr + ' · ' + codeStr + ' · ' + (reason || '');
@@ -865,7 +522,7 @@ export default {
     "Saved values differ from the running process. Restart MirrorRelay to apply them.": "Saved values differ from the running process. Restart MirrorRelay to apply them.",
     "Restart now": "Restart now",
     "The running process matches the saved settings.": "The running process matches the saved settings.",
-    "These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.": "These operational settings are stored in SQLite, strictly validated, and override the matching YAML values after restart. Repository changes continue to use the immediate Desired/Active validation workflow.",
+    "These operational settings are stored in SQLite and strictly validated. Environment variables remain highest priority, followed by the Web UI override and YAML. Saved operational changes take effect after restart; repository changes continue to use the Desired/Active validation workflow.": "These operational settings are stored in SQLite and strictly validated. Environment variables remain highest priority, followed by the Web UI override and YAML. Saved operational changes take effect after restart; repository changes continue to use the Desired/Active validation workflow.",
     "Source": "Source",
     "Web UI override": "Web UI override",
     "Configuration file": "Configuration file",
@@ -960,8 +617,8 @@ export default {
     "Operator": "Operator",
     "Viewer": "Viewer",
     "Package Guard & Supply Chain Security": "Package Guard & Supply Chain Security",
-    "Blocked package patterns (Blacklist regex / wildcards, one per line)": "Blocked package patterns (Blacklist regex / wildcards, one per line)",
-    "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)": "Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)",
+    "Blocked package patterns (anchor RE2 with ^ or $, otherwise Glob; one per line)": "Blocked package patterns (anchor RE2 with ^ or $, otherwise Glob; one per line)",
+    "Allowed package patterns (anchor RE2 with ^ or $, otherwise Glob; empty = all permitted)": "Allowed package patterns (anchor RE2 with ^ or $, otherwise Glob; empty = all permitted)",
     "Blocked packages (Blacklist)": "Blocked packages (Blacklist)",
     "Allowed packages (Whitelist)": "Allowed packages (Whitelist)",
     "All permitted": "All permitted",
@@ -1065,7 +722,7 @@ export default {
     "Enable Repository Directory Browser": "Enable Repository Directory Browser",
     "Engine Active": "Engine Active",
     "Engine Disabled (Default)": "Engine Disabled (Default)",
-    "Favicon URL (optional)": "Favicon URL (optional)",
+    "Favicon path (optional)": "Favicon path (optional)",
     "Help": "Help",
     "Help documentation": "Help documentation",
     "Instance Name / Title": "Instance Name / Title",
@@ -1073,7 +730,7 @@ export default {
     "Login Subtitle": "Login Subtitle",
     "Login Title": "Login Title",
     "Login page": "Login page",
-    "Logo URL (optional)": "Logo URL (optional)",
+    "Logo path (optional)": "Logo path (optional)",
     "Manual only": "Manual only",
     "No warm-up tasks configured yet.": "No warm-up tasks configured yet.",
     "Node synchronized successfully (%s ms).": "Node synchronized successfully (%s ms).",
@@ -1100,6 +757,7 @@ export default {
     "Target URL Paths / Relative Patterns (one per line, e.g. /dists/bookworm/Release)": "Target URL Paths / Relative Patterns (one per line, e.g. /dists/bookworm/Release)",
     "Task name": "Task name",
     "Theme and colors": "Theme and colors",
+    "Use a same-origin absolute path beginning with /.": "Use a same-origin absolute path beginning with /.",
     "Warm-Up Status": "Warm-Up Status",
     "Warm-Up Task Name": "Warm-Up Task Name",
     "Warm-up job cancelled.": "Warm-up job cancelled.",
@@ -1142,6 +800,161 @@ export default {
     "CIDR": "CIDR",
     "Region Code": "Region Code",
     "Country Codes (comma separated)": "Country Codes (comma separated)",
-    "Remove": "Remove"
+    "Remove": "Remove",
+    "Local endpoints and ingress": "Local endpoints and ingress",
+    "Enable frontend Unix socket": "Enable frontend Unix socket",
+    "Frontend Unix socket path": "Frontend Unix socket path",
+    "Frontend socket file mode": "Frontend socket file mode",
+    "Frontend listen IP": "Frontend listen IP",
+    "Frontend listen port": "Frontend listen port",
+    "Runtime root directory": "Runtime root directory",
+    "Runtime PID and socket directory": "Runtime PID and socket directory",
+    "Ingress and standalone HTTP/TLS": "Ingress and standalone HTTP/TLS",
+    "Managed standalone": "Managed standalone",
+    "Generate ingress snippet": "Generate ingress snippet",
+    "Ingress snippet output path": "Ingress snippet output path",
+    "Standalone HTTP listen": "Standalone HTTP listen",
+    "Standalone HTTPS listen": "Standalone HTTPS listen",
+    "TLS certificate file path": "TLS certificate file path",
+    "TLS private key file path": "TLS private key file path",
+    "Minimum TLS version": "Minimum TLS version",
+    "TLS 1.2": "TLS 1.2",
+    "TLS 1.3": "TLS 1.3",
+    "HTTP read timeout": "HTTP read timeout",
+    "HTTP write timeout": "HTTP write timeout",
+    "HTTP idle timeout": "HTTP idle timeout",
+    "Performance, metadata, and redirects": "Performance, metadata, and redirects",
+    "Streaming buffer bytes": "Streaming buffer bytes",
+    "32 KiB": "32 KiB",
+    "64 KiB": "64 KiB",
+    "128 KiB": "128 KiB",
+    "Go memory limit bytes (0 = environment/default)": "Go memory limit bytes (0 = environment/default)",
+    "GOGC (-1..10000)": "GOGC (-1..10000)",
+    "Zero-Copy X-Accel Acceleration (Pure binary bypass)": "Zero-Copy X-Accel Acceleration (Pure binary bypass)",
+    "Metadata rewrite limit bytes": "Metadata rewrite limit bytes",
+    "Metadata output compression": "Metadata output compression",
+    "Automatic": "Automatic",
+    "Identity": "Identity",
+    "Gzip": "Gzip",
+    "Gzip minimum bytes": "Gzip minimum bytes",
+    "Validator entries": "Validator entries",
+    "Maximum redirect hops": "Maximum redirect hops",
+    "Pin validated IP across redirects": "Pin validated IP across redirects",
+    "Reject mixed permitted/forbidden DNS results": "Reject mixed permitted/forbidden DNS results",
+    "Database and cache defaults": "Database and cache defaults",
+    "SQLite database file path": "SQLite database file path",
+    "Cache directory path": "Cache directory path",
+    "Maximum cache bytes": "Maximum cache bytes",
+    "Maximum observed files": "Maximum observed files",
+    "Minimum free bytes": "Minimum free bytes",
+    "Metadata TTL": "Metadata TTL",
+    "Package TTL": "Package TTL",
+    "Cleanup observation interval": "Cleanup observation interval",
+    "Cache fill wait window": "Cache fill wait window",
+    "Security and access control": "Security and access control",
+    "Allow HTTP upstream globally": "Allow HTTP upstream globally",
+    "Allow private upstream globally": "Allow private upstream globally",
+    "Expose validated client IP internally": "Expose validated client IP internally",
+    "Trusted ingress CIDRs (one per line)": "Trusted ingress CIDRs (one per line)",
+    "Session timeout": "Session timeout",
+    "Login throttle window": "Login throttle window",
+    "Maximum login failures": "Maximum login failures",
+    "Admin CIDRs (one per line)": "Admin CIDRs (one per line)",
+    "Dedicated administration host (blank allows all hosts)": "Dedicated administration host (blank allows all hosts)",
+    "Administration path prefix": "Administration path prefix",
+    "Network transport and concurrency limits": "Network transport and concurrency limits",
+    "Dial timeout": "Dial timeout",
+    "TCP keepalive": "TCP keepalive",
+    "TLS handshake timeout": "TLS handshake timeout",
+    "Response header timeout": "Response header timeout",
+    "Idle connection timeout": "Idle connection timeout",
+    "Maximum idle connections": "Maximum idle connections",
+    "Maximum idle connections per host": "Maximum idle connections per host",
+    "Global concurrency (0 = unlimited)": "Global concurrency (0 = unlimited)",
+    "Per-IP concurrency (0 = unlimited)": "Per-IP concurrency (0 = unlimited)",
+    "Global bandwidth B/s (0 = unlimited)": "Global bandwidth B/s (0 = unlimited)",
+    "Logging and lifecycle": "Logging and lifecycle",
+    "Application log directory": "Application log directory",
+    "Log queue size": "Log queue size",
+    "Log file maximum MiB": "Log file maximum MiB",
+    "Log retention days": "Log retention days",
+    "Health worker interval": "Health worker interval",
+    "Graceful shutdown window": "Graceful shutdown window",
+    "Managed": "Managed",
+    "External advanced mode": "External advanced mode",
+    "Nginx executable path": "Nginx executable path",
+    "Nginx runtime prefix directory": "Nginx runtime prefix directory",
+    "Nginx PID file path": "Nginx PID file path",
+    "Nginx log directory": "Nginx log directory",
+    "Use upstream Unix socket": "Use upstream Unix socket",
+    "Upstream Unix socket path": "Upstream Unix socket path",
+    "Upstream socket file mode": "Upstream socket file mode",
+    "Upstream loopback port": "Upstream loopback port",
+    "Upstream CA bundle path": "Upstream CA bundle path",
+    "TLS verification depth": "TLS verification depth",
+    "DNS resolvers (space separated)": "DNS resolvers (space separated)",
+    "Resolver refresh": "Resolver refresh",
+    "Configuration history limit": "Configuration history limit",
+    "Restart maximum failures": "Restart maximum failures",
+    "Restart failure window": "Restart failure window",
+    "Initial restart backoff": "Initial restart backoff",
+    "Maximum restart backoff": "Maximum restart backoff",
+    "Worker processes": "Worker processes",
+    "Worker user (empty is allowed)": "Worker user (empty is allowed)",
+    "Worker connections": "Worker connections",
+    "Stop Nginx when MirrorRelay exits": "Stop Nginx when MirrorRelay exits",
+    "Distributed cluster and routing": "Distributed cluster and routing",
+    "Enable distributed cluster support": "Enable distributed cluster support",
+    "Cluster node role": "Cluster node role",
+    "Standalone": "Standalone",
+    "Coordinator": "Coordinator",
+    "Edge": "Edge",
+    "Cluster communication token (edge registration)": "Cluster communication token (edge registration)",
+    "Mutation token (edge write and sync authentication)": "Mutation token (edge write and sync authentication)",
+    "Mutation-token keyring files (one per line)": "Mutation-token keyring files (one per line)",
+    "Coordinator instance ID": "Coordinator instance ID",
+    "Allow plaintext HTTP between cluster nodes": "Allow plaintext HTTP between cluster nodes",
+    "Current node name": "Current node name",
+    "Current node public base URL": "Current node public base URL",
+    "Current node region": "Current node region",
+    "Current node country code": "Current node country code",
+    "Client traffic routing mode": "Client traffic routing mode",
+    "Hybrid (CIDR > geo > priority/weight)": "Hybrid (CIDR > geo > priority/weight)",
+    "CIDR client networks only": "CIDR client networks only",
+    "Geographic region and country only": "Geographic region and country only",
+    "Node priority and weight only": "Node priority and weight only",
+    "Cluster node health-check interval": "Cluster node health-check interval",
+    "Cluster node health-check timeout": "Cluster node health-check timeout",
+    "Consecutive failures before unhealthy": "Consecutive failures before unhealthy",
+    "Consecutive successes before healthy": "Consecutive successes before healthy",
+    "Webhook alerts — single destination": "Webhook alerts — single destination",
+    "Enable Webhook notifications": "Enable Webhook notifications",
+    "Single Webhook destination URL (provider format is auto-detected)": "Single Webhook destination URL (provider format is auto-detected)",
+    "Secret token (for HMAC-SHA256 signature)": "Secret token (for HMAC-SHA256 signature)",
+    "Enabled event names (one per line)": "Enabled event names (one per line)",
+    "Request timeout": "Request timeout",
+    "Allow plaintext HTTP for this webhook": "Allow plaintext HTTP for this webhook",
+    "Allow private or local addresses for this webhook": "Allow private or local addresses for this webhook",
+    "Cache warm-up and predictive prefetch": "Cache warm-up and predictive prefetch",
+    "Enable Smart Cache Warm-Up Engine": "Enable Smart Cache Warm-Up Engine",
+    "Maximum warm-up concurrency": "Maximum warm-up concurrency",
+    "Warm-up bandwidth limit in bytes/s (0 = unlimited)": "Warm-up bandwidth limit in bytes/s (0 = unlimited)",
+    "Warm-up job timeout": "Warm-up job timeout",
+    "Metadata package extraction depth (0 = direct only, 1 = parse packages)": "Metadata package extraction depth (0 = direct only, 1 = parse packages)",
+    "Retry count on failure": "Retry count on failure",
+    "Enable Passkey authentication": "Enable Passkey authentication",
+    "Passkey relying party name": "Passkey relying party name",
+    "Passkey relying party ID": "Passkey relying party ID",
+    "Allowed Passkey origins (one per line)": "Allowed Passkey origins (one per line)",
+    "Configured only through YAML or environment variables because it is needed before the settings database opens.": "Configured only through YAML or environment variables because it is needed before the settings database opens.",
+    "Configured; leave blank to keep the current value": "Configured; leave blank to keep the current value",
+    "YAML files must not exceed 1 MiB.": "YAML files must not exceed 1 MiB.",
+    "Unable to read the selected YAML file.": "Unable to read the selected YAML file.",
+    "Enter a valid absolute HTTP or HTTPS URL.": "Enter a valid absolute HTTP or HTTPS URL.",
+    "The YAML changed after validation. Validate and preview it again before applying.": "The YAML changed after validation. Validate and preview it again before applying.",
+    "WebAuthn / Passkey is not supported in this browser.": "WebAuthn / Passkey is not supported in this browser.",
+    "No passkey credential returned.": "No passkey credential returned.",
+    "Passkey registration cancelled.": "Passkey registration cancelled.",
+    "Passkey names must not exceed 128 bytes.": "Passkey names must not exceed 128 bytes."
 }
 };

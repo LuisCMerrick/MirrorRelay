@@ -25,15 +25,15 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 ## Web UI 覆盖与配置管理
 
-**设置** 页面提供对 `config.yaml` 全部 20 个配置块的完整管理能力。设置修改经过启动级严格验证并持久化于 SQLite 数据库中，同时维护不可变版本历史以供审计与一键回滚。进程启动时，MirrorRelay 先加载 YAML，再把保存的 Web UI 值覆盖到对应字段，因此优先级为：
+**设置** 生命周期可导入和导出 `config.yaml` 的全部 22 个顶层配置块。结构化表单呈现运行配置，专用的 **外观** 页面管理 `ui_enhancement`。启动字段 `database.path` 与 `distributed.mutation_token_key_files` 必须在打开设置数据库与凭据密钥环前加载，因此 UI 会将它们标为仅文件配置且绝不持久化覆盖。其他修改经过严格校验并写入 SQLite；设置值与其脱敏历史记录在同一事务内提交。历史在保留期间只追加，并按 `upstream_nginx.history_limit` 裁剪。进程启动时，MirrorRelay 先加载 YAML，再把保存的 Web UI 值覆盖到对应字段，因此优先级为：
 
 ```text
 已记录的环境变量 -> Web UI 保存的运行值 -> YAML
 ```
 
-保存、导入或重置 Web UI 覆盖不会热更新当前进程，必须重启 MirrorRelay 才能应用。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
+保存、导入、重置或回滚的运行配置不会热更新当前进程，必须重启 MirrorRelay 才能应用；导入或回滚中的 `ui_enhancement` 会在同一事务内提交，并通过专用外观状态立即发布。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
-可使用 **导出配置** 下载标准或完整备份 YAML，使用 **导入配置** 上传/粘贴 YAML 文本并进行严格校验与 Diff 差异预览。使用 **重启后恢复 YAML** 删除保存的覆盖值。保存数据无效时，启动会明确失败，不会静默回退到 YAML。
+可使用 **导出配置** 下载标准或完整备份 YAML。两种导出都会省略实例本地的 `http.public_base_url` 与 `distributed.node.public_base_url`；标准导出还会省略集群凭据、Webhook URL/签名密钥以及 Passkey RP ID/Origins。完整备份通过受 CSRF 保护的 `POST` 显式生成并包含这些凭据，必须按密钥材料保管。导入最多接受 1 MiB 的解码后 YAML，会校验预览时的精确内容，保留省略的本地 URL、Passkey 绑定与凭据，并始终保留仅文件配置的数据库/密钥环路径。只有 Edge 节点 URL 未改变时才会保留省略的 Mutation Token；改为其他 Origin 时必须显式提供新凭据。使用 **重启后恢复 YAML** 删除保存的运行配置覆盖；独立的即时外观覆盖应通过 **外观 → 恢复默认值** 重置。保存数据无效时，启动会明确失败，不会静默回退到 YAML。历史 API 不返回已存设置快照；回滚使用脱敏快照，并保留脱敏 Sentinel 所代表的当前凭据。
 
 ## 本地端点
 
@@ -67,7 +67,7 @@ Go 默认通过 Unix Socket 连接 Managed Upstream Nginx。只有显式设置 `
 | `http.read_timeout`、`http.idle_timeout` | MirrorRelay HTTP Server 的 Header/请求与 Keepalive 时限 |
 | `http.write_timeout` | MirrorRelay HTTP 写入时限；`0` 表示有意允许长时间流式响应 |
 | `tls.certificate`、`tls.private_key`、`tls.min_version` | 仅独立入口使用；最低 TLS 为 `1.2` 或 `1.3` |
-| `admin.path` | 仅配置文件可改的后台前缀；默认 `/admin/`，包含 UI 与内嵌 `api/v1/`，修改后必须重启 |
+| `admin.path` | 后台前缀；默认 `/admin/`，包含 UI 与内嵌 `api/v1/`，修改后必须重启并更新入口片段 |
 
 External 模式不测试或绑定公网端口，也绝不会 Reload 共享 External Shared Nginx。生成的 Host Mode 块含证书占位说明，必须由入口管理员补充。
 
@@ -85,7 +85,7 @@ External 模式不测试或绑定公网端口，也绝不会 Reload 共享 Exter
 | `upstream_nginx.ca_bundle`、`upstream_nginx.tls_verify_depth` | 平台 CA Bundle 与上游证书链验证深度；DEB 使用 `/etc/ssl/certs/ca-certificates.crt`，RPM 使用 `/etc/pki/tls/certs/ca-bundle.crt` |
 | `upstream_nginx.resolver` | 写入生成配置的 Resolver 地址 |
 | `upstream_nginx.resolver_refresh` | 安全 DNS 重新解析/Reconcile 间隔 |
-| `upstream_nginx.history_limit` | 保留的不可变配置版本数 |
+| `upstream_nginx.history_limit` | Managed Upstream Nginx、Active 状态与 Web UI 设置历史的最大保留条数 |
 | `upstream_nginx.restart_*` | Supervisor 失败窗口和指数退避上限 |
 | `upstream_nginx.worker_processes`、`upstream_nginx.worker_user`、`upstream_nginx.worker_connections` | Managed Upstream Nginx Worker 设置。仅当 Nginx Master 以 root 运行时才生成 `worker_user` 指令；打包提供的非 root 服务会省略该冗余指令。 |
 | `upstream_nginx.stop_on_mirrorrelay_exit` | MirrorRelay 正常退出时是否停止 Managed Upstream Nginx；默认 `false`，便于重启后 Attach 并保持数据面 |
@@ -145,7 +145,7 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 |---|---|
 | `webhook.enabled` | 启用异步事件投递 |
 | `webhook.url` | 单个生效目标 URL；默认强制 HTTPS，并根据主机名自动识别平台消息格式 |
-| `webhook.secret` | 可选 HMAC-SHA256 签名密钥；非管理员读取设置时会同时隐藏密钥与目标 URL |
+| `webhook.secret` | 可选 HMAC-SHA256 签名密钥；设置响应与历史始终同时脱敏密钥和目标 URL |
 | `webhook.events` | 需要投递的事件名称；空列表表示全部事件 |
 | `webhook.timeout` | 请求、TLS 握手与响应头超时 |
 | `webhook.allow_http` | 独立的明文 HTTP 显式许可；默认 `false` |
@@ -166,6 +166,10 @@ MirrorRelay 会把每个事件投递到一个已配置的 Webhook 目标；钉�
 | `security.login_window`、`security.login_max_failures` | 登录频次限制窗口与最大失败次数 |
 | `admin.host` | 管理控制台与指标端点的专用独立域名隔离 |
 | `admin.path` | 管理控制台与 REST API 的基础路径前缀 |
+| `admin.passkey.enabled` | 启用 WebAuthn Passkey 注册与认证 |
+| `admin.passkey.rp_name` | Authenticator 展示名称，最长 128 字节 |
+| `admin.passkey.rp_id` | 精确的小写主机名/IP Relying Party ID，不含 Scheme、端口或路径 |
+| `admin.passkey.origins` | 精确允许的 `https://` Origin；只有回环开发环境可使用 HTTP，且每个 Host 必须匹配 RP ID |
 | `limits.max_total_concurrency` | 全局并发请求上限；`0` 表示无限制 |
 | `limits.max_ip_concurrency` | 单客户端并发请求上限；`0` 表示无限制 |
 | `limits.bandwidth_limit_bps` | 全局 Managed Upstream Nginx 上游带宽上限；`0` 表示无限制 |
@@ -193,19 +197,19 @@ MirrorRelay 提供可选的界面主题增强、颜色定制、统一仓库目�
 |---|---|
 | `ui_enhancement.enabled` | 公开仓库界面增强开关（默认 `false`）。为 `false` 时不改写或重设上游目录响应样式；管理界面主题切换仍然可用。 |
 | `ui_enhancement.theme` | 主题模式：`system`（默认跟随系统）、`light`（浅色明亮）或 `dark`（深色暗黑） |
-| `ui_enhancement.accent_color` | 主色调十六进制颜色代码（如 `#2563eb`） |
+| `ui_enhancement.accent_color` | 不透明的三位或六位主色调十六进制颜色代码（如 `#2563eb`） |
 | `ui_enhancement.branding.title` | 自定义站点/实例标题（默认 `MirrorRelay`） |
-| `ui_enhancement.branding.logo` | 自定义 Logo 图片 URL |
-| `ui_enhancement.branding.favicon` | 自定义 Favicon 图标 URL |
+| `ui_enhancement.branding.logo` | 可选的同源 Logo 绝对路径，必须以 `/` 开头并由入口提供资源 |
+| `ui_enhancement.branding.favicon` | 可选的同源 Favicon 绝对路径，必须以 `/` 开头并由入口提供资源 |
 | `ui_enhancement.login.title` | 登录页主标题 |
 | `ui_enhancement.login.subtitle` | 登录页副标题 |
 | `ui_enhancement.custom_css.enabled` | 启用自定义 CSS 注入 |
-| `ui_enhancement.custom_css.file` | 自定义 CSS 文件路径（通过 `GET /ui/custom.css` 提供） |
+| `ui_enhancement.custom_css.file` | 指向常规 `.css` 文件的规范绝对路径（通过 `GET /ui/custom.css` 提供；拒绝符号链接及大于 1 MiB 的文件） |
 | `ui_enhancement.repository_browser.enabled` | 启用现代自适应仓库目录浏览器（界面增强启用时默认 `true`） |
 
 管理界面的登录页和顶栏还提供浏览器本地的“亮色 / 暗色 / 自动”切换。“自动”会跟随 `prefers-color-scheme`；浏览器保存的偏好会覆盖实例默认值，直到用户在本地再次修改。
 
-> **安全模式 (Safe Mode)**：在任何目录或帮助页面 URL 后添加 `?safe-ui=1` 参数即可绕过所有界面增强与脚本，直接回退并显示上游原始 HTML 响应。
+> **安全界面行为**：在上游目录 URL 使用 `?safe-ui=1` 会跳过 MirrorRelay 生成的目录浏览器，继续普通上游响应链路（仓库单独开启的兼容 URL Rewrite 仍可能生效）。在生成的 `/help/` 页面上，该参数只抑制可选自定义 CSS；内置帮助布局与选择/复制脚本仍然启用。
 
 ## 客户端配置帮助 (Help)
 
@@ -219,7 +223,7 @@ MirrorRelay 提供常见 Linux 发行版与软件包管理器的开箱即用交�
 
 Web UI 和 Repository API 提供 Profile/版本、路由模式、多上游、Strip/Add Prefix、Host 与请求 Header 改写、连接/读取/发送超时、Cache 类别 TTL、认证响应缓存、Metadata Rewrite Host/缓冲上限、逐仓库 `html_rewrite_enabled` 开关、健康策略、并发/带宽限制、访问策略、客户端帮助配置（`help.enabled`、`help.template`、`help.title`、`help.summary`）、Registry Auth/Token/Blob 策略，以及 HTTP/私网许可开关。仓库验证会拒绝根路径、系统路径、后台路径或 `/_mirrorrelay/` 冲突、重复或相互重叠的仓库路径、重复公开 Host，以及占用已配置共享 Host 的 Host Mode 仓库。
 
-`blocked_packages` 与 `allowed_packages` 各自最多接受 128 条规则，每条最多 512 字节。规则必须能够解析为 Go Glob 或 RE2 正则表达式；仓库 Candidate 校验及 Active 路由快照构建阶段都会编译规则。非法 Candidate 会被拒绝；若持久化状态意外包含非法规则，请求会按 Fail-Closed 策略拒绝，而不会静默跳过策略。
+`blocked_packages` 与 `allowed_packages` 各自最多接受 128 条规则，每条最多 512 字节。以 `^` 开头或 `$` 结尾的规则按整串 RE2 正则表达式解析，其余规则按 Go Glob 解析；仓库 Candidate 校验及 Active 路由快照构建阶段都会编译规则。非法 Candidate 会被拒绝；若持久化状态意外包含非法规则，请求会按 Fail-Closed 策略拒绝，而不会静默跳过策略。
 
 `html_rewrite_enabled` 默认值为 `false`。为可浏览仓库响应启用后，MirrorRelay 会相对所选上游页面解析同源 HTML URL。位于有效上游 Base（包含 `add_prefix`）下的 URL 会返回公开仓库 Namespace（包含 `strip_prefix`）；同源 Base 外路径会获得不透明的 `/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>` URL。HMAC 覆盖仓库、生成页面时实际选中的上游/Host 策略、转义后的目标路径和 Query，因此客户端不能替换上游、根路径或 Query；只有 MirrorRelay 生成的目标会被接受，跨 Origin URL 保持不变。请求仍遵守仓库访问策略，并通过 Managed Upstream Nginx 复用 Pin 地址、TLS 校验、缓存策略与限制。生成的共享入口片段会为 Path Mode 仓库包含必需的辅助 Location。
 

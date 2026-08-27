@@ -85,7 +85,7 @@ func TestRenderHTML(t *testing.T) {
 		Help: model.HelpConfig{Enabled: true},
 	}
 
-	htmlOut := RenderHTML(listing, repo, "/debian/", model.BrandingConfig{Title: "Test Mirrors"}, "dark", false)
+	htmlOut := RenderHTML(listing, repo, "/debian/", model.BrandingConfig{Title: "Test Mirrors"}, "dark", "#2563eb", false)
 	if !strings.Contains(htmlOut, "Index of /debian/") {
 		t.Errorf("missing title in rendered HTML")
 	}
@@ -94,5 +94,26 @@ func TestRenderHTML(t *testing.T) {
 	}
 	if !strings.Contains(htmlOut, "data-theme=\"dark\"") {
 		t.Errorf("missing dark theme in rendered HTML")
+	}
+	if strings.Contains(htmlOut, "/ui/base.css") {
+		t.Error("rendered browser must not load an undefined or origin-controlled base stylesheet")
+	}
+}
+
+func TestDirectoryBrowserRejectsUnsafeUpstreamLinks(t *testing.T) {
+	body := []byte(`<html><head><title>Index of /</title></head><body><table id="indexlist">
+<tr><td><a href="package.deb">package.deb</a></td></tr>
+<tr><td><a href="javascript:alert(1)">malicious</a></td></tr>
+<tr><td><a href="//evil.example/file">external</a></td></tr>
+</table></body></html>`)
+	listing, ok := ParseDirectoryIndex(body, "/")
+	if !ok || len(listing.Entries) != 1 || listing.Entries[0].Href != "package.deb" {
+		t.Fatalf("unsafe directory links were retained: ok=%v listing=%+v", ok, listing)
+	}
+
+	listing.Entries = append(listing.Entries, DirEntry{Name: "injected", Href: "data:text/html,unsafe"})
+	rendered := RenderHTML(listing, model.Mirror{Name: "test"}, "/", model.BrandingConfig{}, "system", "#2563eb", false)
+	if strings.Contains(rendered, "data:text/html") || strings.Contains(rendered, "javascript:") || strings.Contains(rendered, "evil.example") {
+		t.Fatalf("generated browser page retained an unsafe link: %s", rendered)
 	}
 }

@@ -30,7 +30,10 @@ security: {allow_http_upstream: false, allow_private_upstream: false, expose_cli
 transport: {dial_timeout: 10s, keep_alive: 30s, tls_handshake_timeout: 10s, response_header_timeout: 30s, idle_connection_timeout: 90s, max_idle_connections: 512, max_idle_connections_per_host: 64}
 limits: {max_total_concurrency: 0, max_ip_concurrency: 0, bandwidth_limit_bps: 0}
 health: {worker_interval: 15s}
-admin: {host: "", path: /admin/}
+admin:
+  host: ""
+  path: /admin/
+  passkey: {enabled: false, rp_name: MirrorRelay, rp_id: "", origins: []}
 shutdown: {grace_period: 30m}
 upstream_nginx:
   mode: managed

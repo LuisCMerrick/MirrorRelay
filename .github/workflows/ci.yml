@@ -35,9 +35,10 @@ jobs:
           go test -race -p 1 -count=1 ./...
       - name: Scan reachable Go vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-      - name: Verify UI and bundled Managed Upstream Nginx
+      - name: Verify UI, documentation and bundled Managed Upstream Nginx
         run: |
-          find internal/web/dist -name "*.js" -exec node --check {} +
+          ./scripts/verify-web-assets.sh
+          node scripts/verify-docs.mjs
           (cd nginx/sbin && sha256sum -c nginx.sha256)
           file nginx/sbin/nginx | grep -E 'x86-64.*statically linked'
           ldd nginx/sbin/nginx > /tmp/upstream-nginx-ldd.txt 2>&1 || true

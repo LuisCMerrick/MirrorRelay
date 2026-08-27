@@ -6,7 +6,7 @@ import { applyLanguage, currentLanguage, getLocale, L, onLanguageChange } from '
 import { onRestartCompleted, triggerRestart } from './restart.js';
 import { initRouter, renderCurrentPage, updatePageHeading } from './router.js';
 import { state } from './state.js';
-import { applyInstanceTheme, initThemeControls, refreshThemeControls } from './theme.js';
+import { initThemeControls, refreshThemeControls } from './theme.js';
 import { loadDashboard } from './pages/dashboard.js';
 import { loadMirrors } from './pages/mirrors.js';
 import { initMirrorForm } from './pages/mirrorForm.js';
@@ -14,13 +14,23 @@ import { initMirrorDetail } from './pages/mirrorDetail.js';
 import { loadProfilesData } from './pages/profiles.js';
 import { initCustom } from './pages/custom.js';
 import { initCluster } from './pages/cluster.js';
+import { applyInstanceAppearance } from './instance-appearance.js';
 
 import { loginWithPasskey } from './passkey.js';
 
 let initialRegistrationRequired = false;
 let recoveryMode = false;
+let instanceAppearanceLoaded = false;
+
+async function loadInstanceAppearance() {
+  if (instanceAppearanceLoaded) return;
+  const appearance = await api('/auth/appearance');
+  applyInstanceAppearance(appearance);
+  instanceAppearanceLoaded = true;
+}
 
 function refreshLoginMode() {
+  if (initialRegistrationRequired) recoveryMode = false;
   const dictionary = getLocale().dictionary || {};
   const text = key => dictionary[key] || key;
   $('#login-mode-title').textContent = text(initialRegistrationRequired ? 'initialAdminTitle' : 'signInTitle');
@@ -28,8 +38,14 @@ function refreshLoginMode() {
   $('#login-submit').textContent = text(initialRegistrationRequired ? 'createAdministrator' : 'signIn');
   $('#login-password-confirmation-group').classList.toggle('hidden', !initialRegistrationRequired);
   $('#login-password-confirmation').required = initialRegistrationRequired;
+  $('#login-password').required = initialRegistrationRequired || !recoveryMode;
+  $('#login-recovery-code').required = !initialRegistrationRequired && recoveryMode;
   $('#login-password').autocomplete = initialRegistrationRequired ? 'new-password' : 'current-password';
+  const recoveryToggleLabel = $('#login-recovery-toggle span');
+  if (recoveryToggleLabel) recoveryToggleLabel.textContent = text(recoveryMode ? 'usePassword' : 'useRecoveryCode');
   if (initialRegistrationRequired) {
+    $('#login-password-group').classList.remove('hidden');
+    $('#login-recovery-group').classList.add('hidden');
     $('#login-alt-actions')?.classList.add('hidden');
   }
 }
@@ -50,16 +66,20 @@ async function loadInitialRegistrationStatus() {
   initialRegistrationRequired = Boolean(status?.required);
   refreshLoginMode();
   if (!initialRegistrationRequired) {
+    $('#login-alt-actions')?.classList.remove('hidden');
     try {
       const passkeyStatus = await api('/auth/passkey/status');
-      if (passkeyStatus?.enabled) {
-        $('#login-alt-actions')?.classList.remove('hidden');
-      }
-    } catch (_) {}
+      $('#login-passkey-btn')?.classList.toggle('hidden', !passkeyStatus?.enabled);
+    } catch (_) {
+      // Recovery codes remain usable independently of the Passkey feature.
+      // Keep that path visible if the status probe fails or Passkeys are off.
+      $('#login-passkey-btn')?.classList.add('hidden');
+    }
   }
 }
 
 async function boot() {
+  try { await loadInstanceAppearance(); } catch (_) {}
   let session;
   try {
     session = await api('/auth/session');
@@ -71,6 +91,7 @@ async function boot() {
       await loadInitialRegistrationStatus();
     } catch (error) {
       $('#login-error').textContent = error.message;
+      $('#login-error').focus();
     }
     return;
   }
@@ -79,10 +100,6 @@ async function boot() {
   refreshRoleUI();
   state.signedIn = true;
   $('#user-name').textContent = session.username;
-  try {
-    const appearance = await api('/appearance');
-    applyInstanceTheme(appearance.theme);
-  } catch (_) {}
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   try {
@@ -115,13 +132,20 @@ document.querySelectorAll('.language-switch button').forEach(button => button.ad
 
 $('#login-passkey-btn')?.addEventListener('click', async () => {
   $('#login-error').textContent = '';
+  const button = $('#login-passkey-btn');
   try {
-    const username = $('#login-user').value;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    const username = $('#login-user').value.trim();
     const session = await loginWithPasskey(username);
     state.csrf = session.csrf_token;
     await boot();
   } catch (error) {
     $('#login-error').textContent = error.message;
+    $('#login-error').focus();
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 });
 
@@ -129,8 +153,7 @@ $('#login-recovery-toggle')?.addEventListener('click', () => {
   recoveryMode = !recoveryMode;
   $('#login-password-group').classList.toggle('hidden', recoveryMode);
   $('#login-recovery-group').classList.toggle('hidden', !recoveryMode);
-  const dictionary = getLocale().dictionary || {};
-  $('#login-recovery-toggle').textContent = recoveryMode ? (dictionary.usePassword || 'Use Password') : (dictionary.useRecoveryCode || 'Use Recovery Code');
+  refreshLoginMode();
   if (recoveryMode) {
     $('#login-recovery-code').focus();
   } else {
@@ -141,8 +164,11 @@ $('#login-recovery-toggle')?.addEventListener('click', () => {
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault();
   $('#login-error').textContent = '';
+  const submitButton = $('#login-submit');
   try {
-    const username = $('#login-user').value;
+    submitButton.disabled = true;
+    submitButton.setAttribute('aria-busy', 'true');
+    const username = $('#login-user').value.trim();
     let session;
     if (initialRegistrationRequired) {
       const password = $('#login-password').value;
@@ -172,9 +198,13 @@ $('#login-form').addEventListener('submit', async event => {
     await boot();
   } catch (error) {
     $('#login-error').textContent = error.message;
+    $('#login-error').focus();
     if (initialRegistrationRequired) {
       try { await loadInitialRegistrationStatus(); } catch (_) {}
     }
+  } finally {
+    submitButton.disabled = false;
+    submitButton.removeAttribute('aria-busy');
   }
 });
 $('#logout').addEventListener('click', async () => {

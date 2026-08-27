@@ -62,12 +62,15 @@ func TestRenderHelpDebian(t *testing.T) {
 	}
 
 	// 3. Render HTML
-	htmlOut := RenderDetailHTML(res, model.BrandingConfig{Title: "My Mirrors"}, "dark", false)
+	htmlOut := RenderDetailHTML(res, model.BrandingConfig{Title: "My Mirrors"}, "dark", "#2563eb", false)
 	if !strings.Contains(htmlOut, "Debian 使用帮助") {
 		t.Errorf("expected title in rendered HTML")
 	}
 	if !strings.Contains(htmlOut, "data-theme=\"dark\"") {
 		t.Errorf("expected dark theme attribute")
+	}
+	if strings.Contains(htmlOut, "/ui/base.css") {
+		t.Error("rendered help must not load an undefined or origin-controlled base stylesheet")
 	}
 }
 
@@ -161,7 +164,7 @@ func TestRenderOverviewHTML(t *testing.T) {
 		},
 	}
 
-	htmlOut := RenderOverviewHTML(repos, "https://mirrors.example.com", model.BrandingConfig{Title: "Test Mirrors"}, "system")
+	htmlOut := RenderOverviewHTML(repos, "https://mirrors.example.com", model.BrandingConfig{Title: "Test Mirrors"}, "system", "#2563eb")
 	if !strings.Contains(htmlOut, "Debian") {
 		t.Errorf("expected Debian in overview HTML")
 	}

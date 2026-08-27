@@ -2,6 +2,7 @@ package browser
 
 import (
 	"bytes"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -136,7 +137,7 @@ func parseTableRow(tr *html.Node) (DirEntry, bool) {
 		}
 	}
 
-	if linkHref == "" || isSortLink(linkHref) {
+	if linkHref == "" || isSortLink(linkHref) || !safeListingHref(linkHref) {
 		return DirEntry{}, false
 	}
 
@@ -202,7 +203,7 @@ func parsePreListing(body []byte) []DirEntry {
 		name := strings.TrimSpace(matches[2])
 		rest := strings.TrimSpace(matches[3])
 
-		if isSortLink(href) || name == "" {
+		if isSortLink(href) || name == "" || !safeListingHref(href) {
 			continue
 		}
 
@@ -245,6 +246,17 @@ func parsePreListing(body []byte) []DirEntry {
 
 func isSortLink(href string) bool {
 	return strings.HasPrefix(href, "?") || strings.HasPrefix(href, "#")
+}
+
+// safeListingHref accepts only bounded same-origin path references. Directory
+// listings are controlled by the upstream, so absolute, scheme-relative and
+// executable URLs must never be copied into a MirrorRelay-generated page.
+func safeListingHref(href string) bool {
+	if href == "" || len(href) > 8192 || strings.TrimSpace(href) != href || strings.ContainsAny(href, "\\\x00\r\n\t") {
+		return false
+	}
+	parsed, err := url.Parse(href)
+	return err == nil && !parsed.IsAbs() && parsed.Scheme == "" && parsed.Host == "" && parsed.User == nil && parsed.Opaque == "" && parsed.Fragment == "" && parsed.Path != ""
 }
 
 func looksLikeDate(s string) bool {

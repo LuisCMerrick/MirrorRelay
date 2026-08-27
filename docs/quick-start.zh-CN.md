@@ -20,10 +20,10 @@ go run ./cmd/mirrorrelay -dev
 ### 方式 B：生产环境发行版安装包部署 (DEB / RPM)
 ```bash
 # Debian / Ubuntu:
-sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
 
 # RHEL / Rocky Linux / Fedora:
-sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
 
 # 审核 security.admin_cidrs 后启用服务：
 sudoedit /etc/mirrorrelay/config.yaml

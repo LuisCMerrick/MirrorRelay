@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/LuisCMerrick/MirrorRelay)](https://github.com/LuisCMerrick/MirrorRelay/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
-A self-hosted pull-through caching gateway for Linux package repositories and OCI container registries with a web management UI and managed Nginx data plane.
+A self-hosted pull-through caching gateway for Linux package repositories and OCI container registries with a web management UI and Managed Upstream Nginx data plane.
 
 ```text
 APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy · Conda · Docker / OCI
@@ -60,6 +60,7 @@ Common approaches include full mirror synchronization, repository managers, or m
 | **Edge Configuration Consistency** | ✅ Supported | Real-time fingerprint and version check between Coordinator and Edge nodes |
 | **Docker / OCI Distributed Routing** | 🚧 Planned | Docker registry distributed routing is planned for future control-plane updates (single-node OCI pull proxy is fully supported) |
 | **Bilingual Web Management UI** | ✅ Supported | Zero-dependency responsive UI in English and Chinese with persistent switch and live restart |
+| **Settings, Passkeys & Recovery** | ✅ Supported | Strict Web UI configuration import/export/history, WebAuthn passkeys, and single-use emergency recovery codes |
 
 ---
 
@@ -133,10 +134,10 @@ The Compose model uses `luiscmerrick/mirrorrelay:latest` by default. Set
 
 ```bash
 # Debian / Ubuntu (amd64 example):
-sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
 
 # RHEL / Rocky Linux / Fedora (amd64 example):
-sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
 
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
@@ -284,5 +285,6 @@ Security vulnerabilities should be reported responsibly according to our [Securi
 
 ## License
 
-MirrorRelay is licensed under the [GNU General Public License v3.0](LICENSE).  
-Third-party component licenses for bundled Nginx dependencies (musl, OpenSSL, PCRE2, zlib) are documented in [nginx/NOTICE.md](nginx/NOTICE.md).
+MirrorRelay is licensed under the [GNU General Public License v3.0](LICENSE).
+Third-party component licenses for bundled Managed Upstream Nginx dependencies
+are documented in [nginx/NOTICE.md](nginx/NOTICE.md).

@@ -5,6 +5,7 @@ import { $, notice } from './dom.js';
 import { L } from './i18n.js';
 
 let restartCompleted = async () => {};
+let restartInProgress = false;
 
 export function onRestartCompleted(handler) {
   restartCompleted = handler;
@@ -23,36 +24,50 @@ function resetRestartButtons() {
 }
 
 export async function triggerRestart() {
+  if (restartInProgress) return;
   if (!confirm(L('Restart MirrorRelay service now? The application will reconnect automatically once ready.'))) return;
-  try {
-    notice(L('Requesting service restart...'));
-    await api('/system/restart', {method: 'POST'});
-  } catch (error) {
-    $('#settings-error').textContent = error.message;
-  }
-  notice(L('MirrorRelay is restarting, reconnecting...'));
+  restartInProgress = true;
   restartButtons().forEach(btn => {
     btn.disabled = true;
     btn.textContent = L('Restarting...');
   });
-  let retries = 0;
+  try {
+    notice(L('Requesting service restart...'));
+    await api('/system/restart', {method: 'POST'});
+  } catch (error) {
+    const errorTarget = $('#settings-error');
+    if (errorTarget) {
+      errorTarget.textContent = error.message;
+      errorTarget.focus();
+    }
+    notice(error.message, true);
+    restartInProgress = false;
+    resetRestartButtons();
+    return;
+  }
+  notice(L('MirrorRelay is restarting, reconnecting...'));
   const maxRetries = 30;
-  const poll = setInterval(async () => {
-    retries++;
+  let restarted = false;
+  for (let retries = 0; retries < maxRetries; retries++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
     try {
       const ping = await api('/system');
       if (ping && ping.version) {
-        clearInterval(poll);
-        notice(L('MirrorRelay restarted successfully.'));
-        resetRestartButtons();
-        await restartCompleted();
+        restarted = true;
+        break;
       }
-    } catch (_) {
-      if (retries >= maxRetries) {
-        clearInterval(poll);
-        notice(L('Restart timed out. Please check server status.'), true);
-        resetRestartButtons();
-      }
+    } catch (_) {}
+  }
+
+  try {
+    if (!restarted) {
+      notice(L('Restart timed out. Please check server status.'), true);
+      return;
     }
-  }, 1000);
+    notice(L('MirrorRelay restarted successfully.'));
+    await restartCompleted();
+  } finally {
+    restartInProgress = false;
+    resetRestartButtons();
+  }
 }

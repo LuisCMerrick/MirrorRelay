@@ -89,10 +89,40 @@ func (s *Store) CountPasskeysByUserID(ctx context.Context, userID int64) (int, e
 	return count, err
 }
 
-func (s *Store) UpdatePasskeySignCount(ctx context.Context, credID string, signCount uint32) error {
+// DisablePasswordLogin disables password authentication only when the account
+// still has both a passkey and an unused recovery code. Keeping the checks and
+// update in one statement prevents a concurrent recovery reset from leaving an
+// account without a usable authentication method.
+func (s *Store) DisablePasswordLogin(ctx context.Context, userID int64) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE users
+SET password_login_disabled=1, updated_at=?
+WHERE id=?
+  AND EXISTS (SELECT 1 FROM passkey_credentials WHERE user_id=?)
+  AND EXISTS (SELECT 1 FROM admin_recovery_codes WHERE user_id=? AND used_at IS NULL)`,
+		nowText(), userID, userID, userID)
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated == 1, err
+}
+
+// AdvancePasskeySignCount records authenticator use without allowing a
+// positive signature counter to stay unchanged or move backwards. The
+// comparison and update are atomic so concurrent assertions cannot overwrite a
+// newer counter with an older value. Authenticators that always report zero
+// remain usable, as permitted by WebAuthn.
+func (s *Store) AdvancePasskeySignCount(ctx context.Context, credID string, signCount uint32) (bool, error) {
 	now := nowText()
-	_, err := s.db.ExecContext(ctx, `UPDATE passkey_credentials SET sign_count=?, last_used_at=? WHERE credential_id=?`, signCount, now, credID)
-	return err
+	result, err := s.db.ExecContext(ctx, `UPDATE passkey_credentials
+SET sign_count=?, last_used_at=?
+WHERE credential_id=?
+  AND ((sign_count=0 AND ?=0) OR ?>sign_count)`, signCount, now, credID, signCount, signCount)
+	if err != nil {
+		return false, err
+	}
+	updated, err := result.RowsAffected()
+	return updated == 1, err
 }
 
 func (s *Store) UpdatePasskeyDisplayName(ctx context.Context, id, userID int64, name string) error {
@@ -107,7 +137,15 @@ func (s *Store) UpdatePasskeyDisplayName(ctx context.Context, id, userID int64, 
 }
 
 func (s *Store) DeletePasskey(ctx context.Context, id, userID int64) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM passkey_credentials WHERE id=? AND user_id=?`, id, userID)
+	// Keep the lockout check and deletion in one statement. Concurrent deletion
+	// requests therefore cannot both observe two credentials and remove the
+	// final passkey while password authentication is disabled.
+	result, err := s.db.ExecContext(ctx, `DELETE FROM passkey_credentials
+WHERE id=? AND user_id=?
+  AND (
+    COALESCE((SELECT password_login_disabled FROM users WHERE id=?), 1)=0
+    OR (SELECT COUNT(*) FROM passkey_credentials WHERE user_id=?) > 1
+  )`, id, userID, userID, userID)
 	if err != nil {
 		return err
 	}
@@ -120,6 +158,27 @@ func (s *Store) DeletePasskey(ctx context.Context, id, userID int64) error {
 func (s *Store) DeleteAllPasskeysByUserID(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM passkey_credentials WHERE user_id=?`, userID)
 	return err
+}
+
+// ResetPasskeysAndEnablePassword atomically restores password access and then
+// removes every passkey for an account. A failure cannot leave the account with
+// neither authentication method available.
+func (s *Store) ResetPasskeysAndEnablePassword(ctx context.Context, userID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET password_login_disabled=0,updated_at=? WHERE id=?`, nowText(), userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM passkey_credentials WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SaveRecoveryCodes(ctx context.Context, userID int64, hashes []string) error {

@@ -22,7 +22,7 @@ MirrorRelay 前端 (Go 核心服务)
    ├── 元数据与 HTML URL 重写器 (有界内存缓冲区)
    ├── 容器镜像 Token Broker 与重定向 Broker
    ├── SQLite 持久化期望状态存储
-   └── 上游 Nginx 候选配置生成器与预检器
+   └── Managed Upstream Nginx 候选配置生成器与预检器
    │ (Unix Domain Socket /run/mirrorrelay/upstream.sock, 权限 0660)
    ▼
 Managed Upstream Nginx (专用 Musl 隔离数据平面)
@@ -63,12 +63,12 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 2. **候选配置生成**：Go 渲染引擎在临时目录中生成一份候选的 `nginx.conf` 配置文件。
 3. **严格语法预检**：调用 `/usr/lib/mirrorrelay/nginx/nginx -t -c <candidate_path>` 执行完整语法检查。
 4. **原子覆盖发布**：预检完全通过后，原子性覆盖当前生效配置目录。
-5. **平滑热重载**：向受管 Nginx Master 发送 `SIGHUP` 信号，旧 Worker 进程处理完现有连接后退出，新 Worker 无缝加载新配置，全程不丢请求。
+5. **平滑热重载**：向 Managed Upstream Nginx Master 发送 `SIGHUP` 信号，旧 Worker 进程处理完现有连接后退出，新 Worker 无缝加载新配置，全程不丢请求。
 6. **安全容错降级**：若候选配置预检失败，系统记录详细错误信息，但**当前正在运行的生效配置保持完全不变**，确保线上服务不中断。
 
 ### B. 有界元数据与 HTML 路径重写
 针对响应体内嵌绝对或相对上游链接的仓库类型（如 PyPI Simple HTML 页面或可浏览的目录索引）：
-- Go 仅在严格有界内存限制下缓冲元数据（如限制最大 10 MB）。
+- Go 仅在严格有界内存限制下缓冲元数据（默认重写上限为 8 MiB，并会严格执行）。
 - 动态重写页面链接，使其返回 MirrorRelay 公开路由，或使用与实际所选上游、路径及 Query 绑定的 HMAC Scope 路由（`/_mirrorrelay/upstream/<仓库ID>/<上游ID>/<签名>/<目标>`）。
 - 大体积二进制包（如 `.deb`、`.rpm`、`.whl`、Docker 分层 Blob 等）采用固定大小流式传输，绝不进入 Go 堆内存。
 
@@ -90,7 +90,7 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 - **IP 锁定与 SNI 保持**：DNS 解析后的 IP 固定用于底层 TCP 拨号，同时完整保留 TLS SNI（`server_name`）证书链验证。
 - **内部 Header 净化**：客户端请求中的 `X-Mirror-Internal-*` 请求头一律被强制剥离，防止伪造内部路由上下文。
 - **本地端点边界**：External Shared Nginx 默认通过可配置 IP+端口 TCP（默认 `127.0.0.1:9081`）连接 Go 前端；前端 Unix Socket 只有显式启用后才使用。Go 到 Managed Upstream Nginx 的 Unix Socket 仍默认启用，只有显式关闭后才改用回环 TCP。
-- **Socket 权限约束**：任何启用的 Unix Domain Socket 权限都严格为 `0660`，属主为 `root:mirrorrelay`。
+- **Socket 权限约束**：任何启用的 Unix Domain Socket 权限都严格为 `0660`。软件包以 `mirrorrelay:mirrorrelay` 运行服务；现有入口 Worker 的访问权应由管理员通过正常的 Group 或 ACL 流程授予。
 
 ---
 
@@ -103,6 +103,6 @@ Go 核心进程（`/usr/bin/mirrorrelay`）拥有所有业务策略逻辑与配�
 /var/cache/mirrorrelay/                      # Nginx 代理缓存目录
 /var/log/mirrorrelay/upstream-nginx/         # 访问与错误日志目录
 /run/mirrorrelay/frontend.sock               # 可选前端 Socket，仅启用后创建
-/run/mirrorrelay/upstream.sock               # 转发至受管 Nginx 的内部 Socket
+/run/mirrorrelay/upstream.sock               # 转发至 Managed Upstream Nginx 的内部 Socket
 /run/mirrorrelay/upstream-nginx.pid          # Nginx 主进程 PID
 ```

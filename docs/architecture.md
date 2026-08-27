@@ -22,7 +22,7 @@ MirrorRelay Frontend (Go Service)
    ├── Metadata & HTML URL Rewriter (Bounded Memory Buffer)
    ├── Registry Token Broker & Redirect Broker
    ├── SQLite Persistent Desired State Store
-   └── Upstream Nginx Candidate Generator & Validator
+   └── Managed Upstream Nginx Candidate Generator & Validator
    │ (Unix Domain Socket /run/mirrorrelay/upstream.sock, mode 0660)
    ▼
 Managed Upstream Nginx (Dedicated Musl Data Plane)
@@ -68,7 +68,7 @@ The Go process (`/usr/bin/mirrorrelay`) owns all business logic, policy enforcem
 
 ### B. Bounded Metadata & HTML URL Rewriting
 For repository types that embed upstream URLs inside response payloads (such as PyPI Simple HTML index pages or browsable package trees):
-- Go buffers only bounded metadata (enforcing strict byte limits, e.g. 10 MB maximum).
+- Go buffers only bounded metadata (the default rewrite limit is 8 MiB and is strictly enforced).
 - Rewrites internal upstream links to point back to MirrorRelay's public namespace or HMAC-scoped endpoints bound to the selected upstream, path, and query (`/_mirrorrelay/upstream/<repository-id>/<upstream-id>/<signature>/<target>`).
 - Large binary artifacts (e.g. `.deb`, `.rpm`, `.whl`, `.tar.gz`, Docker layer blobs) are streamed directly with fixed-size buffers, never buffered into Go memory.
 
@@ -90,7 +90,7 @@ For large immutable package artifacts (`.deb`, `.rpm`, `.whl`, `.tar.gz`, `.iso`
 - **IP Pinning**: Upstream DNS lookups are pinned to resolved numeric IPs during dialing while preserving TLS SNI (`server_name`) verification.
 - **Header Sanitization**: Inbound client headers with `X-Mirror-Internal-*` prefixes are unconditionally stripped to prevent spoofing of internal routing state.
 - **Local Endpoint Boundary**: External Shared Nginx reaches the Go frontend over configurable IP+port TCP (`127.0.0.1:9081` by default). A frontend Unix socket is used only when explicitly enabled. The Go-to-Managed-Upstream-Nginx Unix socket remains enabled by default and must be explicitly disabled to use loopback TCP.
-- **Socket Permissions**: Every enabled Unix domain socket uses mode `0660` owned by `root:mirrorrelay`.
+- **Socket Permissions**: Every enabled Unix domain socket uses mode `0660`. Packages run the service as `mirrorrelay:mirrorrelay`; access for an existing ingress worker is granted through the administrator's normal group or ACL management.
 
 ---
 

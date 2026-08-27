@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,7 +37,7 @@ import (
 )
 
 var (
-	version        = "0.0.17"
+	version        = "0.0.20"
 	gitCommit      = "unknown"
 	buildTimestamp = "unknown"
 	buildID        = ""
@@ -203,13 +204,27 @@ func applyStoredWebSettings(ctx context.Context, store *database.Store, base con
 		}
 		applied = candidate
 	}
-	if rawApp, foundApp, err := store.Setting(ctx, database.AppearanceSettingsKey); err == nil && foundApp {
+	if applied, err = config.ApplyEnvironment(applied); err != nil {
+		return base, fmt.Errorf("apply environment overrides: %w", err)
+	}
+	rawApp, foundApp, err := store.Setting(ctx, database.AppearanceSettingsKey)
+	if err != nil {
+		return base, fmt.Errorf("read appearance configuration: %w", err)
+	}
+	if foundApp {
 		var appConfig model.UIEnhancementConfig
-		if err := json.Unmarshal([]byte(rawApp), &appConfig); err == nil {
-			if err := config.ValidateUIEnhancement(&appConfig); err == nil {
-				applied.UIEnhancement = appConfig
-			}
+		decoder := json.NewDecoder(strings.NewReader(rawApp))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&appConfig); err != nil {
+			return base, fmt.Errorf("decode appearance configuration: %w", err)
 		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return base, errors.New("decode appearance configuration: multiple JSON values are not allowed")
+		}
+		if err := config.ValidateUIEnhancement(&appConfig); err != nil {
+			return base, fmt.Errorf("validate appearance configuration: %w", err)
+		}
+		applied.UIEnhancement = appConfig
 	}
 	return applied, nil
 }
@@ -318,25 +333,46 @@ func runProduct(
 }
 
 func handleAdminCLI(args []string) error {
+	return handleAdminCLIWithIO(args, os.Stdin, os.Stdout)
+}
+
+func handleAdminCLIWithIO(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("admin subcommand required: reset-password or reset-passkeys")
 	}
 	subcmd := args[0]
+	if subcmd != "reset-password" && subcmd != "reset-passkeys" {
+		return fmt.Errorf("unknown admin subcommand: %s (valid: reset-password, reset-passkeys)", subcmd)
+	}
 	fs := flag.NewFlagSet("admin "+subcmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "/etc/mirrorrelay/config.yaml", "path to configuration file")
 	username := fs.String("username", "", "admin username")
-	password := fs.String("password", "", "new password (for reset-password)")
+	passwordStdin := fs.Bool("password-stdin", false, "read the new password from standard input")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	if *username == "" {
 		return errors.New("-username is required")
 	}
+	if subcmd == "reset-password" && !*passwordStdin {
+		return errors.New("-password-stdin is required for reset-password")
+	}
+	if subcmd == "reset-passkeys" && *passwordStdin {
+		return errors.New("-password-stdin is only valid for reset-password")
+	}
 	cfg, err := config.Load(*configPath, false)
 	if err != nil {
-		cfg = config.Default()
+		return fmt.Errorf("load configuration %s: %w", *configPath, err)
 	}
-	store, err := database.Open(cfg.Database.Path)
+	clusterMutationTokenKeys, err := database.LoadClusterMutationTokenKeyFiles(cfg.Distributed.MutationTokenKeyFiles)
+	if err != nil {
+		return fmt.Errorf("load cluster mutation-token keyring: %w", err)
+	}
+	store, err := database.Open(cfg.Database.Path, database.WithClusterMutationTokenKeys(clusterMutationTokenKeys...))
 	if err != nil {
 		return fmt.Errorf("open database %s: %w", cfg.Database.Path, err)
 	}
@@ -350,14 +386,15 @@ func handleAdminCLI(args []string) error {
 
 	switch subcmd {
 	case "reset-password":
-		if *password == "" {
-			return errors.New("-password is required for reset-password")
+		password, err := readPasswordLine(stdin)
+		if err != nil {
+			return err
 		}
-		hash, err := auth.HashPassword(*password)
+		hash, err := auth.HashPassword(password)
 		if err != nil {
 			return fmt.Errorf("hash password: %w", err)
 		}
-		if err := store.UpdatePassword(ctx, user.ID, hash); err != nil {
+		if err := store.ResetPasswordAndSessions(ctx, user.ID, hash); err != nil {
 			return fmt.Errorf("update password: %w", err)
 		}
 		_ = store.AddAudit(ctx, model.AuditEntry{
@@ -367,15 +404,12 @@ func handleAdminCLI(args []string) error {
 			Detail:    "password reset for user " + user.Username,
 			Succeeded: true,
 		})
-		fmt.Printf("Successfully reset password and enabled password login for user %q\n", user.Username)
+		fmt.Fprintf(stdout, "Successfully reset password and enabled password login for user %q\n", user.Username)
 		return nil
 
 	case "reset-passkeys":
-		if err := store.DeleteAllPasskeysByUserID(ctx, user.ID); err != nil {
-			return fmt.Errorf("delete passkeys: %w", err)
-		}
-		if err := store.SetPasswordLoginDisabled(ctx, user.ID, false); err != nil {
-			return fmt.Errorf("enable password login: %w", err)
+		if err := store.ResetPasskeysAndEnablePassword(ctx, user.ID); err != nil {
+			return fmt.Errorf("reset passkeys and enable password login: %w", err)
 		}
 		_ = store.AddAudit(ctx, model.AuditEntry{
 			Username:  "CLI",
@@ -384,10 +418,30 @@ func handleAdminCLI(args []string) error {
 			Detail:    "all passkeys cleared and password login enabled for user " + user.Username,
 			Succeeded: true,
 		})
-		fmt.Printf("Successfully cleared all passkeys and re-enabled password login for user %q\n", user.Username)
+		fmt.Fprintf(stdout, "Successfully cleared all passkeys and re-enabled password login for user %q\n", user.Username)
 		return nil
-
-	default:
-		return fmt.Errorf("unknown admin subcommand: %s (valid: reset-password, reset-passkeys)", subcmd)
 	}
+	return nil
+}
+
+func readPasswordLine(reader io.Reader) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, 1026))
+	if err != nil {
+		return "", fmt.Errorf("read password from standard input: %w", err)
+	}
+	if len(data) > 1025 {
+		return "", errors.New("password from standard input exceeds 1024 bytes")
+	}
+	password := strings.TrimSuffix(string(data), "\n")
+	password = strings.TrimSuffix(password, "\r")
+	if len(password) > auth.MaxPasswordBytes {
+		return "", fmt.Errorf("password from standard input exceeds %d bytes", auth.MaxPasswordBytes)
+	}
+	if strings.ContainsAny(password, "\r\n") {
+		return "", errors.New("password input must contain exactly one line")
+	}
+	if password == "" {
+		return "", errors.New("password from standard input is empty")
+	}
+	return password, nil
 }

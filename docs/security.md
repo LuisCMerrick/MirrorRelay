@@ -31,11 +31,13 @@ When a repository or redirect target is evaluated:
 ## 3. Authentication & Session Management
 
 - **First-Use Enrollment**: No default or environment-provisioned administrator password exists. While the user table is empty, one registration may create the initial Admin through the configured administration host/path and CIDR boundary. The database condition is atomic, so only one concurrent request can succeed.
-- **Password Hashing**: Administrative passwords are hashed using **Argon2id** (memory: 64 MB, iterations: 3, up to 4 threads).
+- **Password Hashing**: Administrative passwords are limited to 1024 bytes and hashed using **Argon2id** (memory: 64 MB, iterations: 3, up to 4 threads).
 - **Concurrency Rate Limiting**: Password verification is protected by a concurrency semaphore to mitigate CPU-exhaustion DoS attacks.
 - **Session Tokens**: 256-bit cryptographically secure random tokens (`crypto/rand`). Stored in SQLite as SHA-256 hashes (plaintext tokens are never stored in the database).
 - **Cookie Security**: Session cookies enforce `HttpOnly`, `Secure`, and `SameSite=Strict`.
 - **CSRF Protection**: Authenticated state-modifying requests (`POST`, `PUT`, `DELETE`) require a valid session CSRF token passed via `X-CSRF-Token` and verified in constant time (`crypto/subtle.ConstantTimeCompare`). The unauthenticated one-time enrollment request is instead constrained by the empty-database condition, atomic insertion and administration network boundary.
+- **Passkeys (WebAuthn/FIDO2)**: Registration and authentication use bounded, five-minute, single-use challenges tied to the exact relying-party ID and origin. HTTPS is required outside loopback development. The verifier requires user presence and user verification, validates credential type/algorithm/key structure, and tracks authenticator signature counters.
+- **Emergency Recovery**: Recovery codes are generated from unbiased cryptographic randomness, returned in plaintext only when created, stored as SHA-256 hashes, and consumed once. Password login cannot be disabled until the account has both a passkey and unused recovery codes; an atomic deletion condition protects the final passkey even under concurrent requests. The sign-in page keeps recovery-code access visible even if Passkey authentication is disabled or its status probe fails. `mirrorrelay admin reset-password --password-stdin` and `mirrorrelay admin reset-passkeys` provide local recovery using the normal strict configuration and Coordinator keyring path. Both revoke the account's existing sessions; password access is restored atomically with the recovery mutation.
 - **Trusted Ingress Identity**: A TCP request may use `X-Real-IP` only when its immediate peer belongs to `security.trusted_proxy_cidrs`; otherwise the socket peer is the client identity. The explicitly enabled frontend Unix socket is trusted through its `0660` permission boundary. Generated ingress configuration overwrites `X-Real-IP` with `$remote_addr`; repository rewrites and public help URL generation ignore `X-Forwarded-Proto`, validate any fallback request authority, and remain HTTPS.
 - **Encrypted Cluster Mutation Credentials**: Coordinator node mutation tokens are stored as AES-256-GCM authenticated ciphertext. An ordered file-backed keyring supports startup migration and rotation; a missing key or undecryptable credential stops startup instead of falling back to plaintext.
 
@@ -43,10 +45,10 @@ When a repository or redirect target is evaluated:
 
 ## 4. Input Validation & Injection Defenses
 
-- **SQL Injection**: 100% of SQLite database queries in `internal/database/store.go` use parameterized `?` placeholders with `PRAGMA foreign_keys = ON`.
+- **SQL Injection**: SQLite queries in `internal/database/` use parameterized `?` placeholders with `PRAGMA foreign_keys = ON`.
 - **Path Traversal**: Repository paths are sanitized to reject NUL (`\0`), carriage return, newline, backslashes, directory traversal (`.` / `..`), and encoded URL separators (`%2f`, `%5c`). Cache storage keys use SHA-256 hashes of cleaned canonical paths.
 - **Signed Auxiliary HTML Routes**: Same-origin targets outside a repository base are exposed only through HMAC-scoped URLs bound to the repository, exact selected upstream/Host policy, escaped path, and query. A client-modified upstream, path, or query is rejected before the request reaches Managed Upstream Nginx.
-- **JSON Deserialization**: All API request parsers enforce `DisallowUnknownFields()` and `http.MaxBytesReader` limits (1 MB maximum).
+- **JSON Deserialization**: API request parsers reject unknown fields and trailing documents and enforce endpoint-specific body limits (normally at most 1 MiB; cluster protocol bodies are limited to 64 KiB).
 
 ---
 
@@ -78,7 +80,7 @@ File system permissions:
 - `/etc/mirrorrelay/cluster-mutation-token.key` when a Coordinator is enabled: `0640 root:mirrorrelay`
 - `/var/lib/mirrorrelay/`: `0750 mirrorrelay:mirrorrelay`
 - `/var/cache/mirrorrelay/`: `0750 mirrorrelay:mirrorrelay`
-- `/run/mirrorrelay/*.sock`: `0660 root:mirrorrelay`
+- `/run/mirrorrelay/*.sock`: `0660 mirrorrelay:mirrorrelay` for the packaged service; ingress access is granted explicitly by the administrator
 
 ---
 
@@ -87,7 +89,7 @@ File system permissions:
 MirrorRelay includes built-in supply chain poisoning and dependency confusion defenses:
 - **Package Blacklisting (`blocked_packages`)**: Regex and glob wildcard patterns (e.g. `^malicious-.*`, `bad-pkg-*.tar.gz`) preventing pulling poisoned or compromised packages.
 - **Package Whitelisting (`allowed_packages`)**: Restricts packages to an enterprise-approved subset (e.g. `^internal-.*`).
-- Each list is limited to 128 patterns and each pattern to 512 bytes. Rules must be valid Go globs or RE2 expressions and are compiled before activation; invalid candidates are rejected and unexpected invalid Active state fails closed.
+- Each list is limited to 128 patterns and each pattern to 512 bytes. Rules beginning with `^` or ending with `$` are treated as whole-string RE2 expressions; every other rule is a Go glob. This explicit split prevents one ambiguous rule from gaining the union of two different match semantics. Rules are compiled before activation; invalid candidates are rejected and unexpected invalid Active state fails closed.
 - When a client requests a blocked package, MirrorRelay immediately terminates the request with HTTP `403 Forbidden` and details the violated security policy rule.
 - The development image verifies its checked-in Managed Upstream Nginx fixture against `nginx.sha256` during the build. Formal images verify both architecture-matched binaries against the package job's `BUILD-INFO`; release packages also carry `BUILD-INFO` and internal checksums, while the published OCI manifest has SBOM and provenance attestations.
 
@@ -113,7 +115,7 @@ Enterprise notifications are delivered with HMAC-SHA256 signatures:
 - Headers include `X-MirrorRelay-Signature: sha256=<hex_digest>` and `X-MirrorRelay-Event: <event_name>` for payload authenticity verification.
 - HTTPS is required by default. Plaintext HTTP and private/loopback/link-local targets require separate explicit `webhook.allow_http` and `webhook.allow_private` settings.
 - The configured target and every redirect hop are resolved and filtered before connection. The safe dialer rejects DNS rebinding to a blocked address, TLS hostname verification stays enabled, and at most five redirect hops are accepted.
-- Webhook tests can use the running destination or one temporary destination validated under the same policy. A temporary destination does not inherit the running signing secret. Invalid JSON stops immediately without sending a notification. The settings API, including the configured webhook destination, is Admin-only.
+- Webhook tests can use the running destination or one temporary destination validated under the same policy. A temporary destination does not inherit the running signing secret. Invalid JSON stops immediately without sending a notification. Ordinary settings and history responses are Admin-only and redact the configured target and secret; only an explicit CSRF-protected full-backup export includes them.
 
 ---
 

@@ -256,6 +256,9 @@ func TestRepositoryBrowserRewritesDirectoryIndex(t *testing.T) {
 	if !changed || validator.ETag == "" {
 		t.Fatalf("expected browser rewrite to succeed, changed=%v", changed)
 	}
+	if response.Header.Get("Content-Security-Policy") == "" || response.Header.Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("generated browser response is missing security headers: %v", response.Header)
+	}
 	body, err := io.ReadAll(response.Body)
 	if err != nil || !strings.Contains(string(body), "Index of /debian/") || !strings.Contains(string(body), "file-row") {
 		t.Fatalf("unexpected browser rendered output: %s", body)

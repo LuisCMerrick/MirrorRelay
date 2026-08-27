@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +34,19 @@ func TestAppearanceAPIAndSafeMode(t *testing.T) {
 		sessions:   auth.NewSessionsWithPath(store, time.Hour, "/admin/"),
 	}
 	handler := server.Handler(http.NotFoundHandler())
+
+	// Appearance used by the sign-in page is intentionally available before
+	// authentication, but it excludes local custom-CSS paths and controls.
+	publicAppearance := httptest.NewRecorder()
+	handler.ServeHTTP(publicAppearance, httptest.NewRequest(http.MethodGet, "https://mirror.example/admin/api/v1/auth/appearance", nil))
+	if publicAppearance.Code != http.StatusOK || strings.Contains(publicAppearance.Body.String(), "custom_css") {
+		t.Fatalf("unexpected public appearance response: code=%d body=%s", publicAppearance.Code, publicAppearance.Body.String())
+	}
+	publicAppearancePost := httptest.NewRecorder()
+	handler.ServeHTTP(publicAppearancePost, httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/auth/appearance", nil))
+	if publicAppearancePost.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected public appearance POST to fail with 405, got %d", publicAppearancePost.Code)
+	}
 
 	if err := store.CreateUser(context.Background(), "admin", "hash", "admin"); err != nil {
 		t.Fatal(err)
@@ -168,5 +182,73 @@ func TestPublicHelpAndStaticRoutes(t *testing.T) {
 	handler.ServeHTTP(recIcon, httptest.NewRequest(http.MethodGet, "https://mirror.example.com/ui/icons/folder.svg", nil))
 	if recIcon.Code != http.StatusOK || recIcon.Header().Get("Content-Type") != "image/svg+xml" {
 		t.Fatalf("expected 200 SVG icon, got %d Content-Type=%q", recIcon.Code, recIcon.Header().Get("Content-Type"))
+	}
+}
+
+func TestPublicUIRoutesAreBoundedAndReservedForHostRepositories(t *testing.T) {
+	cssPath := filepath.Join(t.TempDir(), "custom.css")
+	if err := os.WriteFile(cssPath, []byte("body { color: red; }"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.HTTP.PublicBaseURL = "https://mirror.example.com"
+	cfg.UIEnhancement.Enabled = true
+	cfg.UIEnhancement.CustomCSS = model.CustomCSSConfig{Enabled: true, File: cssPath}
+	reg := mirror.NewRegistry(nil)
+	reg.Replace([]model.Mirror{{
+		ID: 1, Name: "Host Repo", Slug: "host-repo", Type: "generic", Enabled: true,
+		PublicMode: "host", PublicHost: "packages.example.com",
+		Help: model.HelpConfig{Enabled: true, Template: "generic"},
+	}})
+	server := &Server{cfg: cfg, registry: reg}
+	handler := server.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "origin", http.StatusTeapot)
+	}))
+
+	cssHead := httptest.NewRecorder()
+	handler.ServeHTTP(cssHead, httptest.NewRequest(http.MethodHead, "https://packages.example.com/ui/custom.css", nil))
+	if cssHead.Code != http.StatusOK || cssHead.Body.Len() != 0 || cssHead.Header().Get("Content-Length") == "" {
+		t.Fatalf("expected bounded host-route CSS HEAD response, got code=%d length=%q body=%q", cssHead.Code, cssHead.Header().Get("Content-Length"), cssHead.Body.String())
+	}
+
+	cssPost := httptest.NewRecorder()
+	handler.ServeHTTP(cssPost, httptest.NewRequest(http.MethodPost, "https://packages.example.com/ui/custom.css", nil))
+	if cssPost.Code != http.StatusMethodNotAllowed || cssPost.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected CSS POST to be rejected, got code=%d Allow=%q", cssPost.Code, cssPost.Header().Get("Allow"))
+	}
+
+	helpRec := httptest.NewRecorder()
+	handler.ServeHTTP(helpRec, httptest.NewRequest(http.MethodGet, "https://packages.example.com/help/", nil))
+	if helpRec.Code != http.StatusOK || strings.Contains(helpRec.Body.String(), "origin") || helpRec.Header().Get("Content-Security-Policy") == "" {
+		t.Fatalf("expected help to remain an instance route on a host repository, got code=%d body=%q", helpRec.Code, helpRec.Body.String())
+	}
+	helpPost := httptest.NewRecorder()
+	handler.ServeHTTP(helpPost, httptest.NewRequest(http.MethodPost, "https://packages.example.com/help/", nil))
+	if helpPost.Code != http.StatusMethodNotAllowed || helpPost.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("expected help POST to be rejected, got code=%d Allow=%q", helpPost.Code, helpPost.Header().Get("Allow"))
+	}
+
+	symlinkPath := filepath.Join(filepath.Dir(cssPath), "linked.css")
+	if err := os.Symlink(cssPath, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+	symlinkAppearance := server.appearanceConfig()
+	symlinkAppearance.CustomCSS.File = symlinkPath
+	server.appearance.Store(symlinkAppearance)
+	symlinkCSS := httptest.NewRecorder()
+	handler.ServeHTTP(symlinkCSS, httptest.NewRequest(http.MethodGet, "https://packages.example.com/ui/custom.css", nil))
+	if symlinkCSS.Code != http.StatusNotFound {
+		t.Fatalf("expected symlinked custom CSS to be rejected, got %d", symlinkCSS.Code)
+	}
+	symlinkAppearance.CustomCSS.File = cssPath
+	server.appearance.Store(symlinkAppearance)
+
+	if err := os.WriteFile(cssPath, bytes.Repeat([]byte("x"), (1<<20)+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tooLarge := httptest.NewRecorder()
+	handler.ServeHTTP(tooLarge, httptest.NewRequest(http.MethodGet, "https://packages.example.com/ui/custom.css", nil))
+	if tooLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected oversized CSS to be rejected, got %d", tooLarge.Code)
 	}
 }

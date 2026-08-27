@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+## v0.0.20 - 2026-08-27
+
+- **Passkeys and emergency account recovery**:
+  - Added WebAuthn/FIDO2 passkey registration and sign-in with strict RP
+    ID/origin binding, single-use bounded challenges, required user presence and
+    verification, validated COSE keys/algorithms/transports, and authenticator
+    signature-counter tracking.
+  - Added eight single-use, hash-only emergency recovery codes and the option to
+    disable password login with lockout guards. Added local
+    `admin reset-password --password-stdin` and `admin reset-passkeys` recovery
+    commands; both load the configured Coordinator credential keyring, revoke
+    existing sessions, and restore password access atomically where applicable.
+    Recovery-code sign-in remains visible when Passkey support is disabled or
+    temporarily unavailable.
+  - Bound password and unauthenticated recovery inputs, enforce the declared
+    RS256 signature algorithm, and atomically protect the final Passkey from
+    concurrent deletion while password login is disabled.
+- **Complete Web UI settings lifecycle**:
+  - Added strict operational settings management across every configuration
+    section while keeping database and Coordinator keyring bootstrap paths
+    file-only. Documented precedence is now enforced as environment overrides,
+    saved UI values, then YAML.
+  - Added validated YAML preview/import, standard and explicit CSRF-protected
+    full-backup exports, bounded redacted history, and credential-preserving
+    rollback. Operational settings, instance appearance and their history entry
+    now commit in one database transaction; imported or rolled-back appearance
+    is published immediately while restart-bound settings remain explicit.
+- **Security and correctness hardening**:
+  - Prevented ordinary settings responses and history from disclosing webhook
+    targets or credential snapshots, omitted webhook endpoints and passkey
+    relying-party bindings from standard exports, and kept bootstrap paths
+    instance-local during imports. Imports preserve omitted local bindings and
+    credentials before final validation so redacted standard exports remain
+    re-importable, but never carry an Edge mutation token to a changed origin.
+  - Bounded the WebAuthn challenge store and login limiter, generated recovery
+    codes without modulo bias, advanced authenticator counters atomically,
+    disabled password login atomically with lockout prevention, anchored Package
+    Guard expressions as complete matches, separated anchored RE2 rules from Go
+    globs so ambiguous wildcard syntax cannot broaden an allowlist, and kept CLI
+    recovery configuration parsing fail-closed.
+  - Reserved generated public UI/help routes even for host-mode repositories,
+    bounded custom CSS reads, removed upstream-controlled stylesheet injection
+    points, rejected unsafe upstream-controlled directory links, and tightened
+    public route methods and headers.
+- **Frontend and branding completion**:
+  - Made instance title, login copy, same-origin logo/favicon paths, theme and
+    opaque three- or six-digit accent color apply before sign-in and across
+    generated public pages.
+  - Fixed settings export/import, repository detail rendering, serial log polling cleanup,
+    API errors, clipboard fallback, form busy/focus states, mobile tables and
+    touch targets, reduced-motion behavior, storage failures, restart failure/
+    timeout handling, notification timing, exact Managed Upstream Nginx naming,
+    and English/Chinese locale parity.
+- **Documentation and release verification**:
+  - Synchronized every English/Chinese Markdown pair with the implementation,
+    corrected endpoint ownership, settings/export/rollback, Safe UI, passkey
+    recovery and release-version guidance, and added automated Markdown link/
+    pair validation alongside robust Web UI asset verification.
+
 ## v0.0.17
 
 - **Control-plane credential and ingress hardening**:

@@ -34,7 +34,7 @@ function renderMirrorsTable() {
     const health = healthFor(repository);
     const isHealthy = health === 'healthy';
     const helpBtn = repository.help?.enabled && repository.help?.template
-      ? `<a class="button-link" href="/help/${esc(repository.slug)}/" target="_blank" title="${L('Help documentation')}">${icon('help', 13)} ${L('Help')}</a>`
+      ? `<a class="button-link" href="/help/${esc(repository.slug)}/" target="_blank" rel="noopener noreferrer" title="${L('Help documentation')}">${icon('help', 13)} ${L('Help')}</a>`
       : '';
 
     return `<tr>

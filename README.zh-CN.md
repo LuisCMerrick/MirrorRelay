@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/LuisCMerrick/MirrorRelay)](https://github.com/LuisCMerrick/MirrorRelay/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
-自托管的 Linux 软件仓库与 OCI 容器镜像拉取代理（Pull-through Caching Gateway），内置 Web 管理界面与受管 Nginx 数据平面。
+自托管的 Linux 软件仓库与 OCI 容器镜像拉取代理（Pull-through Caching Gateway），内置 Web 管理界面与 Managed Upstream Nginx 数据平面。
 
 ```text
 APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy · Conda · Docker / OCI
@@ -25,7 +25,7 @@ APT · RPM · APK · OPKG · PyPI · npm · Maven · NuGet · Cargo · Go Proxy 
 MirrorRelay (Go 控制平面与路由器)
    │
    ▼
-受管上游 Nginx (独立数据平面) ──► 原始上游源
+Managed Upstream Nginx (独立数据平面) ──► 原始上游源
 ```
 
 ![MirrorRelay Web UI 控制面板](docs/images/web-ui.jpg)
@@ -60,6 +60,7 @@ MirrorRelay (Go 控制平面与路由器)
 | **Edge 节点配置一致性** | ✅ 支持 | Coordinator 与 Edge 节点之间的配置版本与指纹实时一致性检测 |
 | **Docker / OCI 分布式路由** | 🚧 计划中 | 容器镜像分布式路由计划在未来控制面升级中提供（单节点 OCI 拉取代理已完整支持） |
 | **内置双语 Web 管理界面** | ✅ 支持 | 零前端外部依赖、轻量响应式设计，支持中英文即时切换与系统一键重启 |
+| **设置、Passkey 与应急恢复** | ✅ 支持 | 严格的 Web UI 配置导入/导出/历史，以及 WebAuthn Passkey 和一次性应急恢复码 |
 
 ---
 
@@ -132,10 +133,10 @@ Compose 默认使用 `luiscmerrick/mirrorrelay:latest`。需要固定部署版�
 
 ```bash
 # Debian / Ubuntu（amd64 示例）：
-sudo apt-get install --yes ./mirrorrelay_0.0.17_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
 
 # RHEL / Rocky Linux / Fedora（amd64 示例）：
-sudo dnf install --yes ./mirrorrelay-0.0.17.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
 
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
@@ -196,7 +197,7 @@ MirrorRelay 前端 (Go 核心服务)
   - 容器镜像 Token Broker 鉴权中继
   - 配置生命周期管理 (SQLite 持久化期望状态)
          ↓  (默认 Unix Socket 0660；回环 TCP 需显式关闭 Socket)
-受管上游 Nginx (专用 Musl 隔离进程)
+Managed Upstream Nginx (专用 Musl 隔离进程)
   - 本地磁盘高速缓存 (/var/cache/mirrorrelay)
   - 连接池复用与 SSL 证书链严格验证
   - DNS 解析与 IP 绑定
@@ -204,7 +205,7 @@ MirrorRelay 前端 (Go 核心服务)
 原始上游源 (HTTPS / HTTP)
 ```
 
-- **安全不变式**：Go 服务本身绝不直接发起对上游软件包服务器的 HTTP 连接，所有上游流量均由受限、静态编译的 `受管上游 Nginx` 数据平面代理完成。
+- **安全不变式**：Go 服务本身绝不直接发起对上游软件包服务器的 HTTP 连接，所有上游流量均由受限、静态编译的 `Managed Upstream Nginx` 数据平面代理完成。
 - **无损热重载**：仓库配置变更时，系统生成候选 Nginx 配置，经 `nginx -t` 严格预检通过后原子替换并平滑重载（`HUP`），全程不丢连接。
 
 深入了解请阅读 [架构设计指南](docs/architecture.zh-CN.md)。
@@ -242,7 +243,7 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 标准文件系统布局：
 ```text
 /usr/bin/mirrorrelay                         # 主程序二进制文件
-/usr/lib/mirrorrelay/nginx/nginx             # 绑定的 musl 受管上游 Nginx
+/usr/lib/mirrorrelay/nginx/nginx             # 绑定的 musl Managed Upstream Nginx
 /etc/mirrorrelay/config.yaml                 # 配置文件 (权限 0640)
 /usr/lib/systemd/system/mirrorrelay.service  # 沙箱化 systemd 服务单元
 /var/lib/mirrorrelay/mirrorrelay.db          # 持久化 SQLite 数据库
@@ -281,5 +282,6 @@ MirrorRelay 内置分布式集群能力，轻松实现跨区域、多节点的�
 
 ## 开源协议
 
-MirrorRelay 遵循 [GNU General Public License v3.0](LICENSE) 开源协议。  
-打包集成的 Nginx 第三方依赖组件协议（musl、OpenSSL、PCRE2、zlib）详见 [nginx/NOTICE.md](nginx/NOTICE.md)。
+MirrorRelay 遵循 [GNU General Public License v3.0](LICENSE) 开源协议。
+打包集成的 Managed Upstream Nginx 第三方依赖组件许可信息详见
+[nginx/NOTICE.md](nginx/NOTICE.md)。

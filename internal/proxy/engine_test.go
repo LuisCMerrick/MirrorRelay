@@ -329,4 +329,10 @@ func TestPackageFilteringGuard(t *testing.T) {
 	if blocked, _ := isPackageBlocked(repoGlob, "/packages/evilfoo.rpm"); !blocked {
 		t.Fatal("evilfoo.rpm should be blocked because it does not match foo-*")
 	}
+	if blocked, _ := isPackageBlocked(repoGlob, "/packages/foo"); !blocked {
+		t.Fatal("foo should not be admitted by interpreting the foo-* glob as RE2")
+	}
+	if blocked, _ := isPackageBlocked(repo, "/packages/nump"); !blocked {
+		t.Fatal("nump should not be admitted by interpreting the numpy* glob as RE2")
+	}
 }

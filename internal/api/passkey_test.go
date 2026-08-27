@@ -35,9 +35,9 @@ func newTestPasskeyServer(t *testing.T, enablePasskey bool) (*Server, *database.
 	cfg.Admin.Passkey.Enabled = enablePasskey
 	cfg.Admin.Passkey.RPName = "MirrorRelay"
 	cfg.Admin.Passkey.RPID = "localhost"
-	cfg.Admin.Passkey.Origins = []string{"http://localhost:8080", "https://mirror.example.com"}
+	cfg.Admin.Passkey.Origins = []string{"http://localhost:8080"}
 
-	srv, err := New(cfg, cfg, store, nil, nil, nil, nil, nil, nil, buildinfo.Info{Version: "0.0.17"})
+	srv, err := New(cfg, cfg, store, nil, nil, nil, nil, nil, nil, buildinfo.Info{Version: "0.0.20"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +62,33 @@ func TestPasskeyStatusEndpoint(t *testing.T) {
 	}
 	if res["enabled"] != true || res["rp_name"] != "MirrorRelay" || res["rp_id"] != "localhost" {
 		t.Fatalf("unexpected passkey status: %+v", res)
+	}
+}
+
+func TestRecoveryLoginRejectsOversizedCredentials(t *testing.T) {
+	srv, _, cleanup := newTestPasskeyServer(t, true)
+	defer cleanup()
+
+	for name, payload := range map[string]map[string]string{
+		"username": {
+			"username": strings.Repeat("u", 65), "recovery_code": "ABCD-EFGH-JKLM",
+		},
+		"recovery code": {
+			"username": "admin", "recovery_code": strings.Repeat("A", 65),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/auth/recovery/login", bytes.NewReader(body))
+			srv.apiHandler(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -119,7 +146,7 @@ func TestPasskeyRegistrationAndAuthenticationFlow(t *testing.T) {
 	rpHash := sha256.Sum256([]byte("localhost"))
 	authData := make([]byte, 37)
 	copy(authData[:32], rpHash[:])
-	authData[32] = 0x41 // UP (0x01) + AT (0x40)
+	authData[32] = 0x45 // UP (0x01) + UV (0x04) + AT (0x40)
 
 	aaguid := make([]byte, 16)
 	credID := []byte("test-cred-id-123")
@@ -180,6 +207,7 @@ func TestPasskeyRegistrationAndAuthenticationFlow(t *testing.T) {
 		"display_name": "Test Key",
 		"id":           base64.RawURLEncoding.EncodeToString(credID),
 		"rawId":        base64.RawURLEncoding.EncodeToString(credID),
+		"type":         "public-key",
 		"transports":   []string{"usb", "internal"},
 		"response": map[string]string{
 			"clientDataJSON":    base64.RawURLEncoding.EncodeToString(clientDataBytes),
@@ -240,7 +268,7 @@ func TestPasskeyRegistrationAndAuthenticationFlow(t *testing.T) {
 
 	loginAuthData := make([]byte, 37)
 	copy(loginAuthData[:32], rpHash[:])
-	loginAuthData[32] = 0x01 // UP
+	loginAuthData[32] = 0x05 // UP + UV
 	loginAuthData[36] = 1    // SignCount = 1
 
 	loginClientHash := sha256.Sum256(loginClientDataBytes)
@@ -255,6 +283,7 @@ func TestPasskeyRegistrationAndAuthenticationFlow(t *testing.T) {
 	loginVerifyBody, _ := json.Marshal(map[string]any{
 		"id":    base64.RawURLEncoding.EncodeToString(credID),
 		"rawId": base64.RawURLEncoding.EncodeToString(credID),
+		"type":  "public-key",
 		"response": map[string]string{
 			"clientDataJSON":    base64.RawURLEncoding.EncodeToString(loginClientDataBytes),
 			"authenticatorData": base64.RawURLEncoding.EncodeToString(loginAuthData),

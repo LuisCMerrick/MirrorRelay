@@ -5,9 +5,19 @@ export const $ = selector => document.querySelector(selector);
 
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
 
+let noticeTimer;
+
 export function notice(message, bad = false) {
-  $('#notice').innerHTML = `<div class="notice${bad ? ' error' : ''}">${esc(message)}</div>`;
-  setTimeout(() => { $('#notice').innerHTML = ''; }, 4500);
+  const target = $('#notice');
+  if (!target) return;
+  clearTimeout(noticeTimer);
+  const item = document.createElement('div');
+  item.className = `notice${bad ? ' error' : ''}`;
+  item.textContent = String(message ?? '');
+  target.replaceChildren(item);
+  noticeTimer = setTimeout(() => {
+    if (target.firstChild === item) target.replaceChildren();
+  }, 4500);
 }
 
 export async function copyText(value) {
@@ -18,8 +28,7 @@ export async function copyText(value) {
   const input = document.createElement('textarea');
   input.value = value;
   input.setAttribute('readonly', '');
-  input.style.position = 'fixed';
-  input.style.opacity = '0';
+  input.className = 'clipboard-fallback';
   document.body.appendChild(input);
   input.select();
   const copied = document.execCommand('copy');

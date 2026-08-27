@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,23 +38,24 @@ func (s *Server) requestPublicBase(request *http.Request) (string, error) {
 
 func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.hostRepository(r.Host) {
-			if r.URL.Path == "/ui/custom.css" {
-				s.serveCustomCSS(w, r)
-				return
-			}
-			if strings.HasPrefix(r.URL.Path, "/ui/icons/") {
-				s.serveUIIcon(w, r)
-				return
-			}
-			if r.URL.Path == "/help" || r.URL.Path == "/help/" {
-				s.helpOverview(w, r)
-				return
-			}
-			if strings.HasPrefix(r.URL.Path, "/help/") {
-				s.helpDetail(w, r, strings.TrimPrefix(r.URL.Path, "/help/"))
-				return
-			}
+		// Public UI resources and help are reserved instance routes on both
+		// path- and host-routed repositories. This prevents a host-routed
+		// origin from supplying CSS to MirrorRelay-generated pages.
+		if r.URL.Path == "/ui/custom.css" {
+			s.serveCustomCSS(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/ui/icons/") {
+			s.serveUIIcon(w, r)
+			return
+		}
+		if r.URL.Path == "/help" || r.URL.Path == "/help/" {
+			s.helpOverview(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/help/") {
+			s.helpDetail(w, r, strings.TrimPrefix(r.URL.Path, "/help/"))
+			return
 		}
 
 		if s.cfg.Distributed.Enabled && s.cfg.Distributed.Role == "coordinator" {
@@ -140,23 +142,82 @@ func (s *Server) hostRepository(requestHost string) bool {
 }
 
 func (s *Server) serveCustomCSS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	appearance := s.appearanceConfig()
 	if !appearance.Enabled || !appearance.CustomCSS.Enabled || appearance.CustomCSS.File == "" {
 		http.NotFound(w, r)
 		return
 	}
-	content, err := os.ReadFile(appearance.CustomCSS.File)
+	cssPath := appearance.CustomCSS.File
+	if !filepath.IsAbs(cssPath) || filepath.Clean(cssPath) != cssPath || filepath.Ext(cssPath) != ".css" {
+		http.NotFound(w, r)
+		return
+	}
+	info, err := os.Lstat(cssPath)
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	file, err := os.Open(cssPath)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	defer file.Close()
+	openedInfo, openedErr := file.Stat()
+	currentInfo, currentErr := os.Lstat(cssPath)
+	if openedErr != nil || currentErr != nil || !openedInfo.Mode().IsRegular() || !currentInfo.Mode().IsRegular() ||
+		!os.SameFile(info, openedInfo) || !os.SameFile(openedInfo, currentInfo) {
+		http.NotFound(w, r)
+		return
+	}
+	const maxCustomCSSBytes = 1 << 20
+	content, err := io.ReadAll(io.LimitReader(file, maxCustomCSSBytes+1))
+	if err != nil {
+		http.Error(w, "failed to read custom CSS", http.StatusInternalServerError)
+		return
+	}
+	if len(content) > maxCustomCSSBytes {
+		http.Error(w, "custom CSS exceeds 1 MiB", http.StatusRequestEntityTooLarge)
+		return
+	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(content)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(content)
+	}
+}
+
+func setGeneratedPageHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+}
+
+func requireGeneratedPageMethod(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return true
+	}
+	w.Header().Set("Allow", "GET, HEAD")
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return false
 }
 
 func (s *Server) serveUIIcon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/ui/icons/"), ".svg")
 	svg, ok := browser.Icons[name]
 	if !ok {
@@ -164,15 +225,22 @@ func (s *Server) serveUIIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Header().Set("Content-Length", strconv.Itoa(len(svg)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(svg))
+	if r.Method == http.MethodGet {
+		_, _ = w.Write([]byte(svg))
+	}
 }
 
 func (s *Server) helpOverview(w http.ResponseWriter, r *http.Request) {
+	setGeneratedPageHeaders(w)
+	if !requireGeneratedPageMethod(w, r) {
+		return
+	}
 	appearance := s.appearanceConfig()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	publicBase, err := s.requestPublicBase(r)
 	if err != nil {
 		http.Error(w, "invalid request host", http.StatusBadRequest)
@@ -182,12 +250,19 @@ func (s *Server) helpOverview(w http.ResponseWriter, r *http.Request) {
 	if s.registry != nil {
 		repoList = s.registry.List()
 	}
-	htmlContent := help.RenderOverviewHTML(repoList, publicBase, appearance.Branding, appearance.Theme)
+	htmlContent := help.RenderOverviewHTML(repoList, publicBase, appearance.Branding, appearance.Theme, appearance.AccentColor)
+	w.Header().Set("Content-Length", strconv.Itoa(len(htmlContent)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(htmlContent))
+	if r.Method == http.MethodGet {
+		_, _ = w.Write([]byte(htmlContent))
+	}
 }
 
 func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath string) {
+	setGeneratedPageHeaders(w)
+	if !requireGeneratedPageMethod(w, r) {
+		return
+	}
 	appearance := s.appearanceConfig()
 	slug := strings.Trim(slugPath, "/")
 	if slug == "" {
@@ -220,20 +295,18 @@ func (s *Server) helpDetail(w http.ResponseWriter, r *http.Request, slugPath str
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	htmlContent := help.RenderDetailHTML(res, appearance.Branding, appearance.Theme, safeUI)
+	htmlContent := help.RenderDetailHTML(res, appearance.Branding, appearance.Theme, appearance.AccentColor, safeUI)
+	w.Header().Set("Content-Length", strconv.Itoa(len(htmlContent)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(htmlContent))
+	if r.Method == http.MethodGet {
+		_, _ = w.Write([]byte(htmlContent))
+	}
 }
 
 func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	appearance := s.appearanceConfig()
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	setGeneratedPageHeaders(w)
+	if !requireGeneratedPageMethod(w, r) {
 		return
 	}
 	allowAdministrative := s.adminCIDRs.Allows(s.requestClientIP(r))
@@ -252,6 +325,18 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	if themeAttr == "" {
 		themeAttr = "system"
 	}
+	accentColor := appearance.AccentColor
+	if accentColor == "" {
+		accentColor = "#2563eb"
+	}
+	brandMarkup := html.EscapeString(siteTitle)
+	if appearance.Branding.Logo != "" {
+		brandMarkup = fmt.Sprintf(`<img class="brand-logo" src="%s" alt=""><span>%s</span>`, html.EscapeString(appearance.Branding.Logo), html.EscapeString(siteTitle))
+	}
+	faviconLink := ""
+	if appearance.Branding.Favicon != "" {
+		faviconLink = fmt.Sprintf(`<link rel="icon" href="%s">`, html.EscapeString(appearance.Branding.Favicon))
+	}
 
 	customCSSLink := ""
 	if appearance.Enabled && appearance.CustomCSS.Enabled && appearance.CustomCSS.File != "" {
@@ -260,16 +345,17 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 
 	var body strings.Builder
 	fmt.Fprintf(&body, `<!doctype html>
-<html lang="zh-CN" data-theme="%s">
+<html lang="en" data-theme="%s">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>%s - Repository Index / 镜像列表</title>
 	%s
+	%s
 	<style>
 		:root {
-			--mr-primary: #2563eb;
-			--mr-primary-hover: #1d4ed8;
+			--mr-primary: %s;
+			--mr-primary-hover: %s;
 			--mr-bg: #f8fafc;
 			--mr-surface: #ffffff;
 			--mr-text: #0f172a;
@@ -283,8 +369,6 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			--mr-text: #f8fafc;
 			--mr-muted: #94a3b8;
 			--mr-border: #334155;
-			--mr-primary: #3b82f6;
-			--mr-primary-hover: #60a5fa;
 		}
 		@media (prefers-color-scheme: dark) {
 			[data-theme="system"] {
@@ -293,8 +377,6 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 				--mr-text: #f8fafc;
 				--mr-muted: #94a3b8;
 				--mr-border: #334155;
-				--mr-primary: #3b82f6;
-				--mr-primary-hover: #60a5fa;
 			}
 		}
 		body {
@@ -326,10 +408,19 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			gap: 1rem;
 		}
 		.site-brand {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.65rem;
 			font-size: 1.35rem;
 			font-weight: 700;
 			color: var(--mr-text);
 			text-decoration: none;
+		}
+		.brand-logo {
+			width: 36px;
+			height: 36px;
+			object-fit: contain;
+			border-radius: var(--mr-radius);
 		}
 		.header-right {
 			display: flex;
@@ -337,6 +428,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			gap: 0.75rem;
 		}
 		.theme-select {
+			min-height: 44px;
 			padding: 0.4rem 0.6rem;
 			border-radius: var(--mr-radius);
 			border: 1px solid var(--mr-border);
@@ -349,6 +441,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			display: inline-flex;
 			align-items: center;
 			gap: 0.35rem;
+			min-height: 44px;
 			padding: 0.4rem 0.75rem;
 			border-radius: var(--mr-radius);
 			border: 1px solid var(--mr-border);
@@ -363,15 +456,22 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			border-color: var(--mr-primary);
 			color: var(--mr-primary);
 		}
+		.theme-select:focus-visible,
+		a:focus-visible {
+			outline: 3px solid var(--mr-primary);
+			outline-offset: 2px;
+		}
 		.table-card {
 			background: var(--mr-surface);
 			border: 1px solid var(--mr-border);
 			border-radius: var(--mr-radius);
-			overflow: hidden;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
 			box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 		}
 		table {
 			width: 100%%;
+			min-width: 680px;
 			border-collapse: collapse;
 			text-align: left;
 		}
@@ -404,7 +504,9 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 			border-radius: 4px;
 		}
 		.btn-help {
-			display: inline-block;
+			display: inline-flex;
+			align-items: center;
+			min-height: 36px;
 			padding: 0.25rem 0.55rem;
 			font-size: 0.8rem;
 			font-weight: 500;
@@ -448,19 +550,43 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 		footer a:hover {
 			color: var(--mr-primary);
 		}
+		@media (max-width: 600px) {
+			.container {
+				margin: 1rem auto;
+				padding: 0 0.75rem;
+			}
+			.header-right {
+				width: 100%%;
+				justify-content: space-between;
+			}
+		}
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after {
+				scroll-behavior: auto !important;
+				transition-duration: 0.01ms !important;
+			}
+		}
 	</style>
 	<script>
 		(function() {
-			var saved = localStorage.getItem('mr_public_theme');
-			if (saved) {
-				document.documentElement.setAttribute('data-theme', saved);
-			}
+			var allowed = ['system', 'light', 'dark'];
+			var selected = document.documentElement.getAttribute('data-theme');
+			try {
+				var saved = localStorage.getItem('mr_public_theme');
+				if (allowed.indexOf(saved) !== -1) selected = saved;
+			} catch (_) {}
+			if (allowed.indexOf(selected) === -1) selected = 'system';
+			document.documentElement.setAttribute('data-theme', selected);
+			document.addEventListener('DOMContentLoaded', function() {
+				var control = document.getElementById('public-theme');
+				if (control) control.value = selected;
+			});
+			window.changeTheme = function(select) {
+				var value = allowed.indexOf(select.value) !== -1 ? select.value : 'system';
+				try { localStorage.setItem('mr_public_theme', value); } catch (_) {}
+				document.documentElement.setAttribute('data-theme', value);
+			};
 		})();
-		function changeTheme(select) {
-			var val = select.value;
-			localStorage.setItem('mr_public_theme', val);
-			document.documentElement.setAttribute('data-theme', val);
-		}
 	</script>
 </head>
 <body>
@@ -470,13 +596,13 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 				<a href="/" class="site-brand">%s</a>
 			</div>
 			<div class="header-right">
-				<select class="theme-select" onchange="changeTheme(this)" aria-label="Theme">
+				<select id="public-theme" class="theme-select" onchange="changeTheme(this)" aria-label="Theme / 主题">
 					<option value="system">Auto / 跟随系统</option>
 					<option value="light">Light / 浅色</option>
 					<option value="dark">Dark / 深色</option>
 				</select>
 				<a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer" class="github-link" title="GitHub Repository">
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
 					GitHub
 				</a>
 			</div>
@@ -493,7 +619,8 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 						</tr>
 					</thead>
 					<tbody>`,
-		html.EscapeString(themeAttr), html.EscapeString(siteTitle), customCSSLink, html.EscapeString(siteTitle))
+		html.EscapeString(themeAttr), html.EscapeString(siteTitle), faviconLink, customCSSLink,
+		html.EscapeString(accentColor), html.EscapeString(accentColor), brandMarkup)
 
 	visible := 0
 	for _, repository := range repositories {

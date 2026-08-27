@@ -1,7 +1,7 @@
 // User administration page and the current-account password form.
 import { api } from '../api.js';
 import { registerAction } from '../actions.js';
-import { $, esc, notice } from '../dom.js';
+import { $, copyText, esc, notice } from '../dom.js';
 import { date } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
@@ -14,7 +14,7 @@ export async function loadUsers() {
       <div class="form-grid">
         <label>
           <span>${L('Username')}</span>
-          <input id="new-user" minlength="3" maxlength="64" required placeholder="operator">
+          <input id="new-user" minlength="3" maxlength="64" required autocomplete="username" spellcheck="false" placeholder="operator">
         </label>
         <label>
           <span>${L('Role')}</span>
@@ -26,11 +26,11 @@ export async function loadUsers() {
         </label>
         <label class="full-span">
           <span>${L('Initial password')}</span>
-          <input id="new-user-pass" type="password" minlength="10" required placeholder="••••••••••••">
+          <input id="new-user-pass" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••••">
         </label>
       </div>
       <footer>
-        <div id="user-error" class="error"></div>
+        <div id="user-error" class="error" role="alert" tabindex="-1"></div>
         <button type="submit" class="btn-primary">${icon('plus', 13)} ${L('Create user')}</button>
       </footer>
     </form>
@@ -76,7 +76,11 @@ export async function loadUsers() {
 
   $('#user-form').addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    $('#user-error').textContent = '';
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       await api('/users', {
         method: 'POST',
         body: JSON.stringify({
@@ -89,6 +93,10 @@ export async function loadUsers() {
       await loadUsers();
     } catch (error) {
       $('#user-error').textContent = error.message;
+      $('#user-error').focus();
+    } finally {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
     }
   });
 }
@@ -137,13 +145,16 @@ registerAction('delete-passkey', async button => {
 
 export async function loadAccount() {
   let passkeyData = { passkeys: [], recovery_codes_remaining: 0, password_login_disabled: false, passkey_enabled: false };
+  let passkeyError = '';
   try {
     passkeyData = await api('/account/passkeys');
-  } catch (_) {}
+  } catch (error) {
+    passkeyError = error.message;
+  }
 
   const passkeysRows = (passkeyData.passkeys || []).map(pk => `
     <tr>
-      <td><strong>${esc(pk.display_name)}</strong><br><small class="muted" style="font-family: monospace;">${esc((pk.credential_id || '').substring(0, 16))}...</small></td>
+      <td><strong>${esc(pk.display_name)}</strong><br><small class="muted passkey-id-preview">${esc((pk.credential_id || '').substring(0, 16))}...</small></td>
       <td>${date(pk.created_at)}</td>
       <td>${pk.last_used_at ? date(pk.last_used_at) : `<span class="muted">${L('Never')}</span>`}</td>
       <td class="action-cell">
@@ -154,15 +165,15 @@ export async function loadAccount() {
   `).join('');
 
   const passkeySection = passkeyData.passkey_enabled ? `
-    <div class="panel" style="margin-top: 1.5rem;">
-      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+    <div class="panel account-security-panel">
+      <div class="panel-header account-panel-header">
         <div>
           <h2>${icon('shield', 18)} ${L('Passkeys (WebAuthn / FIDO2)')}</h2>
           <p class="muted">${L('Manage hardware security keys and biometric passkeys for fast and secure authentication.')}</p>
         </div>
         <button type="button" class="btn-primary" id="add-passkey-btn">${icon('plus', 13)} ${L('Add Passkey')}</button>
       </div>
-      <table class="data-table" style="margin-top: 1rem;">
+      <div class="table-responsive account-passkey-table"><table class="data-table">
         <thead>
           <tr>
             <th>${L('Device / Name')}</th>
@@ -174,45 +185,46 @@ export async function loadAccount() {
         <tbody>
           ${passkeysRows || `<tr><td colspan="4" class="muted">${L('No passkeys registered yet.')}</td></tr>`}
         </tbody>
-      </table>
+      </table></div>
 
-      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+      <div class="account-security-section">
         <h3>${icon('key', 16)} ${L('Emergency Recovery Codes')}</h3>
         <p class="muted">${L('Emergency recovery codes allow you to regain access if you lose all your passkeys.')} (${L('Valid codes remaining')}: <strong>${passkeyData.recovery_codes_remaining}</strong>)</p>
-        <button type="button" class="secondary" id="generate-recovery-btn" style="margin-top: 0.5rem;">${icon('refresh', 13)} ${L('Generate New Recovery Codes')}</button>
-        <div id="recovery-codes-display" class="hidden" style="margin-top: 1rem; background: var(--bg-surface-elevated, #f1f5f9); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-highlight);">
+        <button type="button" class="secondary section-action" id="generate-recovery-btn">${icon('refresh', 13)} ${L('Generate New Recovery Codes')}</button>
+        <div id="recovery-codes-display" class="recovery-codes-display hidden">
           <p><strong>${L('Store these one-time recovery codes in a safe place. They will not be shown again!')}</strong></p>
-          <div id="recovery-codes-list" style="font-family: monospace; font-size: 14px; font-weight: 600; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0;"></div>
+          <div id="recovery-codes-list" class="recovery-codes-list"></div>
           <button type="button" class="btn-xs secondary" id="copy-recovery-codes-btn">${icon('copy', 12)} ${L('Copy Codes')}</button>
         </div>
       </div>
 
-      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle);">
+      <div class="account-security-section">
         <h3>${icon('lock', 16)} ${L('Password Login Policy')}</h3>
-        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; margin-top:0.5rem;">
+        <label class="password-policy-toggle">
           <input type="checkbox" id="disable-password-login-cb" ${passkeyData.password_login_disabled ? 'checked' : ''}>
           <span>${L('Disable password login for this account (Passkey only)')}</span>
         </label>
-        <p class="muted" style="margin-top:0.25rem;">${L('When enabled, you must use a registered Passkey or emergency recovery code to log in.')}</p>
+        <p class="muted password-policy-help">${L('When enabled, you must use a registered Passkey or emergency recovery code to log in.')}</p>
       </div>
     </div>
   ` : '';
 
   $('#page-account').innerHTML = `
+    ${passkeyError ? `<div class="notice error" role="alert">${esc(passkeyError)}</div>` : ''}
     <form class="panel narrow" id="password-form">
       <h2>${icon('user', 18)} ${L('Change password')}</h2>
       <div class="form-grid single-col">
         <label>
           <span>${L('Current password')}</span>
-          <input id="old-pass" type="password" required placeholder="••••••••••••">
+          <input id="old-pass" type="password" required autocomplete="current-password" placeholder="••••••••••••">
         </label>
         <label>
           <span>${L('New password (at least 10 characters)')}</span>
-          <input id="new-pass" type="password" minlength="10" required placeholder="••••••••••••">
+          <input id="new-pass" type="password" minlength="10" required autocomplete="new-password" placeholder="••••••••••••">
         </label>
       </div>
       <footer>
-        <div class="error" id="pass-error"></div>
+        <div class="error" id="pass-error" role="alert" tabindex="-1"></div>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Update password')}</button>
       </footer>
     </form>
@@ -220,54 +232,94 @@ export async function loadAccount() {
 
   $('#password-form').addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    $('#pass-error').textContent = '';
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       await api('/auth/password', {method: 'PUT', body: JSON.stringify({current_password: $('#old-pass').value, new_password: $('#new-pass').value})});
       notice(L('Password updated.'));
       event.target.reset();
     } catch (error) {
       $('#pass-error').textContent = error.message;
+      $('#pass-error').focus();
+    } finally {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
     }
   });
 
-  $('#add-passkey-btn')?.addEventListener('click', async () => {
+  $('#add-passkey-btn')?.addEventListener('click', async event => {
     const name = prompt(L('Enter a name for this Passkey (e.g. MacBook Touch ID, YubiKey):'), 'Passkey');
     if (name === null) return;
+    if (new TextEncoder().encode(name.trim()).length > 128) {
+      notice(L('Passkey names must not exceed 128 bytes.'), true);
+      return;
+    }
+    const button = event.currentTarget;
     try {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
       await registerPasskey(name.trim() || 'Passkey');
       notice(L('Passkey registered successfully!'));
       await loadAccount();
     } catch (error) {
       notice(error.message, true);
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
     }
   });
 
   let generatedCodes = [];
-  $('#generate-recovery-btn')?.addEventListener('click', async () => {
+  $('#generate-recovery-btn')?.addEventListener('click', async event => {
     if (!confirm(L('Generating new recovery codes will invalidate any existing codes. Continue?'))) return;
+    const button = event.currentTarget;
     try {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
       const res = await api('/account/recovery/generate', { method: 'POST' });
       generatedCodes = res.recovery_codes || [];
       const container = $('#recovery-codes-list');
       if (container) {
         container.innerHTML = generatedCodes.map(c => `<code>${esc(c)}</code>`).join('');
         $('#recovery-codes-display').classList.remove('hidden');
+        $('#recovery-codes-display').setAttribute('tabindex', '-1');
+        $('#recovery-codes-display').focus();
       }
       notice(L('Recovery codes generated.'));
     } catch (error) {
       notice(error.message, true);
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
     }
   });
 
-  $('#copy-recovery-codes-btn')?.addEventListener('click', () => {
+  $('#copy-recovery-codes-btn')?.addEventListener('click', async event => {
     if (generatedCodes.length > 0) {
-      navigator.clipboard.writeText(generatedCodes.join('\n')).then(() => {
+      const button = event.currentTarget;
+      try {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        await copyText(generatedCodes.join('\n'));
         notice(L('Recovery codes copied to clipboard!'));
-      });
+      } catch (error) {
+        notice(error.message, true);
+      } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
     }
   });
 
   $('#disable-password-login-cb')?.addEventListener('change', async event => {
     const disabled = event.target.checked;
+    event.target.disabled = true;
     try {
       await api('/account/security/password-login', {
         method: 'PUT',
@@ -277,6 +329,8 @@ export async function loadAccount() {
     } catch (error) {
       event.target.checked = !disabled;
       notice(error.message, true);
+    } finally {
+      event.target.disabled = false;
     }
   });
 }

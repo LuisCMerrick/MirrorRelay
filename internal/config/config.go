@@ -51,8 +51,11 @@ func Load(path string, dev bool) (Config, error) {
 	return cfg, nil
 }
 
-// LoadReader parses and validates a YAML stream into a Config.
-func LoadReader(r io.Reader) (Config, error) {
+// DecodeImportReader strictly decodes and normalizes an imported YAML stream
+// without running final semantic validation. The settings import workflow must
+// first restore omitted instance-local bindings and redacted credentials, then
+// call ApplyEnvironment before the candidate can be used.
+func DecodeImportReader(r io.Reader) (Config, error) {
 	cfg := Default()
 	decoder := yaml.NewDecoder(r)
 	decoder.KnownFields(true)
@@ -68,6 +71,15 @@ func LoadReader(r io.Reader) (Config, error) {
 	}
 	if err := cfg.NormalizeRuntime(); err != nil {
 		return cfg, fmt.Errorf("parse socket mode: %w", err)
+	}
+	return cfg, nil
+}
+
+// LoadReader parses and validates a YAML stream into a Config.
+func LoadReader(r io.Reader) (Config, error) {
+	cfg, err := DecodeImportReader(r)
+	if err != nil {
+		return cfg, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return cfg, err

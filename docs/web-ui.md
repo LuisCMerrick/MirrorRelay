@@ -172,7 +172,7 @@ Viewers can read the audit log but cannot access the Managed Upstream Nginx acce
 
 ## Settings
 
-The Admin-only **Settings** page provides complete operational and architectural configuration management across all 20 sections in `config.yaml`: server and runtime endpoints, ingress mode, standalone HTTP/TLS, performance, metadata adapters, redirects, database, cache policies, security, admin CIDRs, transport connection pools, limits, logging, health scheduling, graceful shutdown, Managed Upstream Nginx lifecycle, distributed cluster routing, webhook notifications, and cache warm-up.
+The Admin-only **Settings** lifecycle can import and export all 22 top-level sections in `config.yaml`. Its structured form covers server and runtime endpoints, ingress mode, standalone HTTP/TLS, performance, metadata adapters, redirects, database, cache policies, security, admin CIDRs, transport connection pools, limits, logging, health scheduling, graceful shutdown, Managed Upstream Nginx lifecycle, distributed cluster routing, webhook notifications, and cache warm-up; the dedicated **Appearance** page manages UI enhancement. The bootstrap fields `database.path` and `distributed.mutation_token_key_files` are visible but disabled because they must remain in YAML/environment configuration.
 
 ### Configuration effective indicators
 
@@ -193,23 +193,25 @@ sudo systemctl restart mirrorrelay
 ### Configuration export
 
 Administrators can export running configuration as valid YAML:
-- **Standard export** (default): Omits sensitive credentials (`distributed.token`, `distributed.mutation_token`, `webhook.secret`, edge node mutation tokens) and local instance public base URLs (`http.public_base_url`, `distributed.node.public_base_url`).
-- **Full backup export**: Admin-only complete backup including secrets for full disaster recovery.
+- **Standard export** (default): Omits sensitive credentials (`distributed.token`, `distributed.mutation_token`, the Webhook URL and signing secret, and edge node mutation tokens), passkey RP ID/origins, and local instance public base URLs (`http.public_base_url`, `distributed.node.public_base_url`).
+- **Full backup export**: An explicit CSRF-protected action that includes credentials and passkey bindings for disaster recovery. Instance-local public base URLs remain omitted; protect the downloaded file as secret material.
 
 ### Configuration import
 
-The **Import configuration** action supports uploading `.yaml` files or pasting YAML text:
+The **Import configuration** action supports uploading `.yaml` files or pasting up to 1 MiB of decoded YAML text:
 1. **Startup-level validation**: Verifies YAML syntax, structure, constraints, and dependencies.
 2. **Diff preview**: Displays a detailed diff table (`Path`, `Current value`, `Imported value`) and indicates whether a restart is required.
-3. **Local instance and credential preservation**: If local host URLs or tokens are omitted in the imported YAML, running values are preserved.
-4. **Apply**: Saves the validated candidate into the configuration override store and creates a new history version.
+3. **Local instance and credential preservation**: If local host URLs or tokens are omitted in the imported YAML, running values are preserved. An Edge node mutation token is preserved only while that node's URL is unchanged; moving a node to another origin requires an explicit new token.
+4. **Apply**: Atomically saves the validated candidate and its redacted history entry. Database/keyring bootstrap paths always remain file-only.
+5. **Appearance publication**: The imported `ui_enhancement` state is part of that transaction and is published immediately; other imported operational fields still require the indicated restart.
 
 ### Configuration versioning and rollback
 
-Every modification via Web UI, import, reset, or rollback is recorded in the configuration history:
+Every Settings save, import, operational reset, or rollback is recorded in the bounded configuration history:
 - Records version ID, timestamp, operator, source (`web_ui`, `configuration_import`, `settings_rollback`, `settings_reset`), diff summary, and safe snapshot.
-- Sensitive credentials are never stored in plaintext history logs.
-- Administrators can review past changes and select **Rollback** to restore any previous configuration state.
+- Sensitive credentials and webhook targets are never stored in plaintext history snapshots, and the history API never returns the stored snapshot itself.
+- Administrators can review retained changes and select **Rollback**. Redacted fields preserve the currently configured credentials instead of erasing or restoring an old secret.
+- Rollback restores the appearance snapshot immediately and leaves restart-required operational values pending until restart.
 
 ### Distributed cluster and routing settings
 
@@ -230,15 +232,15 @@ The **Appearance** page manages the instance default theme, branding identity, c
 - **Theme Mode**: Set the instance default for browsers without a local preference: `System` (auto-detect OS preference), `Light`, or `Dark`.
 - **Public UI Enhancement**: Control public repository directory restyling independently from the administration theme selector.
 - **Accent Color**: Customize the primary theme accent color (default `#2563eb`).
-- **Branding**: Set the instance title/name, custom logo URL, and favicon URL.
+- **Branding**: Set the instance title/name plus same-origin logo and favicon paths. Paths must begin with `/`, and the administrator-owned ingress must serve those assets.
 - **Login Page**: Customize login page heading title and subtitle.
 - **Directory Browser**: Enable modern responsive directory listing with breadcrumbs, instant filter, and SVG icons.
-- **Custom CSS**: Enable custom stylesheet file injection (served securely from `/ui/custom.css`).
+- **Custom CSS**: Enable a regular `.css` stylesheet file served from `/ui/custom.css`; symbolic links and files larger than 1 MiB are rejected.
 - **Reset to Defaults**: Restore default styling and branding settings at any time.
 
 ## Users and My account
 
-Administrators can create Admin, Operator and Viewer accounts with a 3–64 character non-space username and a password of at least 10 characters. The currently signed-in user cannot delete their own account. Use **My account** to change the current password by supplying the existing password and a new password.
+Administrators can create Admin, Operator and Viewer accounts with a 3–64 character non-space username and a password from 10 characters through 1024 bytes. The currently signed-in user cannot delete their own account. Use **My account** to change the current password, register/rename/remove WebAuthn passkeys, and generate eight single-use emergency recovery codes. Recovery codes are shown only when generated; save them offline before leaving the dialog. Password login can be disabled only after at least one passkey and one unused recovery code exist, and an atomic database condition prevents even concurrent requests from removing the final passkey. The recovery-code control remains available on the sign-in page when Passkey authentication is disabled or temporarily unavailable. Local recovery commands are `mirrorrelay admin reset-password --username <username> --password-stdin` and `mirrorrelay admin reset-passkeys --username <username>`; they load the configured Coordinator keyring when needed and revoke the account's existing sessions.
 
 The interface follows the same role policy as the API and omits controls the current account cannot use. Admin manages users, repository credentials, custom Nginx code, cluster-node records and process-level settings. Operator manages non-secret repository fields, cache, validation, Nginx reload/rollback and cluster check/sync operations. Viewer receives a minimal read-only operational view and cannot open System. Use separate accounts so audit records identify the operator, and remove accounts that are no longer required.
 

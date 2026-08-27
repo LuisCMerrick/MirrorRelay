@@ -12,8 +12,8 @@ import { state } from '../state.js';
 import { loadMirrors } from './mirrors.js';
 
 function repositorySummary(repository) {
-  const blocked = (repository.blocked_packages || []).length > 0 ? `<span class="status-pill status-unhealthy">${(repository.blocked_packages || []).length} ${L('rules')}</span>` : L('None');
-  const allowed = (repository.allowed_packages || []).length > 0 ? `<span class="status-pill status-healthy">${(repository.allowed_packages || []).length} ${L('rules')}</span>` : L('All permitted');
+  const blocked = (repository.blocked_packages || []).length > 0 ? `${(repository.blocked_packages || []).length} ${L('rules')}` : L('None');
+  const allowed = (repository.allowed_packages || []).length > 0 ? `${(repository.allowed_packages || []).length} ${L('rules')}` : L('All permitted');
   return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || 'Custom'} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${kv(L('Blocked packages (Blacklist)'), blocked)}${kv(L('Allowed packages (Whitelist)'), allowed)}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
 }
 
@@ -131,6 +131,7 @@ function shellQuote(value) {
 }
 
 function computePlaygroundOutput(type, variantId, baseUrl, selectedFormat = '', repositorySlug = '') {
+  baseUrl = String(baseUrl || '').replace(/[\r\n]/g, '').replace(/\/+$/, '');
   let cliCmd = '';
   let fileContent = '';
   let fileName = '';
@@ -344,7 +345,7 @@ async function showRepository(id) {
           ${formatControl}
           <label>
             <span>${L('Target Base URL')}</span>
-            <input id="playground-url" value="${esc(playgroundData.baseUrl)}" />
+            <input id="playground-url" type="url" required value="${esc(playgroundData.baseUrl)}" />
           </label>
         </div>
 
@@ -412,7 +413,18 @@ async function showRepository(id) {
     const updatePlaygroundView = () => {
       const vId = $('#playground-variant')?.value || selectedVariant;
       const format = $('#playground-format')?.value || selectedFormat;
-      const bUrl = $('#playground-url')?.value.trim() || playgroundData.baseUrl;
+      const urlInput = $('#playground-url');
+      const requestedURL = urlInput?.value.trim() || playgroundData.baseUrl;
+      let bUrl;
+      try {
+        const parsed = new URL(requestedURL);
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid URL');
+        bUrl = parsed.toString().replace(/\/+$/, '');
+        urlInput?.setCustomValidity('');
+      } catch (_) {
+        urlInput?.setCustomValidity(L('Enter a valid absolute HTTP or HTTPS URL.'));
+        return;
+      }
       const out = computePlaygroundOutput(desired.type, vId, bUrl, format, desired.slug);
 
       const cliPre = $('#playground-cli-pre');
@@ -428,12 +440,20 @@ async function showRepository(id) {
       $('#download-file-btn')?.replaceWith($('#download-file-btn').cloneNode(true));
 
       $('#copy-cli-btn')?.addEventListener('click', async () => {
-        await copyText(out.cliCmd);
-        notice(L('CLI command copied.'));
+        try {
+          await copyText(out.cliCmd);
+          notice(L('CLI command copied.'));
+        } catch (error) {
+          notice(error.message, true);
+        }
       });
       $('#copy-file-btn')?.addEventListener('click', async () => {
-        await copyText(out.fileContent);
-        notice(L('Configuration file copied.'));
+        try {
+          await copyText(out.fileContent);
+          notice(L('Configuration file copied.'));
+        } catch (error) {
+          notice(error.message, true);
+        }
       });
       $('#download-file-btn')?.addEventListener('click', () => {
         triggerDownload(out.fileName, out.fileContent);

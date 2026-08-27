@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>MirrorRelay Control Plane</title>
+  <link id="instance-favicon" rel="icon">
   <script src="js/theme-bootstrap.js"></script>
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="managed.css">
@@ -14,13 +15,13 @@
     <div class="login-controls">
       <div class="theme-switch" data-theme-switch role="group" aria-label="Theme">
         <button type="button" data-theme-mode="light" aria-label="Light theme" title="Light theme">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+          <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
         </button>
         <button type="button" data-theme-mode="dark" aria-label="Dark theme" title="Dark theme">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+          <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
         </button>
         <button type="button" data-theme-mode="auto" aria-label="Auto theme (follow system)" title="Auto theme (follow system)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
         </button>
       </div>
       <div id="login-lang" class="language-switch" role="group" aria-label="Language">
@@ -31,16 +32,17 @@
     <div class="login-backdrop"></div>
     <form id="login-form" class="panel login-card">
       <div class="login-brand">
-        <div class="brand-mark">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="brand-mark" data-brand-mark>
+          <img class="brand-logo" alt="" hidden>
+          <svg aria-hidden="true" focusable="false" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
             <path d="m22 12.5-9.17 4.16a2 2 0 0 1-1.66 0L2 12.5"/>
             <path d="m22 17.5-9.17 4.16a2 2 0 0 1-1.66 0L2 17.5"/>
           </svg>
         </div>
         <div>
-          <h1>MirrorRelay</h1>
-          <p data-i18n="tagline">Linux repository reverse-proxy gateway</p>
+          <h1 data-login-title>MirrorRelay</h1>
+          <p data-login-subtitle>Repository Proxy Service</p>
         </div>
       </div>
       <div class="login-mode-copy">
@@ -62,7 +64,7 @@
       <div id="login-recovery-group" class="form-group hidden">
         <label>
           <span data-i18n="recoveryCode">Emergency Recovery Code</span>
-          <input id="login-recovery-code" type="text" placeholder="XXXX-XXXX-XXXX" spellcheck="false" autocomplete="off">
+          <input id="login-recovery-code" type="text" placeholder="XXXX-XXXX-XXXX" spellcheck="false" autocomplete="one-time-code">
         </label>
       </div>
       <div id="login-password-confirmation-group" class="form-group hidden">
@@ -76,19 +78,19 @@
       <div id="login-alt-actions" class="hidden">
         <div class="login-divider" data-i18n="or">OR</div>
         <button id="login-passkey-btn" type="button" class="login-alt-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M7 12h10"/><path d="M12 7v10"/><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/></svg>
+          <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M7 12h10"/><path d="M12 7v10"/><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/></svg>
           <span data-i18n="signInWithPasskey">Sign in with Passkey</span>
         </button>
-        <button id="login-recovery-toggle" type="button" class="login-alt-btn" style="margin-top: 6px;">
+        <button id="login-recovery-toggle" type="button" class="login-alt-btn login-recovery-toggle">
           <span data-i18n="useRecoveryCode">Use Recovery Code</span>
         </button>
       </div>
 
-      <div id="login-error" class="error" role="alert" aria-live="polite"></div>
+      <div id="login-error" class="error" role="alert" aria-live="polite" tabindex="-1"></div>
 
       <div class="login-footer">
         <a href="https://github.com/LuisCMerrick/MirrorRelay" target="_blank" rel="noopener noreferrer" class="login-github-link" title="GitHub Repository">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
           <span>GitHub</span>
         </a>
       </div>
@@ -98,97 +100,98 @@
   <div id="app" class="shell hidden">
     <aside>
       <div class="brand">
-        <div class="brand-mark">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="brand-mark" data-brand-mark>
+          <img class="brand-logo" alt="" hidden>
+          <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
             <path d="m22 12.5-9.17 4.16a2 2 0 0 1-1.66 0L2 12.5"/>
             <path d="m22 17.5-9.17 4.16a2 2 0 0 1-1.66 0L2 17.5"/>
           </svg>
         </div>
         <div class="brand-info">
-          <strong>MirrorRelay</strong>
+          <strong data-instance-title>MirrorRelay</strong>
           <small data-i18n="Repository Gateway">Repository Gateway</small>
         </div>
       </div>
       <nav aria-label="Primary navigation">
         <div class="nav-section-title" data-i18n="Core">Core</div>
         <button data-page="dashboard" class="active" aria-current="page">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           <span data-i18n="navDashboard">Dashboard</span>
         </button>
         <button data-page="mirrors">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-9.17 4.16a2 2 0 0 1-1.66 0L2 12.5"/><path d="m22 17.5-9.17 4.16a2 2 0 0 1-1.66 0L2 17.5"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 12.5-9.17 4.16a2 2 0 0 1-1.66 0L2 12.5"/><path d="m22 17.5-9.17 4.16a2 2 0 0 1-1.66 0L2 17.5"/></svg>
           <span data-i18n="navRepositories">Repositories</span>
         </button>
         <button data-page="profiles">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg>
           <span data-i18n="navProfiles">Profiles</span>
         </button>
 
         <div class="nav-section-title" data-i18n="Gateway">Gateway</div>
         <button data-page="upstream-nginx">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
           <span data-i18n="navUpstreamNginx">Managed Upstream Nginx</span>
         </button>
         <button data-page="custom" class="requires-admin">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           <span data-i18n="navCustom">Custom configuration</span>
         </button>
         <button data-page="ingress" class="requires-admin">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><line x1="12" x2="12" y1="12" y2="8"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><line x1="12" x2="12" y1="12" y2="8"/></svg>
           <span data-i18n="navIngress">Ingress integration</span>
         </button>
 
         <div class="nav-section-title" data-i18n="Cluster & Ops">Cluster &amp; Ops</div>
         <button data-page="cluster">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
           <span data-i18n="navCluster">Cluster</span>
         </button>
         <button data-page="cache">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
           <span data-i18n="navCache">Cache</span>
         </button>
         <button data-page="health">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           <span data-i18n="navHealth">Health</span>
         </button>
 
         <div class="nav-section-title" data-i18n="Logs & System">Logs &amp; System</div>
         <button data-page="access" class="requires-operator">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
           <span data-i18n="navAccess">Access log</span>
         </button>
         <button data-page="audit">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
           <span data-i18n="navAudit">Audit log</span>
         </button>
         <button data-page="system" class="requires-operator">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg>
           <span data-i18n="navSystem">System</span>
         </button>
 
         <div class="nav-section-title" data-i18n="Admin">Admin</div>
         <button data-page="settings" class="requires-admin">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           <span data-i18n="navSettings">Settings</span>
         </button>
         <button data-page="appearance" class="requires-admin">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
           <span data-i18n="navAppearance">Appearance</span>
         </button>
         <button data-page="users" class="requires-admin">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span data-i18n="navUsers">Users</span>
         </button>
         <button data-page="account">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           <span data-i18n="navAccount">My account</span>
         </button>
       </nav>
       <div class="sidebar-foot">
         <div class="user-card">
           <div class="user-avatar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </div>
           <div class="user-details">
             <span id="user-name">admin</span>
@@ -197,11 +200,11 @@
         </div>
         <div class="sidebar-actions">
           <button id="restart-sidebar" class="link danger requires-admin" type="button">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
             <span data-i18n="restart">Restart</span>
           </button>
           <button id="logout" class="link" type="button">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+            <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
             <span data-i18n="signOut">Sign out</span>
           </button>
         </div>
@@ -217,13 +220,13 @@
         <div class="header-actions">
           <div class="theme-switch" data-theme-switch role="group" aria-label="Theme">
             <button type="button" data-theme-mode="light" aria-label="Light theme" title="Light theme">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
             </button>
             <button type="button" data-theme-mode="dark" aria-label="Dark theme" title="Dark theme">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
             </button>
             <button type="button" data-theme-mode="auto" aria-label="Auto theme (follow system)" title="Auto theme (follow system)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
             </button>
           </div>
           <div class="language-switch header-lang" role="group" aria-label="Language">
@@ -232,7 +235,7 @@
           </div>
           <span id="status" class="status online" role="status" aria-live="polite">Online</span>
           <button id="restart-header" type="button" class="btn-restart requires-admin">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
             <span data-i18n="restartService">Restart service</span>
           </button>
         </div>
@@ -245,11 +248,11 @@
         <section id="page-mirrors" class="page hidden">
           <div class="toolbar">
             <div class="search-bar">
-              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+              <svg aria-hidden="true" focusable="false" class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
               <input type="text" id="mirror-search-input" placeholder="Search repository name, slug, type..." />
             </div>
             <button id="add-mirror" class="btn-primary requires-operator">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+              <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
               <span data-i18n="addRepository">Add repository</span>
             </button>
           </div>
@@ -261,7 +264,7 @@
           <div class="toolbar">
             <div></div>
             <button id="add-custom" class="btn-primary requires-admin">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+              <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
               <span data-i18n="addCustom">Add custom configuration</span>
             </button>
           </div>
@@ -293,7 +296,7 @@
     </section>
   </div>
 
-  <dialog id="mirror-dialog" class="wide-dialog">
+  <dialog id="mirror-dialog" class="wide-dialog" aria-labelledby="form-title">
     <form id="mirror-form" method="dialog">
       <header>
         <h2 id="form-title">Add repository</h2>
@@ -389,11 +392,11 @@
           <legend data-i18n="packageGuard">Package Guard & Supply Chain Security</legend>
           <div class="form-grid">
             <label class="wide">
-              <span data-i18n="blockedPackages">Blocked package patterns (Blacklist regex / wildcards, one per line)</span>
+              <span data-i18n="blockedPackages">Blocked package patterns (anchor RE2 with ^ or $, otherwise Glob; one per line)</span>
               <textarea id="blocked-packages" rows="2" placeholder="^malicious-.*\nbad-pkg-*.tar.gz"></textarea>
             </label>
             <label class="wide">
-              <span data-i18n="allowedPackages">Allowed package patterns (Whitelist regex / wildcards, empty = all permitted)</span>
+              <span data-i18n="allowedPackages">Allowed package patterns (anchor RE2 with ^ or $, otherwise Glob; empty = all permitted)</span>
               <textarea id="allowed-packages" rows="2" placeholder="^internal-.*\nnumpy-*.whl"></textarea>
             </label>
           </div>
@@ -411,14 +414,14 @@
       </div>
 
       <footer>
-        <div id="form-error" class="error"></div>
+        <div id="form-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="cancel-dialog" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="saveActivate">Validate, save and activate</button>
       </footer>
     </form>
   </dialog>
 
-  <dialog id="detail-dialog" class="wide-dialog">
+  <dialog id="detail-dialog" class="wide-dialog" aria-labelledby="detail-title">
     <div class="dialog-body">
       <header>
         <h2 id="detail-title">Repository details</h2>
@@ -428,7 +431,7 @@
     </div>
   </dialog>
 
-  <dialog id="preview-dialog" class="wide-dialog">
+  <dialog id="preview-dialog" class="wide-dialog" aria-labelledby="preview-title">
     <div class="dialog-body">
       <header>
         <h2 id="preview-title">Preview</h2>
@@ -438,7 +441,7 @@
     </div>
   </dialog>
 
-  <dialog id="custom-dialog">
+  <dialog id="custom-dialog" aria-labelledby="custom-title">
     <form id="custom-form" method="dialog">
       <header>
         <h2 id="custom-title">Custom Managed Upstream Nginx configuration</h2>
@@ -455,14 +458,14 @@
         </div>
       </div>
       <footer>
-        <div id="custom-error" class="error"></div>
+        <div id="custom-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="cancel-custom" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="validateApply">Validate and apply</button>
       </footer>
     </form>
   </dialog>
 
-  <dialog id="node-dialog">
+  <dialog id="node-dialog" aria-labelledby="node-form-title">
     <form id="node-form" method="dialog">
       <header>
         <h2 id="node-form-title">Add edge node</h2>
@@ -482,14 +485,14 @@
         </div>
       </div>
       <footer>
-        <div id="node-error" class="error"></div>
+        <div id="node-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="cancel-node-dialog" data-i18n="cancel">Cancel</button>
         <button type="submit" class="btn-primary" data-i18n="save">Save</button>
       </footer>
     </form>
   </dialog>
 
-  <dialog id="export-dialog">
+  <dialog id="export-dialog" aria-labelledby="export-dialog-title">
     <div class="dialog-body">
       <header>
         <h2 id="export-dialog-title" data-i18n="Export YAML configuration">Export YAML configuration</h2>
@@ -511,13 +514,14 @@
         </div>
       </div>
       <footer>
+        <div id="export-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="copy-yaml-btn" data-i18n="Copy YAML">Copy YAML</button>
         <button type="button" class="btn-primary" id="download-yaml-btn" data-i18n="Download YAML">Download YAML</button>
       </footer>
     </div>
   </dialog>
 
-  <dialog id="import-dialog" class="wide-dialog">
+  <dialog id="import-dialog" class="wide-dialog" aria-labelledby="import-dialog-title">
     <form id="import-form" method="dialog">
       <header>
         <h2 id="import-dialog-title" data-i18n="Import YAML configuration">Import YAML configuration</h2>
@@ -535,10 +539,10 @@
             <textarea id="import-yaml-text" class="code-editor" rows="12" placeholder="# Paste config.yaml here..." spellcheck="false"></textarea>
           </label>
         </div>
-        <div id="import-diff-container" class="hidden" style="margin-top: 1rem;">
+        <div id="import-diff-container" class="import-diff-container hidden">
           <h3 data-i18n="Configuration Diff Preview">Configuration Diff Preview</h3>
-          <div id="import-diff-summary" class="info-callout" style="margin-bottom: 0.5rem;"></div>
-          <table class="data-table" id="import-diff-table">
+          <div id="import-diff-summary" class="info-callout import-diff-summary"></div>
+          <div class="table-responsive"><table class="data-table" id="import-diff-table">
             <thead>
               <tr>
                 <th data-i18n="Path">Path</th>
@@ -547,11 +551,11 @@
               </tr>
             </thead>
             <tbody id="import-diff-tbody"></tbody>
-          </table>
+          </table></div>
         </div>
       </div>
       <footer>
-        <div id="import-error" class="error"></div>
+        <div id="import-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="import-preview-btn" data-i18n="Validate & Preview Diff">Validate &amp; Preview Diff</button>
         <button type="button" class="btn-primary hidden" id="import-apply-btn" data-i18n="Apply configuration">Apply configuration</button>
       </footer>

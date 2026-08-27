@@ -92,5 +92,5 @@ location = "mirror.example.com"
 
 ## 4. Current Status & Distributed Limitations
 
-- **Single-Node Pull Proxy**: ✅ Fully supported in MirrorRelay v0.0.2.
+- **Single-Node Pull Proxy**: ✅ Fully supported in current MirrorRelay releases.
 - **Distributed OCI Routing**: 🚧 In multi-node distributed mode, package repository routing uses HTTP 307 redirects to edge nodes. OCI Registry distributed routing is currently disabled (returns HTTP 501) pending future control-plane updates for distributed manifest and blob coordination. Single-node standalone deployment is the recommended configuration for Docker registries in v0.0.x.

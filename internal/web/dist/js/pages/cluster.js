@@ -106,6 +106,7 @@ export function initCluster() {
 
   $('#node-form')?.addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
     $('#node-error').textContent = '';
     const id = $('#node-id').value;
     const payload = {
@@ -119,6 +120,8 @@ export function initCluster() {
       enabled: $('#node-enabled').checked
     };
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       if (id) {
         await api(`/cluster/nodes/${id}`, {method: 'PUT', body: JSON.stringify(payload)});
         notice(L('Node updated.'));
@@ -130,6 +133,12 @@ export function initCluster() {
       await loadCluster();
     } catch (error) {
       $('#node-error').textContent = error.message;
+      $('#node-error').focus();
+    } finally {
+      if (submitButton.isConnected) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute('aria-busy');
+      }
     }
   });
 

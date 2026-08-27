@@ -31,11 +31,13 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 ## 3. 身份认证与会话管理
 
 - **首次注册**：系统不提供默认管理员密码，也不通过环境变量预置管理员。用户表为空时，只允许通过配置的管理 Host/Path 与 CIDR 边界注册一次初始 Admin；数据库原子条件保证并发请求中只能有一个成功。
-- **密码哈希算法**：管理员密码采用 **Argon2id**（内存：64 MB，迭代轮数：3，最多 4 个线程）高强度哈希算法。
+- **密码哈希算法**：管理员密码限制为最多 1024 字节，并采用 **Argon2id**（内存：64 MB，迭代轮数：3，最多 4 个线程）高强度哈希算法。
 - **并发防 DoS 节流**：密码校验由并发信号量保护，防止通过大量并发登录请求耗尽 CPU 资源。
 - **高熵会话令牌**：采用 256 位密码学安全随机数（`crypto/rand`），在 SQLite 数据库中以 SHA-256 哈希值持久化（明文令牌绝不落盘）。
 - **Cookie 安全属性**：会话 Cookie 强制开启 `HttpOnly`、`Secure` 及 `SameSite=Strict`。
 - **CSRF 双重防护**：所有已认证的状态修改 API（`POST`、`PUT`、`DELETE`）必须携带有效的 `X-CSRF-Token`，并在服务端通过常量时间比较校验。未认证的一次性初始注册请求改由空数据库条件、原子插入与管理网络边界共同约束。
+- **Passkey（WebAuthn/FIDO2）**：注册与认证使用有界、五分钟有效、单次消费的 Challenge，并绑定精确的 Relying Party ID 与 Origin；除回环开发环境外必须使用 HTTPS。验证器强制 User Presence 与 User Verification，校验 Credential 类型、算法及密钥结构，并跟踪 Authenticator 签名计数器。
+- **应急恢复**：恢复码使用无偏密码学随机数生成，只在创建时返回一次明文，数据库仅保存 SHA-256 哈希且每条只能使用一次。关闭密码登录前，账户必须同时拥有 Passkey 与未使用恢复码；即使存在并发删除请求，数据库原子条件也会保留最后一个 Passkey。即使 Passkey 认证被关闭或其状态探测失败，登录页仍保留恢复码入口。`mirrorrelay admin reset-password --password-stdin` 与 `mirrorrelay admin reset-passkeys` 可通过本机严格配置及 Coordinator 密钥环路径恢复访问。两条命令都会撤销该账户的现有会话，并在同一原子恢复操作中重新启用密码登录。
 - **可信入口身份**：TCP 请求只有在直接 Peer 命中 `security.trusted_proxy_cidrs` 时才可采用 `X-Real-IP`，否则以 Socket Peer 作为客户端身份。显式启用的前端 Unix Socket 依靠 `0660` 权限边界受信。生成的入口配置使用 `$remote_addr` 覆盖 `X-Real-IP`；仓库重写与公开帮助页 URL 生成都会忽略 `X-Forwarded-Proto`、校验回退使用的请求 Authority，并始终保持 HTTPS。
 - **集群变更凭据加密**：Coordinator 节点 Mutation Token 使用 AES-256-GCM 认证密文落库。有序文件密钥环支持启动迁移与轮换；密钥缺失或凭据无法解密时会停止启动，绝不会回退为明文。
 
@@ -43,10 +45,10 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 
 ## 4. 输入验证与注入防御
 
-- **SQL 注入防御**：`internal/database/store.go` 中 100% 的 SQLite 查询均采用参数化 `?` 占位符，并强制启用 `PRAGMA foreign_keys = ON`。
+- **SQL 注入防御**：`internal/database/` 中的 SQLite 查询均采用参数化 `?` 占位符，并强制启用 `PRAGMA foreign_keys = ON`。
 - **路径穿越防御**：仓库路径严格过滤 NUL 空字符、回车换行、反斜杠、目录跳转符（`.` / `..`）及 URL 编码分隔符（`%2f`、`%5c`）。缓存文件路径采用清洗后标准路径的 SHA-256 哈希值作为落盘键名。
 - **HTML 辅助路由签名**：仓库 Base 外的同源目标只能使用 HMAC Scope URL，签名绑定仓库、实际选中的上游/Host 策略、转义路径与 Query。客户端修改上游、路径或 Query 时，请求会在到达 Managed Upstream Nginx 前被拒绝。
-- **JSON 严格反序列化**：管理 API 解析 JSON 请求时强制开启 `DisallowUnknownFields()` 并使用 `http.MaxBytesReader` 限制请求体上限为 1 MB。
+- **JSON 严格反序列化**：API 会拒绝未知字段和尾随文档，并按端点执行请求体上限（通常不超过 1 MiB；集群协议请求上限为 64 KiB）。
 
 ---
 
@@ -78,7 +80,7 @@ CapabilityBoundingSet=
 - Coordinator 启用时的 `/etc/mirrorrelay/cluster-mutation-token.key`：`0640 root:mirrorrelay`
 - `/var/lib/mirrorrelay/`：`0750 mirrorrelay:mirrorrelay`
 - `/var/cache/mirrorrelay/`：`0750 mirrorrelay:mirrorrelay`
-- `/run/mirrorrelay/*.sock`：`0660 root:mirrorrelay`
+- `/run/mirrorrelay/*.sock`：软件包服务下为 `0660 mirrorrelay:mirrorrelay`；入口访问权由管理员显式授予
 
 ---
 
@@ -87,7 +89,7 @@ CapabilityBoundingSet=
 MirrorRelay 内置企业级供应链投毒与依赖混淆（Dependency Confusion）主动防御机制：
 - **包名黑名单拦截（`blocked_packages`）**：支持正则表达式与 Glob 通配符（如 `^malicious-.*`、`bad-pkg-*.tar.gz`），实时阻断受污染恶意包的拉取。
 - **包名白名单准入（`allowed_packages`）**：支持企业安全准入限定（如 `^internal-.*`），仅允许经合规审计的包通过。
-- 每个列表最多 128 条规则，每条最多 512 字节。规则必须是合法的 Go Glob 或 RE2 表达式，并在激活前完成编译；非法 Candidate 会被拒绝，Active 状态意外无效时按 Fail-Closed 处理。
+- 每个列表最多 128 条规则，每条最多 512 字节。以 `^` 开头或 `$` 结尾的规则按整串 RE2 表达式处理，其余规则按 Go Glob 处理；这种显式区分可避免同一条歧义规则同时获得两套不同的匹配语义。规则会在激活前完成编译；非法 Candidate 会被拒绝，Active 状态意外无效时按 Fail-Closed 处理。
 - 当客户端请求命中拦截规则时，MirrorRelay 将立即终止代理并返回 HTTP `403 Forbidden`，同时向系统审计日志与 Webhook 发送安全拦截警报。
 - 开发镜像构建时会用 `nginx.sha256` 校验仓库内的 Managed Upstream Nginx Fixture。正式镜像会根据 Package Job 的 `BUILD-INFO` 校验两个架构匹配二进制；发布包同时携带 `BUILD-INFO` 与内部校验和，已发布 OCI Manifest 还附带 SBOM 与 Provenance Attestation。
 
@@ -113,7 +115,7 @@ Managed Upstream Nginx 记录 `$uri` 而不是 `$request_uri`，因此 Access Lo
 - 每次通知均携带 `X-MirrorRelay-Signature: sha256=<hex>` 签名与 `X-MirrorRelay-Event: <event>` 请求头，供接收端验证消息完整性与来源真实性。
 - 默认强制 HTTPS。明文 HTTP 与私网/环回/链路本地目标分别需要显式启用 `webhook.allow_http` 和 `webhook.allow_private`。
 - 配置目标及每次重定向都会在连接前解析并过滤。安全 Dialer 会拒绝 DNS 重绑定到受限地址，TLS 主机名验证始终开启，最多接受五次重定向。
-- Webhook 测试可使用当前运行中目标，也可使用一个按相同策略校验的临时目标；临时目标不会继承运行中签名密钥。非法 JSON 会立即终止且不会发送通知。包含 Webhook 目标在内的设置 API 仅限 Admin。
+- Webhook 测试可使用当前运行中目标，也可使用一个按相同策略校验的临时目标；临时目标不会继承运行中签名密钥。非法 JSON 会立即终止且不会发送通知。普通设置与历史响应仅限 Admin，并脱敏目标与密钥；只有显式发起、受 CSRF 保护的完整备份导出才包含它们。
 
 ---
 

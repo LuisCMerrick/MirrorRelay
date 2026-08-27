@@ -18,7 +18,6 @@ import (
 
 func normalizeForComparison(w config.WebSettings) config.WebSettings {
 	w.UIEnhancement = model.UIEnhancementConfig{}
-	w.Warmup = config.WebWarmupSettings{}
 	if w.Security.AdminCIDRs == nil {
 		w.Security.AdminCIDRs = []string{}
 	}
@@ -84,69 +83,117 @@ func webSettingsEqual(left, right config.WebSettings) bool {
 	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
 }
 
-func (s *Server) activeWebConfig() config.Config {
-	candidate := s.fileConfig
-	if raw, found, err := s.store.Setting(nil, config.WebSettingsKey); err == nil && found {
-		if decoded, err := config.DecodeWebSettings([]byte(raw)); err == nil {
-			if applied, err := decoded.Apply(s.fileConfig); err == nil {
-				candidate = applied
-			}
-		}
+func applyWebSettings(settings config.WebSettings, base config.Config) (config.Config, error) {
+	candidate, err := settings.Apply(base)
+	if err != nil {
+		return base, err
 	}
-	return candidate
+	return config.ApplyEnvironment(candidate)
 }
 
-func (s *Server) webSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
-	current := config.WebSettingsFrom(s.cfg)
-	fromFile := config.WebSettingsFrom(s.fileConfig)
-	stored, found, err := s.store.Setting(r.Context(), config.WebSettingsKey)
+func (s *Server) storedWebConfig(ctx context.Context) (config.Config, bool, error) {
+	raw, found, err := s.store.Setting(ctx, config.WebSettingsKey)
+	if err != nil {
+		return s.fileConfig, false, fmt.Errorf("read stored settings: %w", err)
+	}
+	if !found {
+		return s.fileConfig, false, nil
+	}
+	settings, err := config.DecodeWebSettings([]byte(raw))
+	if err != nil {
+		return s.fileConfig, true, fmt.Errorf("decode stored settings: %w", err)
+	}
+	candidate, err := applyWebSettings(settings, s.fileConfig)
+	if err != nil {
+		return s.fileConfig, true, fmt.Errorf("apply stored settings: %w", err)
+	}
+	return candidate, true, nil
+}
+
+func (s *Server) webSettings(w http.ResponseWriter, r *http.Request, _ auth.Session) {
+	currentConfig := s.cfg
+	currentConfig.UIEnhancement = s.appearanceConfig()
+	current := config.WebSettingsFrom(currentConfig)
+	fromFileConfig := s.fileConfig
+	fromFileConfig.UIEnhancement = s.appearanceConfig()
+	fromFile := config.WebSettingsFrom(fromFileConfig)
+	candidate, found, err := s.storedWebConfig(r.Context())
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
 	if !found {
 		restartRequired := !webSettingsEqual(fromFile, current)
-		redactWebSettingsForRole(&fromFile, session.Role)
+		safeSettings := redactedWebSettings(fromFile)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"settings": fromFile, "source": "configuration_file", "restart_required": restartRequired, "file_only": []string{},
+			"settings": safeSettings, "source": "configuration_file", "restart_required": restartRequired, "file_only": config.WebSettingsFileOnlyPaths(),
 		})
 		return
 	}
-	settings, err := config.DecodeWebSettings([]byte(stored))
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	candidate, err := settings.Apply(s.fileConfig)
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	settings = config.WebSettingsFrom(candidate)
+	candidate.UIEnhancement = s.appearanceConfig()
+	settings := config.WebSettingsFrom(candidate)
 	restartRequired := !webSettingsEqual(settings, current)
-	redactWebSettingsForRole(&settings, session.Role)
+	safeSettings := redactedWebSettings(settings)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings": settings, "source": "web_ui", "restart_required": restartRequired, "file_only": []string{},
+		"settings": safeSettings, "source": "web_ui", "restart_required": restartRequired, "file_only": config.WebSettingsFileOnlyPaths(),
 	})
 }
 
-func redactWebSettingsForRole(settings *config.WebSettings, role string) {
-	if settings == nil {
-		return
+func redactedWebSettings(settings config.WebSettings) config.WebSettings {
+	safe := settings
+	if settings.Webhook != nil {
+		webhook := *settings.Webhook
+		webhook.Events = append([]string{}, settings.Webhook.Events...)
+		safe.Webhook = &webhook
 	}
-	if role != "admin" {
-		if settings.Webhook != nil {
-			if settings.Webhook.URL != "" {
-				settings.Webhook.URL = redactedValue
-			}
-			settings.Webhook.Secret = ""
+	safe.Distributed.Nodes = append([]config.DistributedNodeSeed{}, settings.Distributed.Nodes...)
+	if safe.Webhook != nil {
+		if safe.Webhook.URL != "" {
+			safe.Webhook.URL = redactedValue
 		}
-		settings.Distributed.Token = ""
-		settings.Distributed.MutationToken = ""
-		for i := range settings.Distributed.Nodes {
-			settings.Distributed.Nodes[i].MutationToken = ""
+		if safe.Webhook.Secret != "" {
+			safe.Webhook.Secret = redactedValue
 		}
 	}
+	if safe.Distributed.Token != "" {
+		safe.Distributed.Token = redactedValue
+	}
+	if safe.Distributed.MutationToken != "" {
+		safe.Distributed.MutationToken = redactedValue
+	}
+	for i := range safe.Distributed.Nodes {
+		if safe.Distributed.Nodes[i].MutationToken != "" {
+			safe.Distributed.Nodes[i].MutationToken = redactedValue
+		}
+	}
+	return safe
+}
+
+func (s *Server) putWebSettingsWithAppearance(ctx context.Context, webSettingsJSON string, appearanceConfig model.UIEnhancementConfig, version model.SettingVersion) (model.SettingVersion, error) {
+	appearanceJSON, err := json.Marshal(appearanceConfig)
+	if err != nil {
+		return version, err
+	}
+	return s.store.PutSettingsWithVersion(ctx, map[string]string{
+		config.WebSettingsKey:          webSettingsJSON,
+		database.AppearanceSettingsKey: string(appearanceJSON),
+	}, version, s.cfg.UpstreamNginx.HistoryLimit)
+}
+
+func operationalWebSettingsJSON(settings config.WebSettings, fileAppearance model.UIEnhancementConfig) ([]byte, error) {
+	stored := settings
+	// Appearance is persisted and published through its dedicated record. Keep
+	// the operational JSON at the YAML fallback so deleting the appearance
+	// override consistently restores YAML after a restart as well.
+	stored.UIEnhancement = fileAppearance
+	return json.Marshal(stored)
+}
+
+func (s *Server) publishAppearance(value model.UIEnhancementConfig) {
+	if s.appearance == nil {
+		s.appearance = appearance.New(s.cfg.UIEnhancement)
+	}
+	s.appearance.Store(value)
 }
 
 func (s *Server) updateWebSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
@@ -154,28 +201,22 @@ func (s *Server) updateWebSettings(w http.ResponseWriter, r *http.Request, sessi
 	if decodeJSON(w, r, &input) != nil {
 		return
 	}
-	baseConfig := s.fileConfig
-	if stored, found, err := s.store.Setting(r.Context(), config.WebSettingsKey); err == nil && found {
-		if prevWS, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if appliedPrev, err := prevWS.Apply(s.fileConfig); err == nil {
-				baseConfig = appliedPrev
-			}
-		}
+	baseConfig, _, err := s.storedWebConfig(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
 	}
+	baseConfig.UIEnhancement = s.appearanceConfig()
 
-	candidate, err := input.Apply(baseConfig)
+	candidate, err := applyWebSettings(input, baseConfig)
 	if err != nil {
 		_ = s.audit(r, session.Username, "settings_update", "configuration", err.Error(), false)
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	normalized := config.WebSettingsFrom(candidate)
-	encoded, err := json.Marshal(normalized)
+	encoded, err := operationalWebSettingsJSON(normalized, s.fileConfig.UIEnhancement)
 	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-	if err := s.store.PutSetting(r.Context(), config.WebSettingsKey, string(encoded)); err != nil {
 		writeInternal(w, err)
 		return
 	}
@@ -184,60 +225,71 @@ func (s *Server) updateWebSettings(w http.ResponseWriter, r *http.Request, sessi
 	diff := config.ComputeSettingsDiff(oldWS, normalized)
 	diffBytes, _ := json.Marshal(diff)
 
-	safeWS := normalized
-	redactWebSettingsForRole(&safeWS, session.Role)
+	safeWS := redactedWebSettings(normalized)
 	safeJSON, _ := json.Marshal(safeWS)
 
 	summary := fmt.Sprintf("%d setting(s) updated", len(diff))
-	_, _ = s.store.AddSettingVersion(r.Context(), model.SettingVersion{
+	if _, err := s.putWebSettingsWithAppearance(r.Context(), string(encoded), normalized.UIEnhancement, model.SettingVersion{
 		Operator:    session.Username,
 		Source:      "web_ui",
 		Description: summary,
 		DiffSummary: string(diffBytes),
 		Settings:    string(safeJSON),
-	}, s.cfg.UpstreamNginx.HistoryLimit)
+	}); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	s.publishAppearance(normalized.UIEnhancement)
 
 	restartRequired := !webSettingsEqual(normalized, config.WebSettingsFrom(s.cfg))
 	_ = s.audit(r, session.Username, "settings_update", "configuration", summary, true)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings": normalized, "source": "web_ui", "restart_required": restartRequired, "file_only": []string{}, "diff": diff,
+		"settings": safeWS, "source": "web_ui", "restart_required": restartRequired, "file_only": config.WebSettingsFileOnlyPaths(), "diff": diff,
 	})
 }
 
 func (s *Server) resetWebSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
-	if err := s.store.DeleteSetting(r.Context(), config.WebSettingsKey); err != nil {
+	currentConfig, _, _ := s.storedWebConfig(r.Context()) // Reset remains the recovery path for invalid stored JSON.
+	currentConfig.UIEnhancement = s.appearanceConfig()
+	fromFileConfig := s.fileConfig
+	fromFileConfig.UIEnhancement = s.appearanceConfig()
+	fromFile := config.WebSettingsFrom(fromFileConfig)
+	diff := config.ComputeSettingsDiff(config.WebSettingsFrom(currentConfig), fromFile)
+	diffBytes, _ := json.Marshal(diff)
+	safeWS := redactedWebSettings(fromFile)
+	safeJSON, _ := json.Marshal(safeWS)
+	description := fmt.Sprintf("reset settings to configuration file defaults (%d setting(s) changed)", len(diff))
+
+	if _, err := s.store.DeleteSettingWithVersion(r.Context(), config.WebSettingsKey, model.SettingVersion{
+		Operator:    session.Username,
+		Source:      "settings_reset",
+		Description: description,
+		DiffSummary: string(diffBytes),
+		Settings:    string(safeJSON),
+	}, s.cfg.UpstreamNginx.HistoryLimit); err != nil {
 		writeInternal(w, err)
 		return
 	}
-	fromFile := config.WebSettingsFrom(s.fileConfig)
-	safeWS := fromFile
-	redactWebSettingsForRole(&safeWS, session.Role)
-	safeJSON, _ := json.Marshal(safeWS)
-
-	_, _ = s.store.AddSettingVersion(r.Context(), model.SettingVersion{
-		Operator:    session.Username,
-		Source:      "settings_reset",
-		Description: "reset settings to configuration file defaults",
-		DiffSummary: "[]",
-		Settings:    string(safeJSON),
-	}, s.cfg.UpstreamNginx.HistoryLimit)
 
 	_ = s.audit(r, session.Username, "settings_reset", "configuration", "restore configuration file values after restart", true)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings": fromFile, "source": "configuration_file", "restart_required": !webSettingsEqual(fromFile, config.WebSettingsFrom(s.cfg)), "file_only": []string{},
+		"settings": safeWS, "source": "configuration_file", "restart_required": !webSettingsEqual(fromFile, config.WebSettingsFrom(s.cfg)), "file_only": config.WebSettingsFileOnlyPaths(), "diff": diff,
 	})
 }
 
 func (s *Server) exportSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	fullBackup := r.URL.Query().Get("full_backup") == "true"
-	currentConfig := s.fileConfig
-	if stored, found, err := s.store.Setting(r.Context(), config.WebSettingsKey); err == nil && found {
-		if ws, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if applied, err := ws.Apply(s.fileConfig); err == nil {
-				currentConfig = applied
-			}
-		}
+	if fullBackup && r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeError(w, http.StatusMethodNotAllowed, "full backup export requires POST with CSRF protection")
+		return
 	}
+	currentConfig, _, err := s.storedWebConfig(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
+	}
+	currentConfig.UIEnhancement = s.appearanceConfig()
 
 	yamlContent, err := config.ExportYAML(currentConfig, fullBackup)
 	if err != nil {
@@ -261,20 +313,33 @@ type importPayload struct {
 	YAML string `json:"yaml"`
 }
 
+const maxSettingsImportYAMLBytes = 1 << 20
+
+func decodeSettingsImport(w http.ResponseWriter, r *http.Request, out *importPayload) error {
+	// A JSON string can require up to six bytes for each input byte after
+	// escaping. Bound the envelope separately, then enforce the documented
+	// limit against the decoded YAML itself.
+	if err := decodeJSONLimit(w, r, out, 6*maxSettingsImportYAMLBytes+1024); err != nil {
+		return err
+	}
+	if len(out.YAML) > maxSettingsImportYAMLBytes {
+		err := fmt.Errorf("YAML configuration content exceeds 1 MiB")
+		writeError(w, http.StatusRequestEntityTooLarge, err.Error())
+		return err
+	}
+	return nil
+}
+
 func (s *Server) parseCandidateFromYAML(ctx context.Context, yamlText string) (config.Config, error) {
 	reader := strings.NewReader(yamlText)
-	imported, err := config.LoadReader(reader)
+	imported, err := config.DecodeImportReader(reader)
 	if err != nil {
 		return imported, err
 	}
 
-	current := s.fileConfig
-	if stored, found, err := s.store.Setting(ctx, config.WebSettingsKey); err == nil && found {
-		if ws, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if applied, err := ws.Apply(s.fileConfig); err == nil {
-				current = applied
-			}
-		}
+	current, _, err := s.storedWebConfig(ctx)
+	if err != nil {
+		return imported, err
 	}
 
 	// Instance public base URLs must not be overwritten if omitted in imported YAML
@@ -284,6 +349,17 @@ func (s *Server) parseCandidateFromYAML(ctx context.Context, yamlText string) (c
 	if imported.Distributed.Node.PublicBaseURL == "" {
 		imported.Distributed.Node.PublicBaseURL = current.Distributed.Node.PublicBaseURL
 	}
+	if imported.Admin.Passkey.RPID == "" {
+		imported.Admin.Passkey.RPID = current.Admin.Passkey.RPID
+	}
+	if len(imported.Admin.Passkey.Origins) == 0 {
+		imported.Admin.Passkey.Origins = append([]string{}, current.Admin.Passkey.Origins...)
+	}
+
+	// Bootstrap values must continue to point to the already-open database and
+	// mutation-token keyring. Imported values cannot take effect safely here.
+	imported.Database.Path = current.Database.Path
+	imported.Distributed.MutationTokenKeyFiles = append([]string{}, current.Distributed.MutationTokenKeyFiles...)
 
 	// Preserve credentials if omitted in imported YAML
 	if imported.Distributed.Token == "" {
@@ -295,11 +371,14 @@ func (s *Server) parseCandidateFromYAML(ctx context.Context, yamlText string) (c
 	if imported.Webhook.Secret == "" {
 		imported.Webhook.Secret = current.Webhook.Secret
 	}
+	if imported.Webhook.URL == "" {
+		imported.Webhook.URL = current.Webhook.URL
+	}
 	if len(imported.Distributed.Nodes) > 0 && len(current.Distributed.Nodes) > 0 {
 		for i, node := range imported.Distributed.Nodes {
 			if node.MutationToken == "" {
 				for _, prev := range current.Distributed.Nodes {
-					if prev.URL == node.URL || prev.Name == node.Name {
+					if prev.URL == node.URL {
 						imported.Distributed.Nodes[i].MutationToken = prev.MutationToken
 						break
 					}
@@ -308,18 +387,15 @@ func (s *Server) parseCandidateFromYAML(ctx context.Context, yamlText string) (c
 		}
 	}
 
-	if err := imported.NormalizeRuntime(); err != nil {
+	if err := config.ValidateUIEnhancement(&imported.UIEnhancement); err != nil {
 		return imported, err
 	}
-	if err := imported.Validate(); err != nil {
-		return imported, err
-	}
-	return imported, nil
+	return config.ApplyEnvironment(imported)
 }
 
 func (s *Server) previewImportSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	var in importPayload
-	if decodeJSON(w, r, &in) != nil {
+	if decodeSettingsImport(w, r, &in) != nil {
 		return
 	}
 	if strings.TrimSpace(in.YAML) == "" {
@@ -333,14 +409,12 @@ func (s *Server) previewImportSettings(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	current := s.fileConfig
-	if stored, found, storeErr := s.store.Setting(r.Context(), config.WebSettingsKey); storeErr == nil && found {
-		if ws, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if applied, err := ws.Apply(s.fileConfig); err == nil {
-				current = applied
-			}
-		}
+	current, _, err := s.storedWebConfig(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
 	}
+	current.UIEnhancement = s.appearanceConfig()
 
 	oldWS := config.WebSettingsFrom(current)
 	newWS := config.WebSettingsFrom(candidate)
@@ -357,7 +431,7 @@ func (s *Server) previewImportSettings(w http.ResponseWriter, r *http.Request, s
 
 func (s *Server) applyImportSettings(w http.ResponseWriter, r *http.Request, session auth.Session) {
 	var in importPayload
-	if decodeJSON(w, r, &in) != nil {
+	if decodeSettingsImport(w, r, &in) != nil {
 		return
 	}
 	if strings.TrimSpace(in.YAML) == "" {
@@ -372,23 +446,17 @@ func (s *Server) applyImportSettings(w http.ResponseWriter, r *http.Request, ses
 		return
 	}
 
-	current := s.fileConfig
-	if stored, found, storeErr := s.store.Setting(r.Context(), config.WebSettingsKey); storeErr == nil && found {
-		if ws, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if applied, err := ws.Apply(s.fileConfig); err == nil {
-				current = applied
-			}
-		}
-	}
-
-	oldWS := config.WebSettingsFrom(current)
-	normalized := config.WebSettingsFrom(candidate)
-	encoded, err := json.Marshal(normalized)
+	current, _, err := s.storedWebConfig(r.Context())
 	if err != nil {
 		writeInternal(w, err)
 		return
 	}
-	if err := s.store.PutSetting(r.Context(), config.WebSettingsKey, string(encoded)); err != nil {
+	current.UIEnhancement = s.appearanceConfig()
+
+	oldWS := config.WebSettingsFrom(current)
+	normalized := config.WebSettingsFrom(candidate)
+	encoded, err := operationalWebSettingsJSON(normalized, s.fileConfig.UIEnhancement)
+	if err != nil {
 		writeInternal(w, err)
 		return
 	}
@@ -396,24 +464,27 @@ func (s *Server) applyImportSettings(w http.ResponseWriter, r *http.Request, ses
 	diff := config.ComputeSettingsDiff(oldWS, normalized)
 	diffBytes, _ := json.Marshal(diff)
 
-	safeWS := normalized
-	redactWebSettingsForRole(&safeWS, session.Role)
+	safeWS := redactedWebSettings(normalized)
 	safeJSON, _ := json.Marshal(safeWS)
 
 	summary := fmt.Sprintf("imported YAML configuration (%d setting(s) changed)", len(diff))
-	_, _ = s.store.AddSettingVersion(r.Context(), model.SettingVersion{
+	if _, err := s.putWebSettingsWithAppearance(r.Context(), string(encoded), normalized.UIEnhancement, model.SettingVersion{
 		Operator:    session.Username,
 		Source:      "configuration_import",
 		Description: summary,
 		DiffSummary: string(diffBytes),
 		Settings:    string(safeJSON),
-	}, s.cfg.UpstreamNginx.HistoryLimit)
+	}); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	s.publishAppearance(normalized.UIEnhancement)
 
 	restartRequired := !webSettingsEqual(normalized, config.WebSettingsFrom(s.cfg))
 	_ = s.audit(r, session.Username, "settings_import", "configuration", summary, true)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":          true,
-		"settings":         normalized,
+		"settings":         safeWS,
 		"restart_required": restartRequired,
 		"diff":             diff,
 	})
@@ -456,29 +527,28 @@ func (s *Server) rollbackSettingsHistory(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	baseConfig := s.fileConfig
-	if stored, found, err := s.store.Setting(r.Context(), config.WebSettingsKey); err == nil && found {
-		if prevWS, err := config.DecodeWebSettings([]byte(stored)); err == nil {
-			if appliedPrev, err := prevWS.Apply(s.fileConfig); err == nil {
-				baseConfig = appliedPrev
-			}
-		}
+	baseConfig, _, err := s.storedWebConfig(r.Context())
+	if err != nil {
+		writeInternal(w, err)
+		return
 	}
+	baseConfig.UIEnhancement = s.appearanceConfig()
 
-	candidate, err := storedWS.Apply(baseConfig)
+	candidate, err := applyWebSettings(storedWS, baseConfig)
 	if err != nil {
 		_ = s.audit(r, session.Username, "settings_rollback", "configuration", err.Error(), false)
 		writeError(w, http.StatusUnprocessableEntity, "rollback validation failed: "+err.Error())
 		return
 	}
-
-	normalized := config.WebSettingsFrom(candidate)
-	encoded, err := json.Marshal(normalized)
-	if err != nil {
-		writeInternal(w, err)
+	candidate.UIEnhancement = storedWS.UIEnhancement
+	if err := config.ValidateUIEnhancement(&candidate.UIEnhancement); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "rollback appearance validation failed: "+err.Error())
 		return
 	}
-	if err := s.store.PutSetting(r.Context(), config.WebSettingsKey, string(encoded)); err != nil {
+
+	normalized := config.WebSettingsFrom(candidate)
+	encoded, err := operationalWebSettingsJSON(normalized, s.fileConfig.UIEnhancement)
+	if err != nil {
 		writeInternal(w, err)
 		return
 	}
@@ -487,24 +557,27 @@ func (s *Server) rollbackSettingsHistory(w http.ResponseWriter, r *http.Request,
 	diff := config.ComputeSettingsDiff(oldWS, normalized)
 	diffBytes, _ := json.Marshal(diff)
 
-	safeWS := normalized
-	redactWebSettingsForRole(&safeWS, session.Role)
+	safeWS := redactedWebSettings(normalized)
 	safeJSON, _ := json.Marshal(safeWS)
 
 	desc := fmt.Sprintf("rollback to configuration version %d", version)
-	_, _ = s.store.AddSettingVersion(r.Context(), model.SettingVersion{
+	if _, err := s.putWebSettingsWithAppearance(r.Context(), string(encoded), normalized.UIEnhancement, model.SettingVersion{
 		Operator:    session.Username,
 		Source:      "settings_rollback",
 		Description: desc,
 		DiffSummary: string(diffBytes),
 		Settings:    string(safeJSON),
-	}, s.cfg.UpstreamNginx.HistoryLimit)
+	}); err != nil {
+		writeInternal(w, err)
+		return
+	}
+	s.publishAppearance(normalized.UIEnhancement)
 
 	restartRequired := !webSettingsEqual(normalized, config.WebSettingsFrom(s.cfg))
 	_ = s.audit(r, session.Username, "settings_rollback", "configuration", desc, true)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":          true,
-		"settings":         normalized,
+		"settings":         safeWS,
 		"restart_required": restartRequired,
 		"diff":             diff,
 	})

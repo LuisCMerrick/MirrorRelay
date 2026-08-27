@@ -143,6 +143,23 @@ func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error
 	return err
 }
 
+// ResetPasswordAndSessions atomically restores password access and revokes all
+// existing sessions for local emergency recovery.
+func (s *Store) ResetPasswordAndSessions(ctx context.Context, id int64, hash string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET password_hash=?,password_login_disabled=0,updated_at=? WHERE id=?`, hash, nowText(), id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) AddAudit(ctx context.Context, a model.AuditEntry) error {
 	if a.Time.IsZero() {
 		a.Time = time.Now()

@@ -1,6 +1,6 @@
 .PHONY: build check package release release-mirrorrelay test test-integration test-race upstream-nginx-musl upstream-nginx-musl-amd64 upstream-nginx-musl-arm64 vendor-source verify-package
 
-VERSION ?= 0.0.17
+VERSION ?= 0.0.20
 ARCH ?= amd64
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
 SOURCE_DATE_EPOCH ?= $(shell git show -s --format=%ct HEAD 2>/dev/null || date +%s)
@@ -32,7 +32,8 @@ check:
 	go mod verify
 	go vet ./...
 	go test ./...
-	find internal/web/dist -name "*.js" -exec node --check {} +
+	./scripts/verify-web-assets.sh
+	node scripts/verify-docs.mjs
 
 release-mirrorrelay:
 	mkdir -p dist/mirrorrelay-linux-$(ARCH)

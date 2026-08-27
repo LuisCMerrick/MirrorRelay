@@ -4,18 +4,11 @@ import { api } from '../api.js';
 import { $, esc, notice } from '../dom.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
-import { setTheme } from '../theme.js';
+import { applyInstanceAppearance } from '../instance-appearance.js';
 
 export async function loadAppearance() {
-  const appearance = await api('/appearance').catch(() => ({
-    enabled: false,
-    theme: 'system',
-    accent_color: '#2563eb',
-    branding: { title: 'MirrorRelay', logo: '', favicon: '' },
-    login: { title: 'MirrorRelay', subtitle: 'Repository Proxy Service' },
-    custom_css: { enabled: false, file: '/var/lib/mirrorrelay/ui/custom.css' },
-    repository_browser: { enabled: true }
-  }));
+  const appearance = await api('/appearance');
+  applyInstanceAppearance(appearance);
 
   $('#page-appearance').innerHTML = `
     <div class="panel">
@@ -40,8 +33,8 @@ export async function loadAppearance() {
         <summary><span class="disclosure-title">${icon('layers', 17)} ${L('Branding')}</span><span class="disclosure-chevron">${icon('chevron-right', 16)}</span></summary>
         <div class="disclosure-content form-grid">
           <label><span>${L('Instance Name / Title')}</span><input id="app-brand-title" value="${esc(appearance.branding?.title || 'MirrorRelay')}"></label>
-          <label><span>${L('Logo URL (optional)')}</span><input id="app-brand-logo" value="${esc(appearance.branding?.logo || '')}"></label>
-          <label class="wide"><span>${L('Favicon URL (optional)')}</span><input id="app-brand-favicon" value="${esc(appearance.branding?.favicon || '')}"></label>
+          <label><span>${L('Logo path (optional)')}</span><input id="app-brand-logo" value="${esc(appearance.branding?.logo || '')}" placeholder="/assets/logo.svg"><small class="field-help">${L('Use a same-origin absolute path beginning with /.')}</small></label>
+          <label class="wide"><span>${L('Favicon path (optional)')}</span><input id="app-brand-favicon" value="${esc(appearance.branding?.favicon || '')}" placeholder="/assets/favicon.ico"><small class="field-help">${L('Use a same-origin absolute path beginning with /.')}</small></label>
         </div>
       </details>
 
@@ -69,7 +62,7 @@ export async function loadAppearance() {
       </details>
 
       <footer>
-        <div id="appearance-error" class="error"></div>
+        <div id="appearance-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="reset-appearance-btn">${icon('refresh', 13)} ${L('Reset appearance to defaults')}</button>
         <button type="submit" class="btn-primary">${icon('check', 13)} ${L('Save appearance settings')}</button>
       </footer>
@@ -77,6 +70,8 @@ export async function loadAppearance() {
 
   $('#appearance-form').addEventListener('submit', async event => {
     event.preventDefault();
+    const submitButton = event.target.querySelector('button[type="submit"]');
+    $('#appearance-error').textContent = '';
     const payload = {
       enabled: $('#app-ui-enabled').checked,
       theme: $('#app-theme').value,
@@ -99,24 +94,42 @@ export async function loadAppearance() {
       }
     };
     try {
+      submitButton.disabled = true;
+      submitButton.setAttribute('aria-busy', 'true');
       const saved = await api('/appearance', {method: 'PUT', body: JSON.stringify(payload)});
-      setTheme(saved.theme);
+      applyInstanceAppearance(saved);
       notice(L('Appearance settings saved successfully.'));
       await loadAppearance();
     } catch (err) {
       $('#appearance-error').textContent = err.message;
+      $('#appearance-error').focus();
+    } finally {
+      if (submitButton.isConnected) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute('aria-busy');
+      }
     }
   });
 
-  $('#reset-appearance-btn').addEventListener('click', async () => {
+  $('#reset-appearance-btn').addEventListener('click', async event => {
     if (!confirm(L('Reset appearance settings to default values?'))) return;
+    const button = event.currentTarget;
+    $('#appearance-error').textContent = '';
     try {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
       const reset = await api('/appearance/reset', {method: 'POST'});
-      setTheme(reset.theme);
+      applyInstanceAppearance(reset);
       notice(L('Appearance settings reset to defaults.'));
       await loadAppearance();
     } catch (err) {
       $('#appearance-error').textContent = err.message;
+      $('#appearance-error').focus();
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
     }
   });
 }

@@ -18,7 +18,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-amd64 ./cmd/mirrorrelay
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-arm64 ./cmd/mirrorrelay
-find internal/web/dist -name "*.js" -exec node --check {} +
+./scripts/verify-web-assets.sh
+node scripts/verify-docs.mjs
 (cd nginx/sbin && sha256sum -c nginx.sha256)
 file nginx/sbin/nginx
 ldd nginx/sbin/nginx || true
@@ -26,9 +27,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.17 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.17-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.17-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.20 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.20-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.20-source/vendor/modules.txt'
 ```
 
 The vendored source archive is generated from the exact Git commit being released, then `go mod vendor` is run inside that exported tree. The hosted workflow extracts the result and runs `go list -mod=vendor ./...` before adding it to the GitHub Release and `SHA256SUMS`.

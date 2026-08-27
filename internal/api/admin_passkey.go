@@ -31,10 +31,21 @@ func (s *Server) passkeyStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) passkeyLoginOptions(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.Admin.Passkey.Enabled {
+		writeError(w, http.StatusBadRequest, "Passkey authentication is not enabled")
+		return
+	}
 	var in struct {
 		Username string `json:"username"`
 	}
-	_ = decodeJSON(w, r, &in)
+	if decodeJSON(w, r, &in) != nil {
+		return
+	}
+	in.Username = strings.TrimSpace(in.Username)
+	if len(in.Username) > 256 {
+		writeError(w, http.StatusBadRequest, "username is too long")
+		return
+	}
 
 	rpID := auth.DefaultRPID(s.cfg.Admin.Passkey.RPID, s.cfg.HTTP.PublicBaseURL, r.Host)
 	origin := auth.DefaultOrigin(s.cfg.Admin.Passkey.Origins, s.cfg.HTTP.PublicBaseURL, r.Host, r.TLS != nil)
@@ -68,7 +79,7 @@ func (s *Server) passkeyLoginOptions(w http.ResponseWriter, r *http.Request) {
 		"challenge":        challenge,
 		"rpId":             rpID,
 		"timeout":          60000,
-		"userVerification": "preferred",
+		"userVerification": "required",
 	}
 	if len(allowedCreds) > 0 {
 		res["allowCredentials"] = allowedCreds
@@ -89,6 +100,61 @@ type passkeyLoginVerifyRequest struct {
 	} `json:"response"`
 }
 
+func decodeCredentialID(value string) ([]byte, error) {
+	if value == "" {
+		return nil, errors.New("credential id is required")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(value)
+	}
+	if err != nil || len(decoded) == 0 || len(decoded) > 1024 {
+		return nil, errors.New("invalid credential id encoding")
+	}
+	return decoded, nil
+}
+
+func normalizeCredentialID(id, rawID string) (string, []byte, error) {
+	value := id
+	if value == "" {
+		value = rawID
+	}
+	decoded, err := decodeCredentialID(value)
+	if err != nil {
+		return "", nil, err
+	}
+	if id != "" && rawID != "" {
+		rawDecoded, err := decodeCredentialID(rawID)
+		if err != nil || !bytes.Equal(decoded, rawDecoded) {
+			return "", nil, errors.New("credential id and rawId do not match")
+		}
+	}
+	return base64.RawURLEncoding.EncodeToString(decoded), decoded, nil
+}
+
+func validatedPasskeyTransports(values []string) ([]string, error) {
+	if len(values) > 8 {
+		return nil, errors.New("too many authenticator transports")
+	}
+	allowed := map[string]bool{
+		"ble": true, "hybrid": true, "internal": true, "nfc": true,
+		"smart-card": true, "usb": true,
+	}
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if !allowed[value] {
+			return nil, fmt.Errorf("unsupported authenticator transport %q", value)
+		}
+		if !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
 func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Admin.Passkey.Enabled {
 		writeError(w, http.StatusBadRequest, "Passkey authentication is not enabled")
@@ -99,13 +165,13 @@ func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &in); err != nil {
 		return
 	}
-
-	credID := in.ID
-	if credID == "" {
-		credID = in.RawID
+	if in.Type != "public-key" {
+		writeError(w, http.StatusBadRequest, "credential type must be public-key")
+		return
 	}
-	if credID == "" {
-		writeError(w, http.StatusBadRequest, "credential id is required")
+	credID, _, err := normalizeCredentialID(in.ID, in.RawID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -133,24 +199,18 @@ func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.challengeMgr.Consume(clientData.Challenge, "login"); err != nil {
+	challengeSession, err := s.challengeMgr.Consume(clientData.Challenge, "login")
+	if err != nil {
 		release(false)
 		_ = s.audit(r, "", "passkey_login_failed", "session", err.Error(), false)
 		writeError(w, http.StatusUnauthorized, "invalid or expired challenge")
 		return
 	}
 
-	expectedOrigin := auth.DefaultOrigin(s.cfg.Admin.Passkey.Origins, s.cfg.HTTP.PublicBaseURL, r.Host, r.TLS != nil)
-	if err := auth.VerifyOrigin(clientData.Origin, expectedOrigin, s.cfg.Admin.Passkey.Origins); err != nil {
+	if _, err := auth.VerifyClientData(rawClientData, "webauthn.get", clientData.Challenge, challengeSession.Origin, nil); err != nil {
 		release(false)
-		_ = s.audit(r, "", "passkey_login_failed", "session", "origin mismatch: "+err.Error(), false)
-		writeError(w, http.StatusUnauthorized, "origin not allowed")
-		return
-	}
-
-	if clientData.Type != "webauthn.get" {
-		release(false)
-		writeError(w, http.StatusBadRequest, "invalid clientData type")
+		_ = s.audit(r, "", "passkey_login_failed", "session", "client data verification failed: "+err.Error(), false)
+		writeError(w, http.StatusUnauthorized, "invalid WebAuthn client data")
 		return
 	}
 
@@ -171,17 +231,21 @@ func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rpID := auth.DefaultRPID(s.cfg.Admin.Passkey.RPID, s.cfg.HTTP.PublicBaseURL, r.Host)
-	if err := auth.VerifyRPID(parsedAuthData.RPIDHash, rpID); err != nil {
+	if err := auth.VerifyRPID(parsedAuthData.RPIDHash, challengeSession.RPID); err != nil {
 		release(false)
 		_ = s.audit(r, "", "passkey_login_failed", "session", "RP ID hash mismatch: "+err.Error(), false)
 		writeError(w, http.StatusUnauthorized, "RP ID mismatch")
 		return
 	}
 
-	if !parsedAuthData.UserPresent {
+	if !parsedAuthData.UserPresent || !parsedAuthData.UserVerified {
 		release(false)
-		writeError(w, http.StatusUnauthorized, "user presence test failed")
+		writeError(w, http.StatusUnauthorized, "user presence and verification are required")
+		return
+	}
+	if parsedAuthData.AttestedData {
+		release(false)
+		writeError(w, http.StatusBadRequest, "assertion authenticatorData must not contain attested credential data")
 		return
 	}
 
@@ -192,9 +256,24 @@ func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "passkey not recognized")
 		return
 	}
+	if challengeSession.UserID != 0 && pk.UserID != challengeSession.UserID {
+		release(false)
+		writeError(w, http.StatusUnauthorized, "credential does not belong to the requested account")
+		return
+	}
+	if in.Response.UserHandle != "" {
+		userHandle, err := base64.RawURLEncoding.DecodeString(in.Response.UserHandle)
+		if err != nil || len(userHandle) != 8 || int64(binary.BigEndian.Uint64(userHandle)) != pk.UserID {
+			release(false)
+			writeError(w, http.StatusUnauthorized, "credential user handle mismatch")
+			return
+		}
+	}
 
-	// Validate sign count if both are non-zero (anti-clone check)
-	if pk.SignCount > 0 && parsedAuthData.SignCount > 0 && parsedAuthData.SignCount <= pk.SignCount {
+	// A positive signature counter must advance. A transition from a positive
+	// value to zero is also a clone signal; only the all-zero counter mode lacks
+	// anti-clone information.
+	if (pk.SignCount > 0 || parsedAuthData.SignCount > 0) && parsedAuthData.SignCount <= pk.SignCount {
 		release(false)
 		_ = s.audit(r, "", "passkey_login_failed", "session", "cloned authenticator detected", false)
 		writeError(w, http.StatusUnauthorized, "security check failed (cloned authenticator)")
@@ -235,8 +314,19 @@ func (s *Server) passkeyLoginVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update sign count and last used
-	_ = s.store.UpdatePasskeySignCount(r.Context(), credID, parsedAuthData.SignCount)
+	// Update sign count and last-used time before creating a session.
+	advanced, err := s.store.AdvancePasskeySignCount(r.Context(), credID, parsedAuthData.SignCount)
+	if err != nil {
+		release(false)
+		writeInternal(w, fmt.Errorf("update passkey counter: %w", err))
+		return
+	}
+	if !advanced {
+		release(false)
+		_ = s.audit(r, "", "passkey_login_failed", "session", "authenticator counter did not advance", false)
+		writeError(w, http.StatusUnauthorized, "security check failed (authenticator counter changed)")
+		return
+	}
 
 	// Fetch user
 	users, err := s.store.ListUsers(r.Context())
@@ -280,8 +370,8 @@ func (s *Server) recoveryLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Username = strings.TrimSpace(in.Username)
 	in.RecoveryCode = strings.TrimSpace(in.RecoveryCode)
-	if in.Username == "" || in.RecoveryCode == "" {
-		writeError(w, http.StatusBadRequest, "username and recovery_code are required")
+	if !validUsername(in.Username) || in.RecoveryCode == "" || len(in.RecoveryCode) > 64 {
+		writeError(w, http.StatusBadRequest, "username or recovery_code has an invalid format")
 		return
 	}
 
@@ -428,8 +518,9 @@ func (s *Server) registerPasskeyOptions(w http.ResponseWriter, r *http.Request, 
 		"timeout":     60000,
 		"attestation": "none",
 		"authenticatorSelection": map[string]any{
-			"residentKey":      "preferred",
-			"userVerification": "preferred",
+			"residentKey":        "required",
+			"requireResidentKey": true,
+			"userVerification":   "required",
 		},
 	}
 	if len(excludeCredentials) > 0 {
@@ -442,6 +533,7 @@ type registerPasskeyVerifyRequest struct {
 	DisplayName string   `json:"display_name"`
 	ID          string   `json:"id"`
 	RawID       string   `json:"rawId"`
+	Type        string   `json:"type"`
 	Transports  []string `json:"transports,omitempty"`
 	Response    struct {
 		ClientDataJSON    string `json:"clientDataJSON"`
@@ -456,6 +548,15 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 	}
 	var in registerPasskeyVerifyRequest
 	if err := decodeJSON(w, r, &in); err != nil {
+		return
+	}
+	if in.Type != "public-key" {
+		writeError(w, http.StatusBadRequest, "credential type must be public-key")
+		return
+	}
+	credID, credentialBytes, err := normalizeCredentialID(in.ID, in.RawID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -484,14 +585,8 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	expectedOrigin := auth.DefaultOrigin(s.cfg.Admin.Passkey.Origins, s.cfg.HTTP.PublicBaseURL, r.Host, r.TLS != nil)
-	if err := auth.VerifyOrigin(clientData.Origin, expectedOrigin, s.cfg.Admin.Passkey.Origins); err != nil {
-		writeError(w, http.StatusUnauthorized, "origin not allowed: "+err.Error())
-		return
-	}
-
-	if clientData.Type != "webauthn.create" {
-		writeError(w, http.StatusBadRequest, "invalid clientData type for registration")
+	if _, err := auth.VerifyClientData(rawClientData, "webauthn.create", clientData.Challenge, sess.Origin, nil); err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid WebAuthn client data: "+err.Error())
 		return
 	}
 
@@ -504,7 +599,7 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 		}
 	}
 
-	rawAuthData, err := extractAuthData(rawAttestation)
+	rawAuthData, err := auth.ExtractAttestationAuthData(rawAttestation)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "extract authData from attestation: "+err.Error())
 		return
@@ -516,14 +611,13 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	rpID := auth.DefaultRPID(s.cfg.Admin.Passkey.RPID, s.cfg.HTTP.PublicBaseURL, r.Host)
-	if err := auth.VerifyRPID(parsedAuthData.RPIDHash, rpID); err != nil {
+	if err := auth.VerifyRPID(parsedAuthData.RPIDHash, sess.RPID); err != nil {
 		writeError(w, http.StatusUnauthorized, "RP ID mismatch: "+err.Error())
 		return
 	}
 
-	if !parsedAuthData.UserPresent {
-		writeError(w, http.StatusUnauthorized, "user presence test failed")
+	if !parsedAuthData.UserPresent || !parsedAuthData.UserVerified {
+		writeError(w, http.StatusUnauthorized, "user presence and verification are required")
 		return
 	}
 
@@ -532,14 +626,23 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	credID := in.ID
-	if credID == "" {
-		credID = base64.RawURLEncoding.EncodeToString(parsedAuthData.CredentialID)
+	if !bytes.Equal(credentialBytes, parsedAuthData.CredentialID) {
+		writeError(w, http.StatusBadRequest, "credential id does not match authenticator data")
+		return
 	}
 
 	displayName := strings.TrimSpace(in.DisplayName)
 	if displayName == "" {
 		displayName = "Passkey (" + time.Now().Format("2006-01-02 15:04") + ")"
+	}
+	if len(displayName) > 128 || strings.ContainsRune(displayName, '\x00') {
+		writeError(w, http.StatusBadRequest, "display_name must be at most 128 bytes and contain no NUL")
+		return
+	}
+	transports, err := validatedPasskeyTransports(in.Transports)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	pk := model.PasskeyCredential{
@@ -548,7 +651,7 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 		PublicKey:      base64.RawURLEncoding.EncodeToString(parsedAuthData.PublicKeyPKIX),
 		SignCount:      parsedAuthData.SignCount,
 		AAGUID:         parsedAuthData.AAGUID,
-		Transports:     in.Transports,
+		Transports:     transports,
 		BackupEligible: parsedAuthData.BackupEligible,
 		BackupState:    parsedAuthData.BackupState,
 		DisplayName:    displayName,
@@ -561,56 +664,6 @@ func (s *Server) registerPasskeyVerify(w http.ResponseWriter, r *http.Request, s
 
 	_ = s.audit(r, session.Username, "passkey_register", "user", "credential_id="+credID+", name="+displayName, true)
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "credential_id": credID, "display_name": displayName})
-}
-
-// extractAuthData parses the CBOR attestation object to locate the "authData" byte slice.
-func extractAuthData(attestationBytes []byte) ([]byte, error) {
-	// Look for key "authData" in the CBOR byte stream
-	key := []byte("authData")
-	idx := bytes.Index(attestationBytes, key)
-	if idx == -1 {
-		return nil, errors.New("authData key not found in attestationObject")
-	}
-	pos := idx + len(key)
-	if pos >= len(attestationBytes) {
-		return nil, errors.New("unexpected EOF reading authData header")
-	}
-	b := attestationBytes[pos]
-	major := b >> 5
-	info := b & 0x1F
-	if major != 2 { // Major 2 is byte string
-		return nil, fmt.Errorf("expected byte string for authData (major 2), got %d", major)
-	}
-	pos++
-	var length int
-	if info < 24 {
-		length = int(info)
-	} else if info == 24 {
-		if pos >= len(attestationBytes) {
-			return nil, errors.New("EOF reading authData length")
-		}
-		length = int(attestationBytes[pos])
-		pos++
-	} else if info == 25 {
-		if pos+2 > len(attestationBytes) {
-			return nil, errors.New("EOF reading authData length")
-		}
-		length = int(binary.BigEndian.Uint16(attestationBytes[pos : pos+2]))
-		pos += 2
-	} else if info == 26 {
-		if pos+4 > len(attestationBytes) {
-			return nil, errors.New("EOF reading authData length")
-		}
-		length = int(binary.BigEndian.Uint32(attestationBytes[pos : pos+4]))
-		pos += 4
-	} else {
-		return nil, errors.New("unsupported length encoding for authData")
-	}
-
-	if pos+length > len(attestationBytes) {
-		return nil, errors.New("authData byte string exceeds attestationObject length")
-	}
-	return attestationBytes[pos : pos+length], nil
 }
 
 func (s *Server) updatePasskey(w http.ResponseWriter, r *http.Request, session auth.Session, idStr string) {
@@ -628,6 +681,10 @@ func (s *Server) updatePasskey(w http.ResponseWriter, r *http.Request, session a
 	name := strings.TrimSpace(in.DisplayName)
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "display_name cannot be empty")
+		return
+	}
+	if len(name) > 128 || strings.ContainsRune(name, '\x00') {
+		writeError(w, http.StatusBadRequest, "display_name must be at most 128 bytes and contain no NUL")
 		return
 	}
 	if err := s.store.UpdatePasskeyDisplayName(r.Context(), id, session.UserID, name); err != nil {
@@ -697,7 +754,17 @@ func (s *Server) setPasswordLoginDisabled(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	if err := s.store.SetPasswordLoginDisabled(r.Context(), session.UserID, in.Disabled); err != nil {
+	if in.Disabled {
+		updated, err := s.store.DisablePasswordLogin(r.Context(), session.UserID)
+		if err != nil {
+			writeInternal(w, err)
+			return
+		}
+		if !updated {
+			writeError(w, http.StatusConflict, "passkey or recovery-code state changed; review account security and retry")
+			return
+		}
+	} else if err := s.store.SetPasswordLoginDisabled(r.Context(), session.UserID, false); err != nil {
 		writeInternal(w, err)
 		return
 	}

@@ -1,5 +1,6 @@
 // WebAuthn / Passkey helper functions for browser credential creation and assertion.
 import { api } from './api.js';
+import { L } from './i18n.js';
 
 export function bufferToBase64URL(buffer) {
   const bytes = new Uint8Array(buffer);
@@ -27,12 +28,12 @@ export function base64URLToBuffer(base64url) {
 }
 
 export function isPasskeySupported() {
-  return Boolean(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+  return Boolean(window.PublicKeyCredential && navigator.credentials?.create && navigator.credentials?.get);
 }
 
 export async function loginWithPasskey(username) {
   if (!isPasskeySupported()) {
-    throw new Error('WebAuthn / Passkey is not supported in this browser.');
+    throw new Error(L('WebAuthn / Passkey is not supported in this browser.'));
   }
   const options = await api('/auth/passkey/login/options', {
     method: 'POST',
@@ -43,7 +44,7 @@ export async function loginWithPasskey(username) {
     challenge: base64URLToBuffer(options.challenge),
     rpId: options.rpId,
     timeout: options.timeout || 60000,
-    userVerification: options.userVerification || 'preferred'
+    userVerification: options.userVerification || 'required'
   };
 
   if (options.allowCredentials && options.allowCredentials.length > 0) {
@@ -56,7 +57,7 @@ export async function loginWithPasskey(username) {
 
   const credential = await navigator.credentials.get({ publicKey: getOptions });
   if (!credential) {
-    throw new Error('No passkey credential returned.');
+    throw new Error(L('No passkey credential returned.'));
   }
 
   const payload = {
@@ -79,7 +80,7 @@ export async function loginWithPasskey(username) {
 
 export async function registerPasskey(displayName) {
   if (!isPasskeySupported()) {
-    throw new Error('WebAuthn / Passkey is not supported in this browser.');
+    throw new Error(L('WebAuthn / Passkey is not supported in this browser.'));
   }
   const options = await api('/account/passkeys/register/options', {
     method: 'POST'
@@ -109,7 +110,7 @@ export async function registerPasskey(displayName) {
 
   const credential = await navigator.credentials.create({ publicKey: createOptions });
   if (!credential) {
-    throw new Error('Passkey registration cancelled.');
+    throw new Error(L('Passkey registration cancelled.'));
   }
 
   const transports = credential.response.getTransports ? credential.response.getTransports() : [];
@@ -118,6 +119,7 @@ export async function registerPasskey(displayName) {
     display_name: displayName || '',
     id: credential.id,
     rawId: bufferToBase64URL(credential.rawId),
+    type: credential.type,
     transports: transports,
     response: {
       clientDataJSON: bufferToBase64URL(credential.response.clientDataJSON),

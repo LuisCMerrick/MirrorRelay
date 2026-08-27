@@ -4,6 +4,7 @@ Formal release packages contain an architecture-specific Linux binary built
 against musl and statically linked with pinned upstream sources:
 
 - Nginx 1.30.4 — BSD-2-Clause license: <https://nginx.org/LICENSE>
+- musl libc from the pinned Alpine 3.22.2 build image — MIT license: <https://musl.libc.org/doc/COPYRIGHT.html>
 - OpenSSL 3.5.7 — Apache-2.0 license: <https://www.openssl.org/source/license.html>
 - PCRE2 10.47 — BSD-3-Clause license: <https://github.com/PCRE2Project/pcre2/blob/pcre2-10.47/LICENCE.md>
 - zlib 1.3.2 — zlib license: <https://zlib.net/zlib_license.html>

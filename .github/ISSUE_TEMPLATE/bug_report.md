@@ -10,23 +10,23 @@ assignees: ''
 **Describe the bug**
 A clear and concise description of what the bug is.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**To reproduce**
+List the smallest reproducible sequence, relevant repository type, request path,
+and whether the failure is on the Desired or Active configuration.
 
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Environment**
+- MirrorRelay version and installation type (DEB, RPM, tar, container, source):
+- Host Linux distribution and architecture (`amd64` or `arm64`):
+- External Shared Nginx version/topology:
+- Browser or package client and version, when relevant:
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Diagnostics**
+Include the relevant application/audit/Managed Upstream Nginx messages and
+configuration fragment. Remove credentials, tokens, cookies, private keys,
+private repository URLs, and personal data before posting.
 
 **Additional context**
 Add any other context about the problem here.

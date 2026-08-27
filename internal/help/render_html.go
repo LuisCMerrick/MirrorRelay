@@ -95,10 +95,21 @@ func renderInlineMarkdown(s string) string {
 }
 
 // RenderOverviewHTML generates the complete HTML page for /help/ listing all repos with help enabled.
-func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding model.BrandingConfig, theme string) string {
+func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding model.BrandingConfig, theme, accentColor string) string {
 	title := branding.Title
 	if title == "" {
 		title = "MirrorRelay"
+	}
+	if accentColor == "" {
+		accentColor = "#2563eb"
+	}
+	brandMarkup := html.EscapeString(title)
+	if branding.Logo != "" {
+		brandMarkup = fmt.Sprintf(`<span class="brand-heading"><img src="%s" alt=""><span>%s</span></span>`, html.EscapeString(branding.Logo), html.EscapeString(title))
+	}
+	faviconLink := ""
+	if branding.Favicon != "" {
+		faviconLink = fmt.Sprintf(`<link rel="icon" href="%s">`, html.EscapeString(branding.Favicon))
 	}
 
 	// Filter only repositories that have help enabled and valid template
@@ -152,16 +163,16 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 	}
 
 	return fmt.Sprintf(`<!doctype html>
-<html lang="zh-CN" data-theme="%s">
+<html lang="en" data-theme="%s">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>Repository Help / 仓库使用帮助 - %s</title>
-	<link rel="stylesheet" href="/ui/base.css">
+	%s
 	<style>
 		:root {
-			--mr-primary: #2563eb;
-			--mr-primary-hover: #1d4ed8;
+			--mr-primary: %s;
+			--mr-primary-hover: %s;
 			--mr-bg: #f8fafc;
 			--mr-surface: #ffffff;
 			--mr-text: #0f172a;
@@ -175,8 +186,6 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 			--mr-text: #f8fafc;
 			--mr-muted: #94a3b8;
 			--mr-border: #334155;
-			--mr-primary: #3b82f6;
-			--mr-primary-hover: #60a5fa;
 		}
 		@media (prefers-color-scheme: dark) {
 			[data-theme="system"] {
@@ -185,8 +194,6 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 				--mr-text: #f8fafc;
 				--mr-muted: #94a3b8;
 				--mr-border: #334155;
-				--mr-primary: #3b82f6;
-				--mr-primary-hover: #60a5fa;
 			}
 		}
 		body {
@@ -219,6 +226,17 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 			margin: 0;
 			font-size: 1.5rem;
 		}
+		.brand-heading {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.65rem;
+		}
+		.brand-heading img {
+			width: 36px;
+			height: 36px;
+			object-fit: contain;
+			border-radius: var(--mr-radius);
+		}
 		.search-box {
 			width: 100%%;
 			max-width: 320px;
@@ -231,16 +249,19 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 		}
 		.search-box:focus {
 			outline: 2px solid var(--mr-primary);
+			outline-offset: 2px;
 		}
 		.table-card {
 			background: var(--mr-surface);
 			border: 1px solid var(--mr-border);
 			border-radius: var(--mr-radius);
-			overflow: hidden;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
 			box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 		}
 		table {
 			width: 100%%;
+			min-width: 760px;
 			border-collapse: collapse;
 			text-align: left;
 		}
@@ -281,7 +302,9 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 			white-space: nowrap;
 		}
 		.btn {
-			display: inline-block;
+			display: inline-flex;
+			align-items: center;
+			min-height: 44px;
 			padding: 0.4rem 0.8rem;
 			font-size: 0.85rem;
 			font-weight: 500;
@@ -320,6 +343,19 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 			color: var(--mr-muted);
 			text-decoration: none;
 		}
+		a:focus-visible,
+		input:focus-visible {
+			outline: 3px solid var(--mr-primary);
+			outline-offset: 2px;
+		}
+		@media (max-width: 700px) {
+			.container { margin: 1rem auto; padding: 0 0.75rem; }
+			header { align-items: stretch; flex-direction: column; }
+			.search-box { max-width: none; min-height: 44px; box-sizing: border-box; }
+		}
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after { transition-duration: 0.01ms !important; }
+		}
 	</style>
 </head>
 <body data-app="mirrorrelay">
@@ -329,7 +365,7 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 				<a href="/" style="color:inherit;text-decoration:none;"><h1>%s</h1></a>
 				<span style="color:var(--mr-muted);">/ 仓库使用帮助 (Help)</span>
 			</div>
-			<input type="text" id="searchInput" class="search-box" placeholder="Search repositories / 搜索仓库..." oninput="filterRepos()">
+			<input type="search" id="searchInput" class="search-box" placeholder="Search repositories / 搜索仓库..." aria-label="Search repositories / 搜索仓库" oninput="filterRepos()">
 		</header>
 		<main data-ui="content">
 			<div class="table-card">
@@ -367,7 +403,10 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 </html>`,
 		html.EscapeString(theme),
 		html.EscapeString(title),
-		html.EscapeString(title),
+		faviconLink,
+		html.EscapeString(accentColor),
+		html.EscapeString(accentColor),
+		brandMarkup,
 		rows.String(),
 		emptyState,
 		html.EscapeString(title),
@@ -375,10 +414,21 @@ func RenderOverviewHTML(repos []model.Mirror, publicBaseURL string, branding mod
 }
 
 // RenderDetailHTML generates the interactive repository help page with selectors and copy buttons.
-func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme string, safeUI bool) string {
+func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme, accentColor string, safeUI bool) string {
 	title := branding.Title
 	if title == "" {
 		title = "MirrorRelay"
+	}
+	if accentColor == "" {
+		accentColor = "#2563eb"
+	}
+	brandMarkup := html.EscapeString(title)
+	if branding.Logo != "" {
+		brandMarkup = fmt.Sprintf(`<span class="brand-heading"><img src="%s" alt=""><span>%s</span></span>`, html.EscapeString(branding.Logo), html.EscapeString(title))
+	}
+	faviconLink := ""
+	if branding.Favicon != "" {
+		faviconLink = fmt.Sprintf(`<link rel="icon" href="%s">`, html.EscapeString(branding.Favicon))
 	}
 
 	var variantOptions strings.Builder
@@ -413,17 +463,17 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 	}
 
 	return fmt.Sprintf(`<!doctype html>
-<html lang="zh-CN" data-theme="%s">
+<html lang="en" data-theme="%s">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1">
 	<title>%s 使用帮助 - %s</title>
-	<link rel="stylesheet" href="/ui/base.css">
+	%s
 	%s
 	<style>
 		:root {
-			--mr-primary: #2563eb;
-			--mr-primary-hover: #1d4ed8;
+			--mr-primary: %s;
+			--mr-primary-hover: %s;
 			--mr-bg: #f8fafc;
 			--mr-surface: #ffffff;
 			--mr-text: #0f172a;
@@ -437,8 +487,6 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 			--mr-text: #f8fafc;
 			--mr-muted: #94a3b8;
 			--mr-border: #334155;
-			--mr-primary: #3b82f6;
-			--mr-primary-hover: #60a5fa;
 		}
 		@media (prefers-color-scheme: dark) {
 			[data-theme="system"] {
@@ -447,8 +495,6 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 				--mr-text: #f8fafc;
 				--mr-muted: #94a3b8;
 				--mr-border: #334155;
-				--mr-primary: #3b82f6;
-				--mr-primary-hover: #60a5fa;
 			}
 		}
 		body {
@@ -481,6 +527,17 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 			margin: 0;
 			font-size: 1.5rem;
 		}
+		.brand-heading {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.65rem;
+		}
+		.brand-heading img {
+			width: 36px;
+			height: 36px;
+			object-fit: contain;
+			border-radius: var(--mr-radius);
+		}
 		.breadcrumb {
 			font-size: 0.9rem;
 			color: var(--mr-muted);
@@ -512,6 +569,7 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 			color: var(--mr-muted);
 		}
 		select {
+			min-height: 44px;
 			padding: 0.4rem 0.8rem;
 			border: 1px solid var(--mr-border);
 			border-radius: var(--mr-radius);
@@ -565,6 +623,7 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 			position: absolute;
 			top: 0.5rem;
 			right: 0.5rem;
+			min-height: 36px;
 			padding: 0.25rem 0.6rem;
 			font-size: 0.75rem;
 			font-weight: 500;
@@ -591,6 +650,22 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 		footer a {
 			color: var(--mr-muted);
 			text-decoration: none;
+		}
+		a:focus-visible,
+		button:focus-visible,
+		select:focus-visible {
+			outline: 3px solid var(--mr-primary);
+			outline-offset: 2px;
+		}
+		@media (max-width: 700px) {
+			.container { margin: 1rem auto; padding: 0 0.75rem; }
+			header { align-items: flex-start; flex-direction: column; }
+			.content-card { padding: 1rem; }
+			.selector-group { align-items: flex-start; flex-direction: column; width: 100%%; }
+			.selector-group select { width: 100%%; }
+		}
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after { transition-duration: 0.01ms !important; }
 		}
 	</style>
 </head>
@@ -626,7 +701,22 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 		function copyCode(btn) {
 			var pre = btn.nextElementSibling;
 			var code = pre.innerText || pre.textContent;
-			navigator.clipboard.writeText(code).then(function() {
+			var copyPromise;
+			if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+				copyPromise = navigator.clipboard.writeText(code);
+			} else {
+				var input = document.createElement('textarea');
+				input.value = code;
+				input.setAttribute('readonly', '');
+				input.style.position = 'fixed';
+				input.style.opacity = '0';
+				document.body.appendChild(input);
+				input.select();
+				var copied = document.execCommand('copy');
+				input.remove();
+				copyPromise = copied ? Promise.resolve() : Promise.reject(new Error('copy unavailable'));
+			}
+			copyPromise.then(function() {
 				var originalText = btn.innerText;
 				btn.innerText = "Copied! / 已复制";
 				btn.classList.add("copied");
@@ -634,7 +724,7 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 					btn.innerText = originalText;
 					btn.classList.remove("copied");
 				}, 2000);
-			}).catch(function(err) {
+			}).catch(function() {
 				alert("Copy failed, please copy manually.");
 			});
 		}
@@ -653,9 +743,12 @@ func RenderDetailHTML(res *RenderResult, branding model.BrandingConfig, theme st
 		html.EscapeString(theme),
 		html.EscapeString(res.RepositoryName),
 		html.EscapeString(title),
+		faviconLink,
 		customCSSLink,
+		html.EscapeString(accentColor),
+		html.EscapeString(accentColor),
 		html.EscapeString(res.RepositoryName),
-		html.EscapeString(title),
+		brandMarkup,
 		html.EscapeString(res.RepositoryName),
 		renderSelectorsCard(variantOptions.String(), formatOptions.String()),
 		res.HTMLContent,

@@ -251,6 +251,18 @@ aside .brand {
   flex-shrink: 0;
 }
 
+.brand-logo {
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+}
+
+.brand-logo[hidden] {
+  display: none;
+}
+
 .brand-info {
   display: flex;
   flex-direction: column;
@@ -590,6 +602,10 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+button[aria-busy="true"] {
+  cursor: wait;
 }
 
 button:focus-visible,
@@ -1289,21 +1305,20 @@ button.icon-btn:hover {
   color: var(--text-secondary);
 }
 
-.bar {
+.capacity-bar {
   flex: 1;
   height: 8px;
-  background: var(--bg-dark);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
   overflow: hidden;
 }
 
-.bar i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary) 0%, #38bdf8 100%);
-  border-radius: 4px;
-  transition: width 0.3s ease;
+.capacity-bar-track {
+  fill: var(--bg-dark);
+  stroke: var(--border-color);
+  stroke-width: 1px;
+}
+
+.capacity-bar-fill {
+  fill: var(--primary);
 }
 
 .bar-percent {
@@ -1430,7 +1445,8 @@ button.icon-btn:hover {
    Table Design
    ========================================================================== */
 
-.table-wrap {
+.table-wrap,
+.table-responsive {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1577,6 +1593,66 @@ a.button-link:hover {
   gap: 8px;
 }
 
+.passkey-id-preview {
+  font-family: var(--font-mono);
+}
+
+.account-security-panel {
+  margin-top: 24px;
+}
+
+.account-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-passkey-table,
+.recovery-codes-display {
+  margin-top: 16px;
+}
+
+.account-security-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.section-action {
+  margin-top: 8px;
+}
+
+.recovery-codes-display {
+  padding: 16px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-highlight);
+  border-radius: var(--radius-md);
+}
+
+.recovery-codes-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.password-policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.password-policy-help {
+  margin-top: 4px;
+}
+
 /* ==========================================================================
    Forms & Controls
    ========================================================================== */
@@ -1623,6 +1699,15 @@ a.button-link:hover {
   font-size: 11px;
   font-weight: 400;
   line-height: 1.45;
+}
+
+.setting-file-only {
+  opacity: 0.72;
+}
+
+.setting-file-only .field-help {
+  opacity: 1;
+  color: var(--warning);
 }
 
 .info-callout {
@@ -1688,6 +1773,12 @@ textarea {
   line-height: 1.5;
 }
 
+.clipboard-fallback {
+  position: fixed;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .error {
   color: var(--danger);
   font-size: 12px;
@@ -1712,6 +1803,45 @@ form.panel footer .error {
 
 .settings-form .disclosure-panel {
   margin-bottom: 10px;
+}
+
+.mapping-manager {
+  margin-top: 16px;
+}
+
+.mapping-manager-header,
+.settings-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.settings-overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-effect-badge {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.settings-history-panel {
+  margin-bottom: 24px;
+}
+
+.settings-history-header {
+  margin-bottom: 16px;
 }
 
 .settings-form fieldset {
@@ -1997,7 +2127,6 @@ dialog footer {
 .donut-legend-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
   flex-shrink: 0;
 }
 
@@ -2249,6 +2378,18 @@ code {
   color: var(--primary);
 }
 
+.login-recovery-toggle {
+  margin-top: 6px;
+}
+
+.import-diff-container {
+  margin-top: 16px;
+}
+
+.import-diff-summary {
+  margin-bottom: 8px;
+}
+
 .login-footer {
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -2356,6 +2497,22 @@ code {
   .toolbar .actions {
     width: 100%;
     justify-content: flex-start;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  button:not(.text-button):not(.link),
+  a.button-link {
+    min-height: 44px;
+  }
+  .theme-switch button,
+  button.icon,
+  button.icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .table-wrap table,
+  .table-responsive table {
+    min-width: 640px;
   }
   .disclosure-panel > summary {
     min-height: 50px;

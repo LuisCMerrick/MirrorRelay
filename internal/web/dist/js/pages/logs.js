@@ -7,11 +7,13 @@ import { L } from '../i18n.js';
 
 let accessStreamTimer = null;
 let auditStreamTimer = null;
+let accessStreamGeneration = 0;
+let auditStreamGeneration = 0;
 let rawAccessLines = [];
 let rawAuditEntries = [];
 
 export async function loadAccess() {
-  stopAccessStream();
+  stopLogStreams();
   rawAccessLines = (await api('/access')) || [];
   renderAccessPage();
 }
@@ -37,8 +39,8 @@ function renderAccessPage() {
         </div>
         <div class="log-toolbar-right actions">
           <div class="search-bar log-search-bar">
-            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-            <input type="text" id="access-filter-input" placeholder="${L('Filter log lines (IP, status, path)...')}" value="${esc(filterQuery)}" />
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+            <input type="search" id="access-filter-input" aria-label="${L('Filter log lines (IP, status, path)...')}" placeholder="${L('Filter log lines (IP, status, path)...')}" value="${esc(filterQuery)}" />
           </div>
           <button id="toggle-access-stream" class="${isStreaming ? 'btn-primary' : 'secondary'}">
             ${icon('zap', 13)} ${isStreaming ? L('Stop Stream') : L('Start Live Stream')}
@@ -77,9 +79,12 @@ function renderAccessPage() {
 
 function startAccessStream() {
   stopAccessStream();
-  accessStreamTimer = setInterval(async () => {
+  const generation = accessStreamGeneration;
+  const poll = async () => {
     try {
-      rawAccessLines = (await api('/access')) || [];
+      const lines = (await api('/access')) || [];
+      if (generation !== accessStreamGeneration) return;
+      rawAccessLines = lines;
       const q = ($('#access-filter-input')?.value || '').toLowerCase().trim();
       const fl = rawAccessLines.filter(l => !q || l.toLowerCase().includes(q));
       const p = $('#access-log-pre');
@@ -87,19 +92,25 @@ function startAccessStream() {
         p.textContent = fl.join('\n') || L('No access records.');
         p.scrollTop = p.scrollHeight;
       }
-    } catch (_) {}
-  }, 2000);
+    } catch (_) {
+      // Keep the stream alive across transient request failures.
+    } finally {
+      if (generation === accessStreamGeneration) accessStreamTimer = setTimeout(poll, 2000);
+    }
+  };
+  accessStreamTimer = setTimeout(poll, 2000);
 }
 
 function stopAccessStream() {
+  accessStreamGeneration++;
   if (accessStreamTimer) {
-    clearInterval(accessStreamTimer);
+    clearTimeout(accessStreamTimer);
     accessStreamTimer = null;
   }
 }
 
 export async function loadAudit() {
-  stopAuditStream();
+  stopLogStreams();
   rawAuditEntries = (await api('/audit')) || [];
   renderAuditPage();
 }
@@ -129,8 +140,8 @@ function renderAuditPage() {
         </div>
         <div class="log-toolbar-right actions">
           <div class="search-bar log-search-bar">
-            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-            <input type="text" id="audit-filter-input" placeholder="${L('Filter audit (User, Action, IP)...')}" value="${esc(filterQuery)}" />
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+            <input type="search" id="audit-filter-input" aria-label="${L('Filter audit (User, Action, IP)...')}" placeholder="${L('Filter audit (User, Action, IP)...')}" value="${esc(filterQuery)}" />
           </div>
           <button id="toggle-audit-stream" class="${isStreaming ? 'btn-primary' : 'secondary'}">
             ${icon('zap', 13)} ${isStreaming ? L('Stop Stream') : L('Start Live Stream')}
@@ -217,17 +228,31 @@ function renderAuditRows() {
 
 function startAuditStream() {
   stopAuditStream();
-  auditStreamTimer = setInterval(async () => {
+  const generation = auditStreamGeneration;
+  const poll = async () => {
     try {
-      rawAuditEntries = (await api('/audit')) || [];
+      const entries = (await api('/audit')) || [];
+      if (generation !== auditStreamGeneration) return;
+      rawAuditEntries = entries;
       renderAuditRows();
-    } catch (_) {}
-  }, 2000);
+    } catch (_) {
+      // Keep the stream alive across transient request failures.
+    } finally {
+      if (generation === auditStreamGeneration) auditStreamTimer = setTimeout(poll, 2000);
+    }
+  };
+  auditStreamTimer = setTimeout(poll, 2000);
 }
 
 function stopAuditStream() {
+  auditStreamGeneration++;
   if (auditStreamTimer) {
-    clearInterval(auditStreamTimer);
+    clearTimeout(auditStreamTimer);
     auditStreamTimer = null;
   }
+}
+
+export function stopLogStreams() {
+  stopAccessStream();
+  stopAuditStream();
 }

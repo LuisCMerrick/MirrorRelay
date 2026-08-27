@@ -521,19 +521,23 @@ func compilePackagePatterns(field string, values []string) ([]model.PackagePatte
 		if strings.ContainsAny(pattern, "\x00\r\n") {
 			return nil, nil, fmt.Errorf("%s[%d] contains control characters", field, index)
 		}
-		_, globErr := path.Match(pattern, "")
-		anchored := pattern
-		if !strings.HasPrefix(anchored, "^") {
-			anchored = "^(?:" + anchored + ")"
+		// A large subset of Go glob syntax is also valid RE2 with different
+		// semantics. For example, the glob "numpy*" must not also admit "nump"
+		// through RE2's repetition operator. An explicit start or end anchor selects
+		// RE2; every other rule is a Go glob. Group regex rules before anchoring so
+		// an alternation such as ^trusted|safe$ cannot escape whole-string matching.
+		if strings.HasPrefix(pattern, "^") || strings.HasSuffix(pattern, "$") {
+			expression, err := regexp.Compile("^(?:" + pattern + ")$")
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s[%d] is not a valid RE2 expression", field, index)
+			}
+			compiled = append(compiled, model.PackagePattern{Pattern: pattern, Regexp: expression})
+		} else {
+			if _, err := path.Match(pattern, ""); err != nil {
+				return nil, nil, fmt.Errorf("%s[%d] is not a valid Go glob; anchor RE2 expressions with ^ or $", field, index)
+			}
+			compiled = append(compiled, model.PackagePattern{Pattern: pattern, Glob: true})
 		}
-		if !strings.HasSuffix(anchored, "$") {
-			anchored = anchored + "$"
-		}
-		expression, regexpErr := regexp.Compile(anchored)
-		if globErr != nil && regexpErr != nil {
-			return nil, nil, fmt.Errorf("%s[%d] is neither a valid glob nor RE2 expression", field, index)
-		}
-		compiled = append(compiled, model.PackagePattern{Pattern: pattern, Glob: globErr == nil, Regexp: expression})
 		normalized = append(normalized, pattern)
 	}
 	return compiled, normalized, nil

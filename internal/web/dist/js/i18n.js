@@ -4,7 +4,23 @@ import zh from '../locales/zh.js';
 
 const locales = {en, zh};
 
-const storedLanguage = localStorage.getItem('mirrorrelay.language');
+function readStoredLanguage() {
+  try {
+    return localStorage.getItem('mirrorrelay.language');
+  } catch (_) {
+    return '';
+  }
+}
+
+function storeLanguage(value) {
+  try {
+    localStorage.setItem('mirrorrelay.language', value);
+  } catch (_) {
+    // Language switching still works when storage is unavailable.
+  }
+}
+
+const storedLanguage = readStoredLanguage();
 let language = storedLanguage === 'zh' || storedLanguage === 'en'
   ? storedLanguage
   : ((navigator.languages || [navigator.language]).some(value => /^zh(?:-|$)/i.test(value || '')) ? 'zh' : 'en');
@@ -47,7 +63,7 @@ export function onLanguageChange(handler) {
 
 export function applyLanguage(next, persist = false) {
   language = next === 'zh' ? 'zh' : 'en';
-  if (persist) localStorage.setItem('mirrorrelay.language', language);
+  if (persist) storeLanguage(language);
   document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
   const loc = getLocale();
   const dict = loc.dictionary || {};
