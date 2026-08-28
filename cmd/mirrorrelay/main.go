@@ -194,7 +194,7 @@ func applyStoredWebSettings(ctx context.Context, store *database.Store, base con
 		return base, fmt.Errorf("read Web UI configuration: %w", err)
 	}
 	if found {
-		settings, err := config.DecodeWebSettings([]byte(raw))
+		settings, err := config.DecodeWebSettingsWithBase([]byte(raw), base)
 		if err != nil {
 			return base, fmt.Errorf("decode Web UI configuration: %w", err)
 		}

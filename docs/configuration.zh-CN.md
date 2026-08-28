@@ -33,6 +33,8 @@ MirrorRelay 默认读取 `/etc/mirrorrelay/config.yaml`。请从 [`configs/confi
 
 保存、导入、重置或回滚的运行配置不会热更新当前进程，必须重启 MirrorRelay 才能应用；导入或回滚中的 `ui_enhancement` 会在同一事务内提交，并通过专用外观状态立即发布。仓库 Desired/Active 变更使用另一条即时验证和激活流程。
 
+v0.0.20 之前的 Release 保存的设置只包含当时 UI 已提供的字段。升级时，MirrorRelay 会把该旧文档覆盖到当前 YAML/默认配置之上，并在严格校验前规范化旧版整数形式的 `warmup.timeout` 与最早期曾重命名的生命周期字段。因此，当时尚不存在的字段会继承当前文件/默认值；无需 Purge 或重建配置、数据库、用户、历史与缓存。
+
 可使用 **导出配置** 下载标准或完整备份 YAML。两种导出都会省略实例本地的 `http.public_base_url` 与 `distributed.node.public_base_url`；标准导出还会省略集群凭据、Webhook URL/签名密钥以及 Passkey RP ID/Origins。完整备份通过受 CSRF 保护的 `POST` 显式生成并包含这些凭据，必须按密钥材料保管。导入最多接受 1 MiB 的解码后 YAML，会校验预览时的精确内容，保留省略的本地 URL、Passkey 绑定与凭据，并始终保留仅文件配置的数据库/密钥环路径。只有 Edge 节点 URL 未改变时才会保留省略的 Mutation Token；改为其他 Origin 时必须显式提供新凭据。使用 **重启后恢复 YAML** 删除保存的运行配置覆盖；独立的即时外观覆盖应通过 **外观 → 恢复默认值** 重置。保存数据无效时，启动会明确失败，不会静默回退到 YAML。历史 API 不返回已存设置快照；回滚使用脱敏快照，并保留脱敏 Sentinel 所代表的当前凭据。
 
 ## 本地端点
@@ -197,7 +199,7 @@ MirrorRelay 提供可选的界面主题增强、颜色定制、统一仓库目�
 |---|---|
 | `ui_enhancement.enabled` | 公开仓库界面增强开关（默认 `false`）。为 `false` 时不改写或重设上游目录响应样式；管理界面主题切换仍然可用。 |
 | `ui_enhancement.theme` | 主题模式：`system`（默认跟随系统）、`light`（浅色明亮）或 `dark`（深色暗黑） |
-| `ui_enhancement.accent_color` | 不透明的三位或六位主色调十六进制颜色代码（如 `#2563eb`） |
+| `ui_enhancement.accent_color` | 三位、六位或向后兼容的八位主色调十六进制颜色代码（如 `#2563eb` 或 `#2563eb80`） |
 | `ui_enhancement.branding.title` | 自定义站点/实例标题（默认 `MirrorRelay`） |
 | `ui_enhancement.branding.logo` | 可选的同源 Logo 绝对路径，必须以 `/` 开头并由入口提供资源 |
 | `ui_enhancement.branding.favicon` | 可选的同源 Favicon 绝对路径，必须以 `/` 开头并由入口提供资源 |

@@ -22,7 +22,7 @@ Session Cookie 带有 `Secure`、`HttpOnly` 和 `SameSite=Strict` 属性。因�
 
 APT 仓库详情与内置帮助同时提供现代 DEB822（`/etc/apt/sources.list.d/*.sources`）和传统 `sources.list` 单行格式。发行版/版本与输出格式是两个独立选项，因此同一 Debian 或 Ubuntu 客户端可以自由使用任一格式。
 
-除非浏览器首选语言包含中文，否则 UI 默认使用英语。右上角的 `EN` 或 `中文` 可手动切换，选择会保存在浏览器 Local Storage。语言资源与页面功能解耦，独立维护在语言包资源文件（`locales/en.js` 与 `locales/zh.js`）中。使用完毕后，从侧边栏底部退出登录。
+除非浏览器首选语言包含中文，否则 UI 默认使用英语。右上角的 `EN` 或 `中文` 可手动切换，选择会保存在浏览器 Local Storage。GitHub 快捷入口是登录页面右下角、位于认证表单之外的独立可访问控件。语言资源与页面功能解耦，独立维护在语言包资源文件（`locales/en.js` 与 `locales/zh.js`）中。使用完毕后，从侧边栏底部退出登录。
 
 ## 运行模型
 
@@ -172,7 +172,7 @@ Viewer 可读取 Audit Log，但不能访问 Managed Upstream Nginx Access Log�
 
 ## 设置
 
-仅限 Admin 的 **设置** 生命周期可导入和导出 `config.yaml` 全部 22 个顶层配置块。结构化表单覆盖服务器与运行时端点、入口模式、独立 HTTP/TLS、性能、元数据改写适配器、重定向策略、数据库、缓存策略、安全与管理 CIDR、网络传输连接池与超时、并发与带宽限制、日志轮转、健康检查调度、平滑退出、Managed Upstream Nginx 生命周期、分布式集群与路由调度、Webhook 告警通知及缓存预热；专用的 **外观** 页面管理界面增强。启动字段 `database.path` 与 `distributed.mutation_token_key_files` 可见但禁用，因为它们必须保留在 YAML/环境配置中。
+仅限 Admin 的 **设置** 生命周期可导入和导出 `config.yaml` 全部 22 个顶层配置块。结构化表单覆盖服务器与运行时端点、入口模式、独立 HTTP/TLS、性能、元数据改写适配器、重定向策略、数据库、缓存策略、安全与管理 CIDR、网络传输连接池与超时、并发与带宽限制、日志轮转、健康检查调度、平滑退出、Managed Upstream Nginx 生命周期、分布式集群与路由调度、Webhook 告警通知及缓存预热；专用的 **外观** 页面管理界面增强。清晰标注的 **Passkey 认证** 配置组提供实例启用开关、RP 展示名称、RP ID 与允许的 Origins；保存并重启 MirrorRelay 后，才能注册账号凭据。RP ID 与 Origins 可留空并从管理请求 Host/Origin 推导；显式配置的远程 Origin 必须使用 HTTPS 且与 RP ID 匹配。启动字段 `database.path` 与 `distributed.mutation_token_key_files` 可见但禁用，因为它们必须保留在 YAML/环境配置中。
 
 ### 生效机制标识
 
@@ -231,7 +231,7 @@ Webhook 区域支持配置单一通知目标，根据 URL 自动识别钉钉、�
 
 - **主题模式**：为尚无本地偏好的浏览器设置实例默认值，支持 `System`（跟随操作系统）、`Light`（明亮浅色）与 `Dark`（暗黑深色）。
 - **公开界面增强**：独立控制公开仓库目录样式增强，不影响管理界面主题切换。
-- **主色调**：自定义界面 Accent Color（默认 `#2563eb`）。
+- **主色调**：使用 `#RGB`、`#RRGGBB` 或向后兼容的 Alpha 格式 `#RRGGBBAA` 自定义界面 Accent Color（默认 `#2563eb`）。
 - **品牌定制**：设置站点名称/标题及同源 Logo/Favicon 路径。路径必须以 `/` 开头，并由管理员维护的入口提供资源。
 - **登录页面**：自定义登录页主标题与副标题。
 - **仓库目录浏览**：启用响应式仓库目录浏览器，提供面包屑导航、即时搜索过滤与内置 SVG 图标。
@@ -240,7 +240,7 @@ Webhook 区域支持配置单一通知目标，根据 URL 自动识别钉钉、�
 
 ## 用户与我的账号
 
-管理员可在用户页面创建 Admin、Operator 与 Viewer 账户。用户名要求 3–64 个非空白字符，密码要求至少 10 个字符且不超过 1024 字节。当前登录用户不能删除自己的账户。通过 **我的账号** 可修改密码、注册/重命名/删除 WebAuthn Passkey，并生成八条一次性应急恢复码。恢复码只在生成时展示，离开对话框前必须离线保存。只有账户至少拥有一个 Passkey 与一条未使用恢复码时才能关闭密码登录；数据库原子条件可防止并发请求删除最后一个 Passkey。当 Passkey 认证被关闭或暂时不可用时，登录页仍会保留恢复码控件。本机恢复命令为 `mirrorrelay admin reset-password --username <用户名> --password-stdin` 与 `mirrorrelay admin reset-passkeys --username <用户名>`；必要时会加载已配置的 Coordinator 密钥环，并撤销该账户的现有会话。
+管理员可在用户页面创建 Admin、Operator 与 Viewer 账户。用户名要求 3–64 个非空白字符，密码要求至少 10 个字符且不超过 1024 字节。当前登录用户不能删除自己的账户。通过 **我的账号** 可修改密码、注册/重命名/删除 WebAuthn Passkey，并生成八条一次性应急恢复码。实例级功能尚未启用时，**我的账号** 仍显示 Passkey 面板：Admin 可通过 **配置 Passkey 认证** 直接跳转到专用设置组，其他角色则会看到联系管理员的提示。恢复码只在生成时展示，离开对话框前必须离线保存。只有账户至少拥有一个 Passkey 与一条未使用恢复码时才能关闭密码登录；数据库原子条件可防止并发请求删除最后一个 Passkey。当 Passkey 认证被关闭或暂时不可用时，登录页仍会保留恢复码控件。本机恢复命令为 `mirrorrelay admin reset-password --username <用户名> --password-stdin` 与 `mirrorrelay admin reset-passkeys --username <用户名>`；必要时会加载已配置的 Coordinator 密钥环，并撤销该账户的现有会话。
 
 界面与 API 使用同一套角色策略，并隐藏当前账户无权使用的控件。Admin 管理用户、仓库凭据、自定义 Nginx 代码、集群节点记录和进程级设置；Operator 管理仓库非敏感字段、缓存、验证、Nginx Reload/回滚及集群检查/同步；Viewer 只获得最小只读运行视图，不能打开 System。应使用独立账户，让审计记录能够识别操作人，并删除不再需要的账户。
 

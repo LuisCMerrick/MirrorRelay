@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -16,6 +17,59 @@ import (
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 	"github.com/LuisCMerrick/MirrorRelay/internal/stats"
 )
+
+func TestOpenMigratesPrePasskeyDatabaseWithoutDataLoss(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "mirrorrelay.db")
+	legacy, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const legacySchema = `
+CREATE TABLE users (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+ password_hash TEXT NOT NULL,
+ role TEXT NOT NULL DEFAULT 'admin',
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);
+CREATE TABLE settings (
+ key TEXT PRIMARY KEY,
+ value TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);`
+	if _, err := legacy.Exec(legacySchema); err != nil {
+		legacy.Close()
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES('admin','legacy-hash','admin','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`); err != nil {
+		legacy.Close()
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO settings(key,value,updated_at) VALUES('legacy-setting','preserved','2026-01-01T00:00:00Z')`); err != nil {
+		legacy.Close()
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("open and migrate legacy database: %v", err)
+	}
+	defer store.Close()
+	user, err := store.UserByName(t.Context(), "admin")
+	if err != nil || user.PasswordHash != "legacy-hash" || user.PasswordLoginDisabled {
+		t.Fatalf("legacy user after migration: user=%+v err=%v", user, err)
+	}
+	if value, found, err := store.Setting(t.Context(), "legacy-setting"); err != nil || !found || value != "preserved" {
+		t.Fatalf("legacy setting after migration: value=%q found=%v err=%v", value, found, err)
+	}
+	if err := store.CreatePasskey(t.Context(), model.PasskeyCredential{UserID: user.ID, CredentialID: "migrated-credential", PublicKey: "key"}); err != nil {
+		t.Fatalf("new passkey table is unavailable after migration: %v", err)
+	}
+}
 
 func TestCreateInitialAdminIsAtomic(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))

@@ -354,7 +354,15 @@ export const settingsGroups = [
         "label": "Administration path prefix",
         "type": "text",
         "placeholder": "/admin/"
-      },
+      }
+    ]
+  },
+  {
+    "id": "passkey",
+    "title": "Passkey authentication",
+    "description": "Enable the instance, restart MirrorRelay, then register credentials under My account.",
+    "effect": "restart",
+    "fields": [
       {
         "path": "admin.passkey.enabled",
         "label": "Enable Passkey authentication",
@@ -364,18 +372,21 @@ export const settingsGroups = [
         "path": "admin.passkey.rp_name",
         "label": "Passkey relying party name",
         "type": "text",
-        "placeholder": "MirrorRelay"
+        "placeholder": "MirrorRelay",
+        "help": "Name displayed by the browser or authenticator; maximum 128 bytes."
       },
       {
         "path": "admin.passkey.rp_id",
         "label": "Passkey relying party ID",
         "type": "text",
-        "placeholder": "admin.example.com"
+        "placeholder": "admin.example.com",
+        "help": "Leave blank to use the administration request host. Otherwise enter a lowercase hostname or IP without a scheme, port or path."
       },
       {
         "path": "admin.passkey.origins",
         "label": "Allowed Passkey origins (one per line)",
-        "type": "list"
+        "type": "list",
+        "help": "Leave blank to use the current request origin. Otherwise enter one HTTPS origin per line; HTTP is allowed only for loopback development."
       }
     ]
   },

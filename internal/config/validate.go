@@ -386,7 +386,7 @@ func validHexColor(v string) bool {
 		return false
 	}
 	hexStr := strings.TrimPrefix(v, "#")
-	if len(hexStr) != 3 && len(hexStr) != 6 {
+	if len(hexStr) != 3 && len(hexStr) != 6 && len(hexStr) != 8 {
 		return false
 	}
 	for _, ch := range hexStr {

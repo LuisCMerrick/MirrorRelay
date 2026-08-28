@@ -5,6 +5,7 @@ import { $, copyText, esc, notice } from '../dom.js';
 import { date } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { state } from '../state.js';
 
 export async function loadUsers() {
   const users = (await api('/users')) || [];
@@ -207,7 +208,18 @@ export async function loadAccount() {
         <p class="muted password-policy-help">${L('When enabled, you must use a registered Passkey or emergency recovery code to log in.')}</p>
       </div>
     </div>
-  ` : '';
+  ` : `
+    <div class="panel account-security-panel">
+      <div class="panel-header account-panel-header">
+        <div>
+          <h2>${icon('shield', 18)} ${L('Passkeys (WebAuthn / FIDO2)')}</h2>
+          <p class="muted">${L('Passkey authentication is disabled for this instance.')}</p>
+        </div>
+        ${state.role === 'admin' ? `<button type="button" class="btn-primary" id="configure-passkey-btn">${icon('settings', 13)} ${L('Configure Passkey authentication')}</button>` : ''}
+      </div>
+      ${state.role === 'admin' ? `<p class="muted">${L('Enable Passkey in Settings, restart MirrorRelay, then return here to register a credential.')}</p>` : `<p class="muted">${L('Ask an administrator to enable Passkey authentication in Settings.')}</p>`}
+    </div>
+  `;
 
   $('#page-account').innerHTML = `
     ${passkeyError ? `<div class="notice error" role="alert">${esc(passkeyError)}</div>` : ''}
@@ -271,6 +283,11 @@ export async function loadAccount() {
         button.removeAttribute('aria-busy');
       }
     }
+  });
+
+  $('#configure-passkey-btn')?.addEventListener('click', () => {
+    state.settingsSection = 'passkey';
+    document.querySelector('nav button[data-page="settings"]')?.click();
   });
 
   let generatedCodes = [];

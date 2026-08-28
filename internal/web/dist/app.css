@@ -2255,7 +2255,7 @@ code {
   min-height: 100vh;
   width: 100%;
   background: var(--login-bg);
-  padding: 20px;
+  padding: 64px 20px 72px;
   position: relative;
 }
 
@@ -2390,29 +2390,34 @@ code {
   margin-bottom: 8px;
 }
 
-.login-footer {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
-  text-align: center;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-}
-
 .login-github-link {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-highlight);
+  border-radius: 50%;
+  background: var(--bg-surface);
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  transition: color 0.15s ease;
+  box-shadow: var(--shadow-md);
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 .login-github-link:hover {
   color: var(--primary);
+  border-color: var(--primary);
+  background: var(--bg-surface-hover);
+}
+.login-github-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+.login-github-corner {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  z-index: 1000;
 }
 
 /* Floating theme and language controls on login */
@@ -2555,6 +2560,13 @@ code {
 }
 
 @media (max-width: 600px) {
+  .login-wrap {
+    padding: 68px 16px 64px;
+  }
+  .login-github-corner {
+    right: 12px;
+    bottom: 10px;
+  }
   .cards {
     grid-template-columns: 1fr 1fr;
   }

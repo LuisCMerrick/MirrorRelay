@@ -2,7 +2,21 @@
 
 ## Unreleased
 
-## v0.0.20 - 2026-08-27
+## v0.0.20 - 2026-08-27 (reissued 2026-08-28)
+
+- **Reissued upgrade-compatibility fix**:
+  - Fixed startup with pre-v0.0.20 `web_settings_v1` records. Newly introduced
+    settings now inherit the current YAML/default value, while the legacy
+    integer `warmup.timeout` representation and the earliest renamed lifecycle
+    field are normalized without weakening strict unknown-field validation.
+  - Added a pre-Passkey SQLite migration regression proving that users and
+    settings survive while the new column and tables are added before use.
+    Existing eight-digit accent colors remain valid.
+  - Moved the GitHub shortcut out of the authentication form into an accessible,
+    responsive control in the login page's lower-right corner.
+  - Added a dedicated Passkey configuration group under **Settings** and a
+    disabled-state shortcut from **My account**, so administrators can enable
+    the feature, configure RP bindings, restart, and then register credentials.
 
 - **Passkeys and emergency account recovery**:
   - Added WebAuthn/FIDO2 passkey registration and sign-in with strict RP

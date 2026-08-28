@@ -44,6 +44,38 @@ func TestApplyStoredWebSettingsAtStartup(t *testing.T) {
 	}
 }
 
+func TestApplyStoredLegacyWebSettingsAtStartup(t *testing.T) {
+	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	base := config.Default()
+	base.Redirect.PinValidatedIP = true
+	base.Runtime.Root = "/var/lib/mirrorrelay/from-yaml"
+	base.Admin.Host = "admin.example.test"
+	legacy := `{
+		"server":{"local_port":19081},"ingress":{},"performance":{},"metadata":{},"redirect":{},
+		"http":{},"tls":{},"cache":{},"logging":{},"security":{},"transport":{},"limits":{},
+		"health":{},"shutdown":{},"upstream_nginx":{},"warmup":{"timeout":1800000000000}
+	}`
+	if err := store.PutSetting(t.Context(), config.WebSettingsKey, legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	applied, err := applyStoredWebSettings(t.Context(), store, base)
+	if err != nil {
+		t.Fatalf("apply legacy stored settings: %v", err)
+	}
+	if applied.Server.LocalPort != 19081 || applied.Warmup.Timeout != 30*time.Minute {
+		t.Fatalf("legacy values were not applied: %+v", applied)
+	}
+	if !applied.Redirect.PinValidatedIP || applied.Runtime.Root != base.Runtime.Root || applied.Admin.Host != base.Admin.Host {
+		t.Fatalf("new fields did not inherit YAML values: %+v", applied)
+	}
+}
+
 func TestApplyStoredWebSettingsPreservesEnvironmentPrecedence(t *testing.T) {
 	t.Setenv("MIRRORRELAY_ADMIN_HOST", "environment-admin.example.test")
 	store, err := database.Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
@@ -90,6 +122,7 @@ func TestApplyStoredAppearanceIsStrictAndUsesDedicatedOverride(t *testing.T) {
 	}
 	dedicated := settings.UIEnhancement
 	dedicated.Theme = "light"
+	dedicated.AccentColor = "#2563eb80"
 	dedicated.Branding.Title = "Dedicated appearance"
 	encodedAppearance, _ := json.Marshal(dedicated)
 	if err := store.PutSetting(t.Context(), database.AppearanceSettingsKey, string(encodedAppearance)); err != nil {
@@ -100,7 +133,7 @@ func TestApplyStoredAppearanceIsStrictAndUsesDedicatedOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if applied.UIEnhancement.Theme != "light" || applied.UIEnhancement.Branding.Title != "Dedicated appearance" {
+	if applied.UIEnhancement.Theme != "light" || applied.UIEnhancement.AccentColor != "#2563eb80" || applied.UIEnhancement.Branding.Title != "Dedicated appearance" {
 		t.Fatalf("dedicated appearance did not win: %+v", applied.UIEnhancement)
 	}
 

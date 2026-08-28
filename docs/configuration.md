@@ -33,6 +33,8 @@ documented environment variables -> saved Web UI operational values -> YAML
 
 Operational settings saved, imported, reset, or rolled back do not hot-reload the running process; restart MirrorRelay to apply them. The `ui_enhancement` portion of an import or rollback is committed in the same transaction and published immediately through the dedicated appearance state. Repository Desired/Active changes use a separate immediate validation and activation path.
 
+Persisted settings written by releases before v0.0.20 contain only the fields those releases exposed. During upgrade, MirrorRelay overlays that legacy document on the current YAML/default configuration and normalizes the former integer `warmup.timeout` representation plus the earliest renamed lifecycle field before strict validation. Fields that did not yet exist therefore inherit their current file/default values; configuration, database, users, history and cache do not need to be purged or recreated.
+
 Use **Export configuration** to download standard or full-backup YAML. Both forms omit the instance-local `http.public_base_url` and `distributed.node.public_base_url`. Standard export also omits cluster credentials, the Webhook URL/signing secret, and the passkey RP ID/origins; full backup is a CSRF-protected `POST` that includes those credentials and must be stored as a secret. Import accepts at most 1 MiB of decoded YAML, validates the exact previewed content, preserves omitted local URLs, passkey bindings and credentials, and always preserves the file-only database/keyring paths. An omitted Edge mutation token is preserved only when that node URL is unchanged; a different origin requires an explicit new credential. Use **Reset to YAML after restart** to delete the stored operational override; use **Appearance → Restore defaults** for the separate immediate appearance override. Invalid stored data causes startup to fail explicitly instead of silently falling back to YAML. History responses never return their stored settings snapshot, and rollback uses its redacted snapshot while preserving the running credential values represented by redaction sentinels.
 
 ## Local endpoints
@@ -197,7 +199,7 @@ MirrorRelay provides optional appearance customization, color themes, directory 
 |---|---|
 | `ui_enhancement.enabled` | Public repository UI enhancement switch (default `false`). When `false`, upstream directory responses are not restyled or rewritten. The administration theme selector remains available. |
 | `ui_enhancement.theme` | Theme mode: `system` (default), `light`, or `dark` |
-| `ui_enhancement.accent_color` | Opaque three- or six-digit accent color hex code (e.g. `#2563eb`) |
+| `ui_enhancement.accent_color` | Three-, six- or backward-compatible eight-digit accent color hex code (for example `#2563eb` or `#2563eb80`) |
 | `ui_enhancement.branding.title` | Custom instance title / site name (default `MirrorRelay`) |
 | `ui_enhancement.branding.logo` | Optional same-origin absolute logo path beginning with `/`; the ingress must serve the asset |
 | `ui_enhancement.branding.favicon` | Optional same-origin absolute favicon path beginning with `/`; the ingress must serve the asset |

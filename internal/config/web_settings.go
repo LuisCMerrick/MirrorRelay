@@ -735,8 +735,24 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 }
 
 func DecodeWebSettings(data []byte) (WebSettings, error) {
-	var settings WebSettings
-	decoder := json.NewDecoder(bytes.NewReader(data))
+	return DecodeWebSettingsWithBase(data, Default())
+}
+
+// DecodeWebSettingsWithBase decodes a persisted Web UI settings document over
+// the configuration that was loaded from YAML. Releases before v0.0.20 stored
+// a strict subset under the same web_settings_v1 key, so fields introduced in
+// v0.0.20 must inherit the YAML/default value instead of becoming unsafe zero
+// values. Those releases also encoded warmup.timeout as time.Duration's JSON
+// integer representation, and v0.0.1 used the former product name in one JSON
+// field. Normalize those known legacy representations while keeping all other
+// unknown fields and malformed values fail-closed.
+func DecodeWebSettingsWithBase(data []byte, base Config) (WebSettings, error) {
+	normalized, err := normalizeLegacyWebSettingsJSON(data)
+	if err != nil {
+		return WebSettings{}, err
+	}
+	settings := WebSettingsFrom(base)
+	decoder := json.NewDecoder(bytes.NewReader(normalized))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&settings); err != nil {
 		return settings, err
@@ -747,7 +763,90 @@ func DecodeWebSettings(data []byte) (WebSettings, error) {
 		}
 		return settings, err
 	}
+	if err := requireLegacyWebSettingsSections(normalized); err != nil {
+		return settings, err
+	}
 	return settings, nil
+}
+
+func requireLegacyWebSettingsSections(data []byte) error {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(data, &document); err != nil {
+		return err
+	}
+	// Every persisted settings schema since the first release contained these
+	// core sections. Requiring them distinguishes a legitimate older document
+	// from an empty or truncated JSON object while still allowing fields and
+	// optional sections introduced by later releases to inherit from YAML.
+	for _, section := range []string{
+		"server", "ingress", "performance", "metadata", "redirect", "http", "tls",
+		"cache", "logging", "security", "transport", "limits", "health", "shutdown", "upstream_nginx",
+	} {
+		if _, ok := document[section]; !ok {
+			return fmt.Errorf("Web settings are missing required legacy section %q", section)
+		}
+	}
+	return nil
+}
+
+func normalizeLegacyWebSettingsJSON(data []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, errors.New("Web settings must be a JSON object")
+	}
+
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(data, &document); err != nil {
+		// Preserve the stricter decoder's existing syntax and trailing-value
+		// diagnostics instead of broadening malformed input during migration.
+		return data, nil
+	}
+	changed := false
+	if warmupRaw, ok := document["warmup"]; ok && !bytes.Equal(bytes.TrimSpace(warmupRaw), []byte("null")) {
+		var warmup map[string]json.RawMessage
+		if err := json.Unmarshal(warmupRaw, &warmup); err == nil {
+			if timeoutRaw, ok := warmup["timeout"]; ok {
+				timeoutValue := bytes.TrimSpace(timeoutRaw)
+				if len(timeoutValue) > 0 && timeoutValue[0] != '"' && !bytes.Equal(timeoutValue, []byte("null")) {
+					var nanoseconds int64
+					if err := json.Unmarshal(timeoutValue, &nanoseconds); err == nil {
+						encodedDuration, err := json.Marshal(time.Duration(nanoseconds).String())
+						if err != nil {
+							return nil, err
+						}
+						warmup["timeout"] = encodedDuration
+						document["warmup"], err = json.Marshal(warmup)
+						if err != nil {
+							return nil, err
+						}
+						changed = true
+					}
+				}
+			}
+		}
+	}
+
+	if upstreamRaw, ok := document["upstream_nginx"]; ok {
+		var upstream map[string]json.RawMessage
+		if err := json.Unmarshal(upstreamRaw, &upstream); err == nil {
+			legacyStop, hasLegacyStop := upstream["stop_on_repogate_exit"]
+			_, hasCurrentStop := upstream["stop_on_mirrorrelay_exit"]
+			if hasLegacyStop && !hasCurrentStop {
+				upstream["stop_on_mirrorrelay_exit"] = legacyStop
+				delete(upstream, "stop_on_repogate_exit")
+				var err error
+				document["upstream_nginx"], err = json.Marshal(upstream)
+				if err != nil {
+					return nil, err
+				}
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return data, nil
+	}
+	return json.Marshal(document)
 }
 
 func ExportYAML(cfg Config, fullBackup bool) (string, error) {

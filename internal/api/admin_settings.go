@@ -99,7 +99,7 @@ func (s *Server) storedWebConfig(ctx context.Context) (config.Config, bool, erro
 	if !found {
 		return s.fileConfig, false, nil
 	}
-	settings, err := config.DecodeWebSettings([]byte(raw))
+	settings, err := config.DecodeWebSettingsWithBase([]byte(raw), s.fileConfig)
 	if err != nil {
 		return s.fileConfig, true, fmt.Errorf("decode stored settings: %w", err)
 	}

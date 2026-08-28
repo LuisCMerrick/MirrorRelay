@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +137,8 @@ func TestValidateUIEnhancementBrandAssetsStaySameOrigin(t *testing.T) {
 
 	withAlpha := Default()
 	withAlpha.UIEnhancement.AccentColor = "#2563eb80"
-	if err := withAlpha.Validate(); err == nil {
-		t.Fatal("eight-digit accent color unsupported by the Web UI was accepted")
+	if err := withAlpha.Validate(); err != nil {
+		t.Fatalf("v0.0.17-compatible eight-digit accent color was rejected: %v", err)
 	}
 
 	for _, value := range []string{"relative.css", "/etc/passwd", "/var/lib/mirrorrelay/ui/../secret.css", "/tmp/custom.css\nother"} {
@@ -301,6 +302,9 @@ func TestWebSettingsRejectUnknownFieldsAndInvalidValues(t *testing.T) {
 	if _, err := DecodeWebSettings([]byte(`{"unknown":true}`)); err == nil {
 		t.Fatal("unknown Web settings field was accepted")
 	}
+	if _, err := DecodeWebSettings([]byte(`{}`)); err == nil {
+		t.Fatal("truncated Web settings document was accepted")
+	}
 	settings := WebSettingsFrom(Default())
 	settings.HTTP.ReadTimeout = "not-a-duration"
 	if _, err := settings.Apply(Default()); err == nil {
@@ -330,6 +334,186 @@ func TestWebSettingsRejectUnknownFieldsAndInvalidValues(t *testing.T) {
 	if err != nil || applied.Server.LocalAddress != base.Server.LocalAddress {
 		t.Fatalf("legacy settings document did not inherit server.local_address: address=%q err=%v", applied.Server.LocalAddress, err)
 	}
+}
+
+func TestDecodeLegacyV0017WebSettingsInheritsIntroducedFields(t *testing.T) {
+	base := Default()
+	base.Server.FrontendSocket = "/run/mirrorrelay/custom-frontend.sock"
+	base.Runtime.Root = "/var/lib/mirrorrelay/custom-runtime"
+	base.Runtime.RunDir = "/run/mirrorrelay-custom"
+	base.Ingress.SnippetPath = "/var/lib/mirrorrelay/custom-integration"
+	base.TLS.Certificate = "/etc/mirrorrelay/custom/fullchain.pem"
+	base.TLS.PrivateKey = "/etc/mirrorrelay/custom/privkey.pem"
+	base.Cache.Path = "/var/cache/mirrorrelay-custom"
+	base.Logging.Path = "/var/log/mirrorrelay-custom"
+	base.Admin.Host = "admin.example.test"
+	base.Admin.Path = "/control/"
+	base.Admin.Passkey = model.PasskeyConfig{
+		Enabled: true,
+		RPName:  "Custom relay",
+		RPID:    "admin.example.test",
+		Origins: []string{"https://admin.example.test"},
+	}
+	base.Distributed.Enabled = true
+	base.Distributed.Role = "coordinator"
+	base.Distributed.Token = "cluster-probe-secret"
+	base.Distributed.MutationTokenKeyFiles = []string{"/etc/mirrorrelay/cluster-mutation-token.key"}
+	base.Distributed.Node.Name = "coordinator-1"
+	base.Distributed.Nodes = []DistributedNodeSeed{{
+		Name: "edge-1", URL: "https://edge.example.test", MutationToken: "edge-mutation-secret", Enabled: true,
+	}}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("legacy base configuration is invalid: %v", err)
+	}
+
+	stored := base
+	stored.Server.LocalAddress = "127.0.0.2"
+	stored.Server.LocalPort = 19081
+	stored.Cache.MaxFiles = 234567
+	stored.Warmup.Timeout = 45 * time.Minute
+	legacyJSON := legacyV0017WebSettingsJSON(t, stored)
+
+	settings, err := DecodeWebSettingsWithBase(legacyJSON, base)
+	if err != nil {
+		t.Fatalf("decode v0.0.17 settings: %v", err)
+	}
+	applied, err := settings.Apply(base)
+	if err != nil {
+		t.Fatalf("apply v0.0.17 settings: %v", err)
+	}
+	if applied.Server.LocalAddress != "127.0.0.2" || applied.Server.LocalPort != 19081 || applied.Cache.MaxFiles != 234567 || applied.Warmup.Timeout != 45*time.Minute {
+		t.Fatalf("legacy values were not retained: %+v", applied)
+	}
+	if applied.Server.FrontendSocket != base.Server.FrontendSocket || applied.Runtime != base.Runtime ||
+		applied.Ingress.SnippetPath != base.Ingress.SnippetPath || !applied.Redirect.PinValidatedIP ||
+		applied.TLS.Certificate != base.TLS.Certificate || applied.TLS.PrivateKey != base.TLS.PrivateKey ||
+		applied.Cache.Path != base.Cache.Path || applied.Logging.Path != base.Logging.Path ||
+		!reflect.DeepEqual(applied.Admin, base.Admin) || !reflect.DeepEqual(applied.Distributed, base.Distributed) {
+		t.Fatalf("fields introduced after v0.0.17 did not inherit the YAML base:\n got: %#v\nwant: %#v", applied, base)
+	}
+}
+
+func TestDecodeLegacyV0001WebSettingsNormalizesFormerProductField(t *testing.T) {
+	base := Default()
+	base.Warmup.Enabled = true
+	base.UIEnhancement.Enabled = true
+	stored := base
+	stored.Server.LocalPort = 19081
+	stored.UpstreamNginx.StopOnMirrorRelayExit = true
+
+	settings, err := DecodeWebSettingsWithBase(legacyV0001WebSettingsJSON(t, stored), base)
+	if err != nil {
+		t.Fatalf("decode v0.0.1 settings: %v", err)
+	}
+	applied, err := settings.Apply(base)
+	if err != nil {
+		t.Fatalf("apply v0.0.1 settings: %v", err)
+	}
+	if applied.Server.LocalPort != 19081 || !applied.UpstreamNginx.StopOnMirrorRelayExit {
+		t.Fatalf("v0.0.1 values were not retained: %+v", applied)
+	}
+	if !applied.Warmup.Enabled || !applied.UIEnhancement.Enabled {
+		t.Fatalf("sections introduced after v0.0.1 did not inherit the YAML base: %+v", applied)
+	}
+}
+
+func legacyV0001WebSettingsJSON(t *testing.T, cfg Config) []byte {
+	t.Helper()
+	legacy := legacyV0017WebSettingsJSON(t, cfg)
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(legacy, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ui_enhancement", "webhook", "warmup"} {
+		delete(document, name)
+	}
+	removeFields := func(section string, names ...string) {
+		t.Helper()
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(document[section], &fields); err != nil {
+			t.Fatalf("decode %s fixture: %v", section, err)
+		}
+		for _, name := range names {
+			delete(fields, name)
+		}
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatalf("encode %s fixture: %v", section, err)
+		}
+		document[section] = encoded
+	}
+	removeFields("server", "local_address")
+	removeFields("performance", "zero_copy_bypass")
+	removeFields("security", "trusted_proxy_cidrs")
+
+	var upstream map[string]json.RawMessage
+	if err := json.Unmarshal(document["upstream_nginx"], &upstream); err != nil {
+		t.Fatal(err)
+	}
+	upstream["stop_on_repogate_exit"] = upstream["stop_on_mirrorrelay_exit"]
+	delete(upstream, "stop_on_mirrorrelay_exit")
+	encodedUpstream, err := json.Marshal(upstream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document["upstream_nginx"] = encodedUpstream
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func legacyV0017WebSettingsJSON(t *testing.T, cfg Config) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(WebSettingsFrom(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"runtime", "database", "admin", "distributed"} {
+		delete(document, name)
+	}
+	removeFields := func(section string, names ...string) {
+		t.Helper()
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(document[section], &fields); err != nil {
+			t.Fatalf("decode %s fixture: %v", section, err)
+		}
+		for _, name := range names {
+			delete(fields, name)
+		}
+		document[section], err = json.Marshal(fields)
+		if err != nil {
+			t.Fatalf("encode %s fixture: %v", section, err)
+		}
+	}
+	removeFields("server", "frontend_socket", "frontend_socket_mode")
+	removeFields("ingress", "snippet_path")
+	removeFields("redirect", "pin_validated_ip")
+	removeFields("tls", "certificate", "private_key")
+	removeFields("cache", "path")
+	removeFields("logging", "path")
+	removeFields("upstream_nginx", "binary", "prefix", "pid", "log_path", "upstream_socket", "upstream_socket_mode", "ca_bundle")
+	removeFields("webhook", "url_configured", "secret_configured")
+
+	var warmup map[string]json.RawMessage
+	if err := json.Unmarshal(document["warmup"], &warmup); err != nil {
+		t.Fatal(err)
+	}
+	warmup["timeout"] = json.RawMessage(strconv.FormatInt(int64(cfg.Warmup.Timeout), 10))
+	document["warmup"], err = json.Marshal(warmup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return legacy
 }
 
 func TestDistributedAndWebhookURLsUseIndependentOutboundPolicy(t *testing.T) {

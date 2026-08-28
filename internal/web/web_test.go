@@ -34,6 +34,14 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	settingsSchema, err := fs.ReadFile(assets, "js/settings-schema.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	usersScript, err := fs.ReadFile(assets, "js/pages/users.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	mirrorDetailScript, err := fs.ReadFile(assets, "js/pages/mirrorDetail.js")
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +67,7 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			`id="html-rewrite-enabled"`, `id="restart-header"`, `id="restart-sidebar"`,
 			`href="app.css"`, `src="js/main.js"`, `src="js/theme-bootstrap.js"`,
 			`data-theme-mode="light"`, `data-theme-mode="dark"`, `data-theme-mode="auto"`,
-			`id="login-password-confirmation"`, `id="login-mode-title"`,
+			`id="login-password-confirmation"`, `id="login-mode-title"`, `class="login-github-link login-github-corner"`,
 		}},
 		"localeEn": {content: string(localeEn), expected: []string{
 			"export default", "Linux repository reverse-proxy gateway",
@@ -79,11 +87,18 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			"applyInstanceTheme", "aria-pressed", "addEventListener('change'",
 		}},
 		"style": {content: string(style), expected: []string{
-			`:root[data-theme="light"]`, ".theme-switch", "--login-card-bg",
+			`:root[data-theme="light"]`, ".theme-switch", "--login-card-bg", ".login-github-link:focus-visible", ".login-github-corner",
 		}},
 		"settingsScript": {content: string(settingsScript), expected: []string{
 			"One active destination", "Running configuration", "oapi.dingtalk.com",
-			"open.feishu.cn", "qyapi.weixin.qq.com", "hooks.slack.com", "Custom JSON webhook",
+			"open.feishu.cn", "qyapi.weixin.qq.com", "hooks.slack.com", "Custom JSON webhook", "data-settings-group",
+		}},
+		"settingsSchema": {content: string(settingsSchema), expected: []string{
+			`"id": "passkey"`, `"title": "Passkey authentication"`, `"path": "admin.passkey.enabled"`,
+			`"path": "admin.passkey.rp_name"`, `"path": "admin.passkey.rp_id"`, `"path": "admin.passkey.origins"`,
+		}},
+		"usersScript": {content: string(usersScript), expected: []string{
+			"configure-passkey-btn", "Configure Passkey authentication", "state.settingsSection = 'passkey'",
 		}},
 		"mirrorDetailScript": {content: string(mirrorDetailScript), expected: []string{
 			"DEB822 (.sources)", "sources.list one-line format", "playground-format",
@@ -98,10 +113,20 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			}
 		})
 	}
-	for _, assetContent := range []string{string(index), string(mainScript), string(themeBootstrap), string(themeScript), string(settingsScript), string(mirrorDetailScript), string(localeEn), string(localeZh)} {
+	formEnd := strings.Index(string(index), "</form>")
+	githubLink := strings.Index(string(index), `class="login-github-link login-github-corner"`)
+	if formEnd < 0 || githubLink < formEnd {
+		t.Fatal("login GitHub link must be outside the authentication form")
+	}
+	if strings.Contains(string(index), "login-footer") || strings.Contains(string(style), ".login-footer") {
+		t.Fatal("login GitHub link still uses the below-form footer layout")
+	}
+	for _, assetContent := range []string{string(index), string(mainScript), string(themeBootstrap), string(themeScript), string(settingsScript), string(settingsSchema), string(usersScript), string(mirrorDetailScript), string(localeEn), string(localeZh)} {
 		if strings.Contains(assetContent, "onclick=") {
 			t.Fatal("strict-CSP Web UI contains an inline click handler")
 		}
+	}
+	for _, assetContent := range []string{string(index), string(mainScript), string(themeBootstrap), string(themeScript), string(settingsScript), string(usersScript), string(mirrorDetailScript), string(localeEn), string(localeZh)} {
 		if strings.Contains(assetContent, "/admin/") || strings.Contains(assetContent, "fetch('/api/v1") {
 			t.Fatal("embedded assets contain a fixed administration path")
 		}
@@ -131,7 +156,7 @@ func TestEmbeddedUIUsesProgressiveDisclosureForTechnicalAndMaintenanceDetails(t 
 		"cluster":    {"js/pages/cluster.js", []string{"Cluster configuration details", "compact-cards"}},
 		"cache":      {"js/pages/cache.js", []string{`<details class="disclosure-panel">`, "Targeted Cache Object Invalidation"}},
 		"ingress":    {"js/pages/ingress.js", []string{"ingress-snippet-disclosure", "Hidden by default. Expand to inspect and copy."}},
-		"settings":   {"js/pages/settings.js", []string{"settings-section", "index === 0 ? ' open' : ''"}},
+		"settings":   {"js/pages/settings.js", []string{"settings-section", "const open = index === 0"}},
 		"appearance": {"js/pages/appearance.js", []string{"settings-section", "disclosure-chevron"}},
 	}
 

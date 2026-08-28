@@ -8,6 +8,7 @@ import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 import { triggerRestart } from '../restart.js';
 import { settingsGroups } from '../settings-schema.js';
+import { state } from '../state.js';
 
 const webhookTestProviders = {
   configured: {
@@ -95,7 +96,10 @@ function settingsInput(field, settings, fileOnlyPaths) {
   const fileOnly = fileOnlySetting(field.path, fileOnlyPaths);
   const redacted = value === '[REDACTED]';
   const attributes = `data-setting-path="${esc(field.path)}" data-setting-type="${esc(field.valueType || field.type)}"${redacted ? ' data-redacted="true"' : ''}${fileOnly ? ' disabled aria-disabled="true"' : ''}`;
-  const help = fileOnly ? `<small class="field-help">${L('Configured only through YAML or environment variables because it is needed before the settings database opens.')}</small>` : '';
+  const help = [
+    fileOnly ? L('Configured only through YAML or environment variables because it is needed before the settings database opens.') : '',
+    field.help ? L(field.help) : ''
+  ].filter(Boolean).map(message => `<small class="field-help">${esc(message)}</small>`).join('');
   if (field.type === 'boolean') {
     return `<label class="check${fileOnly ? ' setting-file-only' : ''}"><input type="checkbox" ${attributes}${value ? ' checked' : ''}><span>${esc(label)}</span>${help}</label>`;
   }
@@ -236,12 +240,15 @@ export async function loadSettings() {
     }
     const badgeText = group.effect === 'immediate' ? L('Immediate') : (group.effect === 'reload' ? L('Reload required') : L('Restart required'));
     const badgeClass = group.effect === 'immediate' ? 'status-pill status-healthy' : 'status-pill status-pending';
+    const groupAttribute = group.id ? ` data-settings-group="${esc(group.id)}"` : '';
+    const open = index === 0 || (group.id && state.settingsSection === group.id);
 
     return `
-      <details class="disclosure-panel settings-section"${index === 0 ? ' open' : ''}>
+      <details class="disclosure-panel settings-section"${groupAttribute}${open ? ' open' : ''}>
         <summary>
           <span class="disclosure-heading">
             <span class="disclosure-title">${icon('settings', 17)} ${esc(L(group.title))}</span>
+            ${group.description ? `<span class="disclosure-description">${esc(L(group.description))}</span>` : ''}
             <span class="${badgeClass} settings-effect-badge">${badgeText}</span>
           </span>
           <span class="disclosure-chevron">${icon('chevron-right', 16)}</span>
@@ -333,6 +340,19 @@ export async function loadSettings() {
         </footer>
       </form>
     </div>`;
+
+  const requestedSection = state.settingsSection;
+  state.settingsSection = '';
+  if (requestedSection) {
+    const requestedPanel = document.querySelector(`[data-settings-group="${requestedSection}"]`);
+    if (requestedPanel) {
+      requestedPanel.open = true;
+      requestAnimationFrame(() => {
+        requestedPanel.scrollIntoView({ block: 'start' });
+        requestedPanel.querySelector('summary')?.focus();
+      });
+    }
+  }
 
   function removeMappingPlaceholder(tbody) {
     tbody.querySelector('.mapping-empty-row')?.remove();

@@ -25,7 +25,7 @@ export async function loadAppearance() {
             <option value="light" ${appearance.theme === 'light' ? 'selected' : ''}>${L('Light')}</option>
             <option value="dark" ${appearance.theme === 'dark' ? 'selected' : ''}>${L('Dark')}</option>
           </select><small class="field-help">${L('Instance default for browsers without a saved theme preference.')}</small></label>
-          <label><span>${L('Accent Color')}</span><input type="color" id="app-accent-color" value="${esc(appearance.accent_color || '#2563eb')}"></label>
+          <label><span>${L('Accent Color')}</span><input type="text" id="app-accent-color" value="${esc(appearance.accent_color || '#2563eb')}" pattern="#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3}|[0-9A-Fa-f]{5})?" maxlength="9" placeholder="#2563eb" spellcheck="false"><small class="field-help">${L('Use #RGB, #RRGGBB or #RRGGBBAA.')}</small></label>
         </div>
       </details>
 
