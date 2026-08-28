@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-## v0.0.20 - 2026-08-27 (reissued 2026-08-28)
+## v0.0.21 - 2026-08-28
 
-- **Reissued upgrade-compatibility fix**:
+- **Upgrade-compatibility fix**:
   - Fixed startup with pre-v0.0.20 `web_settings_v1` records. Newly introduced
     settings now inherit the current YAML/default value, while the legacy
     integer `warmup.timeout` representation and the earliest renamed lifecycle
@@ -62,8 +62,8 @@
     public route methods and headers.
 - **Frontend and branding completion**:
   - Made instance title, login copy, same-origin logo/favicon paths, theme and
-    opaque three- or six-digit accent color apply before sign-in and across
-    generated public pages.
+    three-, six- or backward-compatible eight-digit accent color apply before
+    sign-in and across generated public pages.
   - Fixed settings export/import, repository detail rendering, serial log polling cleanup,
     API errors, clipboard fallback, form busy/focus states, mobile tables and
     touch targets, reduced-motion behavior, storage failures, restart failure/

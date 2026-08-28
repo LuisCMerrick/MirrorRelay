@@ -37,7 +37,7 @@ func newTestPasskeyServer(t *testing.T, enablePasskey bool) (*Server, *database.
 	cfg.Admin.Passkey.RPID = "localhost"
 	cfg.Admin.Passkey.Origins = []string{"http://localhost:8080"}
 
-	srv, err := New(cfg, cfg, store, nil, nil, nil, nil, nil, nil, buildinfo.Info{Version: "0.0.20"})
+	srv, err := New(cfg, cfg, store, nil, nil, nil, nil, nil, nil, buildinfo.Info{Version: "0.0.21"})
 	if err != nil {
 		t.Fatal(err)
 	}

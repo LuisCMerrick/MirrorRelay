@@ -134,10 +134,10 @@ The Compose model uses `luiscmerrick/mirrorrelay:latest` by default. Set
 
 ```bash
 # Debian / Ubuntu (amd64 example):
-sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.21_amd64.deb
 
 # RHEL / Rocky Linux / Fedora (amd64 example):
-sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.21.x86_64.rpm
 
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service

@@ -27,9 +27,9 @@ readelf -l nginx/sbin/nginx
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
 docker compose config
-make vendor-source VERSION=0.0.20 RELEASE_DIR=/tmp/mirrorrelay-source
-tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.20-source-with-vendor.tar.gz \
-  | grep -F 'mirrorrelay-0.0.20-source/vendor/modules.txt'
+make vendor-source VERSION=0.0.21 RELEASE_DIR=/tmp/mirrorrelay-source
+tar -tzf /tmp/mirrorrelay-source/mirrorrelay-0.0.21-source-with-vendor.tar.gz \
+  | grep -F 'mirrorrelay-0.0.21-source/vendor/modules.txt'
 ```
 
 带 Vendor 的源码包从本次发布对应的精确 Git Commit 导出，再在导出树内执行 `go mod vendor`。托管构建流程会解包并执行 `go list -mod=vendor ./...`，通过后才把它加入 GitHub Release 与 `SHA256SUMS`。

@@ -145,7 +145,7 @@ Set `server.unix_socket_enabled: true` only to replace the default frontend TCP 
 
 Package upgrades replace MirrorRelay, its version-bound Managed Upstream Nginx binary, the unit and built-in files while preserving `/etc/mirrorrelay/config.yaml`, `/var/lib/mirrorrelay/mirrorrelay.db`, configuration history and `/var/cache/mirrorrelay`.
 
-The reissued v0.0.20 build also migrates persisted Web UI settings from earlier releases in memory: fields absent from the old record inherit the current YAML/default values, and the prior numeric warm-up timeout is normalized. Do not purge or recreate the instance to upgrade. If the original v0.0.20 package was already installed, install the reissued package over it using the package manager's same-version reinstall/replace operation; persistent state remains in place.
+v0.0.21 migrates persisted Web UI settings from earlier releases in memory: fields absent from the old record inherit the current YAML/default values, and the prior numeric warm-up timeout is normalized. It supersedes the withdrawn v0.0.20 Release. Upgrade an installed v0.0.20 package normally to v0.0.21; do not purge or recreate the instance, because persistent state remains in place.
 
 Manually dispatched development builds use `0.0.1.git.<commit-epoch>.<commit>` versions so DEB and RPM package managers can order snapshots chronologically. Published releases and explicitly requested workflow versions keep their supplied version. Direct pushes do not start remote release builds. A manual Release Build does not publish a container by default; explicitly selecting `publish_container` pushes the immutable development-version tag plus `edge`, while leaving the stable-release `latest` tag unchanged.
 

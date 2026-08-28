@@ -133,10 +133,10 @@ Compose 默认使用 `luiscmerrick/mirrorrelay:latest`。需要固定部署版�
 
 ```bash
 # Debian / Ubuntu（amd64 示例）：
-sudo apt-get install --yes ./mirrorrelay_0.0.20_amd64.deb
+sudo apt-get install --yes ./mirrorrelay_0.0.21_amd64.deb
 
 # RHEL / Rocky Linux / Fedora（amd64 示例）：
-sudo dnf install --yes ./mirrorrelay-0.0.20.x86_64.rpm
+sudo dnf install --yes ./mirrorrelay-0.0.21.x86_64.rpm
 
 sudoedit /etc/mirrorrelay/config.yaml
 sudo systemctl enable --now mirrorrelay.service
