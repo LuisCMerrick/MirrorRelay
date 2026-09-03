@@ -198,10 +198,19 @@ func clone(m model.Mirror) model.Mirror {
 	m.BlockedPackages = append([]string(nil), m.BlockedPackages...)
 	m.AllowedPackages = append([]string(nil), m.AllowedPackages...)
 	if m.HeaderAdd != nil {
-		m.HeaderAdd = make(map[string]string, len(m.HeaderAdd))
-		for name, value := range m.HeaderAdd {
+		headers := m.HeaderAdd
+		m.HeaderAdd = make(map[string]string, len(headers))
+		for name, value := range headers {
 			m.HeaderAdd[name] = value
 		}
+	}
+	m.Help.Variants = append([]model.HelpVariant(nil), m.Help.Variants...)
+	m.Help.Formats = append([]model.HelpFormat(nil), m.Help.Formats...)
+	if m.PackagePolicy != nil {
+		policy := *m.PackagePolicy
+		policy.Blocked = append([]model.PackagePattern(nil), policy.Blocked...)
+		policy.Allowed = append([]model.PackagePattern(nil), policy.Allowed...)
+		m.PackagePolicy = &policy
 	}
 	return m
 }

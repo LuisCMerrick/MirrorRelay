@@ -262,6 +262,8 @@ func Apply(m *model.Mirror, name, version string) error {
 	m.MetadataTTLSec, m.PackageTTLSec = p.MetadataTTLSec, p.PackageTTLSec
 	m.ImmutableTTLSec, m.BlobTTLSec = p.ImmutableTTLSec, p.BlobTTLSec
 	m.Help = p.Help
+	m.Help.Variants = append([]model.HelpVariant(nil), p.Help.Variants...)
+	m.Help.Formats = append([]model.HelpFormat(nil), p.Help.Formats...)
 	if len(m.Upstreams) == 0 {
 		m.Upstreams = []model.Upstream{{URL: p.Upstream, Priority: 100, Weight: 1, Enabled: true}}
 	}

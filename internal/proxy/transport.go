@@ -103,6 +103,7 @@ func (t *upstreamNginxTransport) metaForUpstream(ctx context.Context, meta reque
 	}
 	cacheKey = representationCacheKey(cacheKey, meta.repository, meta.cacheClass, meta.acceptHeader) + meta.authPartition
 	meta.logicalURL = logicalURL
+	meta.credentialOrigin = cloneURL(logicalURL)
 	meta.cacheKey = cacheKey
 	meta.objectID = objectID
 	meta.validatorKey = metadataValidatorKey(meta.repository, repositoryUpstreamIdentity(upstream, meta.auxiliary), meta.relativePath,
@@ -139,10 +140,7 @@ func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestM
 		out.URL.RawQuery = original.URL.RawQuery
 		return t.base.RoundTrip(out)
 	}
-	if meta.logicalURL != nil && !sameOrigin(meta.logicalURL, meta.dynamicTarget) {
-		out.Header.Del("Authorization")
-		out.Header.Del("Cookie")
-	}
+	stripCrossOriginCredentials(out.Header, meta.credentialOrigin, meta.dynamicTarget)
 	target, err := security.ResolveApprovedTarget(out.Context(), meta.dynamicTarget.String(),
 		t.cfg.Security.AllowHTTPUpstream && meta.repository.AllowHTTP,
 		t.cfg.Security.AllowPrivateUpstream && meta.repository.AllowPrivate,
@@ -170,6 +168,7 @@ func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestM
 
 func (t *upstreamNginxTransport) followRedirects(original *http.Request, response *http.Response, meta requestMeta, upstreamID int64) (*http.Response, requestMeta, error) {
 	visited := make(map[string]bool)
+	redirectRequest := original
 	if meta.logicalURL != nil {
 		visited[meta.logicalURL.String()] = true
 	}
@@ -198,15 +197,7 @@ func (t *upstreamNginxTransport) followRedirects(original *http.Request, respons
 		}
 		visited[target.String()] = true
 		_ = response.Body.Close()
-		next := original.Clone(original.Context())
-		if !sameOrigin(meta.logicalURL, target) {
-			next.Header.Del("Authorization")
-			next.Header.Del("Cookie")
-		}
-		if response.StatusCode == http.StatusSeeOther && next.Method != http.MethodHead {
-			next.Method = http.MethodGet
-			next.Body = nil
-		}
+		next := nextRedirectRequest(redirectRequest, meta.logicalURL, target, response.StatusCode)
 		meta.dynamicTarget = target
 		meta.logicalURL = cloneURL(target)
 		meta.cacheClass = classifyObject(meta.repository, target.EscapedPath(), target)
@@ -214,8 +205,30 @@ func (t *upstreamNginxTransport) followRedirects(original *http.Request, respons
 		if err != nil {
 			return nil, meta, err
 		}
+		redirectRequest = next
 	}
 	return response, meta, nil
+}
+
+// Derive each redirected request from the preceding hop. In particular, once
+// credentials are removed for a cross-origin hop, a later same-origin redirect
+// must not restore them from the original client request.
+func nextRedirectRequest(previous *http.Request, current, target *url.URL, status int) *http.Request {
+	next := previous.Clone(previous.Context())
+	stripCrossOriginCredentials(next.Header, current, target)
+	if status == http.StatusSeeOther && next.Method != http.MethodHead {
+		next.Method = http.MethodGet
+		next.Body = nil
+	}
+	return next
+}
+
+func stripCrossOriginCredentials(header http.Header, origin, target *url.URL) {
+	if origin != nil && sameOrigin(origin, target) {
+		return
+	}
+	header.Del("Authorization")
+	header.Del("Cookie")
 }
 
 func retryableUpstreamStatus(status int) bool {

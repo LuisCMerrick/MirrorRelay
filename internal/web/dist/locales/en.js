@@ -259,7 +259,9 @@ export default {
     "running": "Running",
     "completed": "Completed",
     "disabled": "Disabled",
-    "restarting": "Restarting"
+    "restarting": "Restarting",
+    "idle": "Idle",
+    "cancelled": "Cancelled"
 },
   duration: function(days, hours, minutes) {
     return days + 'd ' + hours + 'h ' + minutes + 'm';

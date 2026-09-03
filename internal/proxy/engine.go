@@ -29,25 +29,26 @@ type selectedMetaKey struct{}
 type writerContextKey struct{}
 
 type requestMeta struct {
-	repository      model.Mirror
-	relativePath    string
-	cacheClass      string
-	cacheKey        string
-	authPartition   string
-	objectID        string
-	publicBase      string
-	requestID       string
-	clientIP        string
-	clientEncoding  string
-	acceptHeader    string
-	validatorKey    string
-	dynamicTarget   *url.URL
-	logicalURL      *url.URL
-	auxiliary       bool
-	cacheBypass     bool
-	followRedirects bool
-	rewriteMetadata bool
-	rewriteHTML     bool
+	repository       model.Mirror
+	relativePath     string
+	cacheClass       string
+	cacheKey         string
+	authPartition    string
+	objectID         string
+	publicBase       string
+	requestID        string
+	clientIP         string
+	clientEncoding   string
+	acceptHeader     string
+	validatorKey     string
+	dynamicTarget    *url.URL
+	logicalURL       *url.URL
+	credentialOrigin *url.URL
+	auxiliary        bool
+	cacheBypass      bool
+	followRedirects  bool
+	rewriteMetadata  bool
+	rewriteHTML      bool
 }
 
 type selectedMeta struct {
@@ -176,16 +177,23 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	upstreamIdentity := repositoryUpstreamIdentity(active, auxiliary)
 	objectPath := relative
 	objectQuery := request.URL.RawQuery
+	tokenRoute := isTokenRoute(request.URL.Path)
 	logicalURL, logicalErr := repositoryURL(repository, active, relative, request.URL.RawQuery, auxiliary)
 	if logicalErr != nil {
 		http.Error(w, "invalid repository route", http.StatusBadGateway)
 		return
 	}
+	credentialOrigin := cloneURL(logicalURL)
 	if dynamic != nil {
 		upstreamIdentity = dynamic.Scheme + "://" + dynamic.Host
 		objectPath = dynamic.EscapedPath()
 		objectQuery = dynamic.RawQuery
 		logicalURL = cloneURL(dynamic)
+		if tokenRoute {
+			// Registry clients intentionally send their credentials to the
+			// configured full-proxy token endpoint.
+			credentialOrigin = cloneURL(dynamic)
+		}
 	}
 	cacheKey, objectID, keyErr := e.cacheKeys.Key(request.Context(), repository.ID, upstreamIdentity, objectPath, objectQuery)
 	if keyErr != nil {
@@ -199,27 +207,27 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	rewriteHTML := repository.HTMLRewriteEnabled && class == "metadata"
 	validatorKey := metadataValidatorKey(repository, upstreamIdentity, objectPath, objectQuery, publicBase, auxiliary,
 		acceptsGzip(request.Header.Get("Accept-Encoding")))
-	tokenRoute := isTokenRoute(request.URL.Path)
 	meta := requestMeta{
-		repository:      repository,
-		relativePath:    relative,
-		cacheClass:      class,
-		cacheKey:        cacheKey,
-		authPartition:   authPartition,
-		objectID:        objectID,
-		publicBase:      publicBase,
-		requestID:       requestID,
-		clientIP:        clientIP,
-		clientEncoding:  request.Header.Get("Accept-Encoding"),
-		acceptHeader:    acceptHeader,
-		validatorKey:    validatorKey,
-		dynamicTarget:   dynamic,
-		logicalURL:      logicalURL,
-		auxiliary:       auxiliary,
-		cacheBypass:     tokenRoute,
-		followRedirects: shouldFollowRedirects(repository, class, tokenRoute),
-		rewriteMetadata: rewriteMetadata,
-		rewriteHTML:     rewriteHTML,
+		repository:       repository,
+		relativePath:     relative,
+		cacheClass:       class,
+		cacheKey:         cacheKey,
+		authPartition:    authPartition,
+		objectID:         objectID,
+		publicBase:       publicBase,
+		requestID:        requestID,
+		clientIP:         clientIP,
+		clientEncoding:   request.Header.Get("Accept-Encoding"),
+		acceptHeader:     acceptHeader,
+		validatorKey:     validatorKey,
+		dynamicTarget:    dynamic,
+		logicalURL:       logicalURL,
+		credentialOrigin: credentialOrigin,
+		auxiliary:        auxiliary,
+		cacheBypass:      tokenRoute,
+		followRedirects:  shouldFollowRedirects(repository, class, tokenRoute),
+		rewriteMetadata:  rewriteMetadata,
+		rewriteHTML:      rewriteHTML,
 	}
 
 	capture := &captureWriter{ResponseWriter: w, status: http.StatusOK, requestID: requestID}

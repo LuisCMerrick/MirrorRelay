@@ -32,7 +32,7 @@ export async function loadCache() {
       <td><span class="badge blue">${esc(job.mirror_name || job.mirror_slug || `Repo #${job.mirror_id}`)}</span></td>
       <td><code>${esc(job.cron_expression || L('Manual only'))}</code></td>
       <td>
-        <span class="${statusClass}">
+        <span class="${statusClass}" title="${esc(job.error_message || '')}">
           ${isRunning ? `<span class="pulse-dot blue"></span>` : ''}
           ${esc(stateLabel(job.status || 'idle'))}
         </span>
@@ -257,6 +257,7 @@ export async function loadCache() {
         })
       });
       notice(L('Warm-up task created.'));
+      event.target.reset();
       await loadCache();
     } catch (error) {
       notice(error.message, true);

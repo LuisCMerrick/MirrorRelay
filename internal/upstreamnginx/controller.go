@@ -197,20 +197,18 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 			previousTarget = currentTarget
 		}
 		if publishErr := c.publish(generated.Hash); publishErr != nil {
-			_ = c.restorePublishedConfiguration(previousTarget)
-			return model.ConfigVersion{}, publishErr
+			return model.ConfigVersion{}, c.restoreAfterReconcileFailure(previousTarget, publishErr)
 		}
 		if activateErr := c.activate(ctx); activateErr != nil {
-			_ = c.restorePublishedConfiguration(previousTarget)
-			c.setFailure(activateErr)
-			return model.ConfigVersion{}, activateErr
+			return model.ConfigVersion{}, c.restoreAfterReconcileFailure(previousTarget, activateErr)
 		}
 	}
 	if err := c.store.SetActiveConfigVersion(ctx, activeVersion.Version); err != nil {
+		recordErr := fmt.Errorf("record active configuration version: %w", err)
 		if c.Enabled() {
-			_ = c.restorePublishedConfiguration(previousTarget)
+			return model.ConfigVersion{}, c.restoreAfterReconcileFailure(previousTarget, recordErr)
 		}
-		return model.ConfigVersion{}, fmt.Errorf("record active configuration version: %w", err)
+		return model.ConfigVersion{}, recordErr
 	}
 	activeVersion.Active = true
 	if stateErr := c.store.SetConfigState(ctx, desiredIDs, "active", ""); stateErr != nil {
@@ -225,6 +223,14 @@ func (c *Controller) reconcileLocked(ctx context.Context, operator, description 
 	c.mu.Unlock()
 	c.setActiveConfiguration(repositories, custom)
 	return activeVersion, nil
+}
+
+func (c *Controller) restoreAfterReconcileFailure(previousTarget string, reconcileErr error) error {
+	if restoreErr := c.restorePublishedConfiguration(previousTarget); restoreErr != nil {
+		reconcileErr = errors.Join(reconcileErr, fmt.Errorf("restore previous active configuration: %w", restoreErr))
+	}
+	c.setFailure(reconcileErr)
+	return reconcileErr
 }
 
 // ApplyConfiguration validates a complete candidate before changing desired
@@ -532,12 +538,22 @@ func cloneRepositories(values []model.Mirror) []model.Mirror {
 		repository.Upstreams = append([]model.Upstream(nil), repository.Upstreams...)
 		repository.RewriteHosts = append([]string(nil), repository.RewriteHosts...)
 		repository.HeaderRemove = append([]string(nil), repository.HeaderRemove...)
+		repository.BlockedPackages = append([]string(nil), repository.BlockedPackages...)
+		repository.AllowedPackages = append([]string(nil), repository.AllowedPackages...)
 		if repository.HeaderAdd != nil {
 			headers := make(map[string]string, len(repository.HeaderAdd))
 			for name, value := range repository.HeaderAdd {
 				headers[name] = value
 			}
 			repository.HeaderAdd = headers
+		}
+		repository.Help.Variants = append([]model.HelpVariant(nil), repository.Help.Variants...)
+		repository.Help.Formats = append([]model.HelpFormat(nil), repository.Help.Formats...)
+		if repository.PackagePolicy != nil {
+			policy := *repository.PackagePolicy
+			policy.Blocked = append([]model.PackagePattern(nil), policy.Blocked...)
+			policy.Allowed = append([]model.PackagePattern(nil), policy.Allowed...)
+			repository.PackagePolicy = &policy
 		}
 		cloned[index] = repository
 	}

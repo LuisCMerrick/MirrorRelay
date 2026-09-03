@@ -228,6 +228,12 @@ func (s *Server) StopWarmup() {
 	}
 }
 
+func (s *Server) StopWebhook() {
+	if s.webhook != nil {
+		s.webhook.Stop()
+	}
+}
+
 func (s *Server) SetCluster(router *cluster.Router, checker *cluster.Checker, metrics *cluster.Metrics) {
 	s.clusterRouter = router
 	s.clusterChecker = checker

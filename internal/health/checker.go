@@ -154,7 +154,7 @@ func (c *Checker) CheckMirror(ctx context.Context, repository model.Mirror) ([]R
 			status = "healthy"
 		}
 		checkedAt := time.Now()
-		if err := c.store.UpdateUpstreamHealth(context.Background(), upstream.ID, status, result.LatencyMS, result.Error, checkedAt); err != nil {
+		if err := c.store.UpdateUpstreamHealth(ctx, upstream.ID, status, result.LatencyMS, result.Error, checkedAt); err != nil {
 			if firstError == nil {
 				firstError = err
 			}

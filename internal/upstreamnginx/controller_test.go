@@ -22,12 +22,13 @@ import (
 type reloadFailureRunner struct {
 	reloadCalls  int
 	failReloadAt int
+	failReloads  map[int]bool
 }
 
 func (r *reloadFailureRunner) Run(_ context.Context, _ string, args ...string) (string, error) {
 	if strings.Contains(strings.Join(args, " "), "-s reload") {
 		r.reloadCalls++
-		if r.reloadCalls == r.failReloadAt {
+		if r.reloadCalls == r.failReloadAt || r.failReloads[r.reloadCalls] {
 			return "forced reload failure", errors.New("forced reload failure")
 		}
 	}
@@ -124,6 +125,14 @@ func TestApplyConfigurationRestoresDesiredAndActiveAfterReloadFailure(t *testing
 	if err != nil || effective != activeVersion.Configuration {
 		t.Fatalf("effective configuration did not remain on the active version: err=%v", err)
 	}
+
+	firstFailure := runner.reloadCalls + 1
+	runner.failReloadAt = 0
+	runner.failReloads = map[int]bool{firstFailure: true, firstFailure + 1: true}
+	if _, err := controller.ApplyConfiguration(ctx, []model.Mirror{candidate}, []model.CustomConfig{}, "cluster", "failing candidate and recovery"); err == nil ||
+		!strings.Contains(err.Error(), "restore previous active configuration") {
+		t.Fatalf("recovery reload failure was not surfaced: %v", err)
+	}
 }
 
 func TestRecoverLastActivePublishesPersistedRoutingSnapshot(t *testing.T) {
@@ -175,6 +184,23 @@ func TestDecodeConfigurationSnapshotRequiresCurrentObjectShape(t *testing.T) {
 	}
 }
 
+func TestCloneRepositoriesDeepCopiesPolicyAndHelpState(t *testing.T) {
+	original := []model.Mirror{{
+		HeaderAdd: map[string]string{"Authorization": "secret"}, BlockedPackages: []string{"blocked-*"},
+		Help:          model.HelpConfig{Variants: []model.HelpVariant{{Key: "stable", Label: "Stable"}}},
+		PackagePolicy: &model.PackagePolicy{Blocked: []model.PackagePattern{{Pattern: "blocked-*", Glob: true}}},
+	}}
+	cloned := cloneRepositories(original)
+	cloned[0].HeaderAdd["Authorization"] = "changed"
+	cloned[0].BlockedPackages[0] = "changed-*"
+	cloned[0].Help.Variants[0].Label = "Changed"
+	cloned[0].PackagePolicy.Blocked[0].Pattern = "changed-policy-*"
+	if original[0].HeaderAdd["Authorization"] != "secret" || original[0].BlockedPackages[0] != "blocked-*" ||
+		original[0].Help.Variants[0].Label != "Stable" || original[0].PackagePolicy.Blocked[0].Pattern != "blocked-*" {
+		t.Fatalf("repository clone shared mutable configuration: %+v", original[0])
+	}
+}
+
 func TestWaitForManagedProcessRecordsExitCode(t *testing.T) {
 	command := exec.Command("sh", "-c", "exit 23")
 	if err := command.Start(); err != nil {
@@ -211,6 +237,35 @@ func TestExecutablePathResolvesSymlinks(t *testing.T) {
 	}
 	if got != filepath.Clean(want) {
 		t.Fatalf("resolved executable = %q, want %q", got, want)
+	}
+}
+
+func TestPrepareUpstreamEndpointRemovesOnlyConfirmedStaleSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "upstream.sock")
+	address := &net.UnixAddr{Name: socketPath, Net: "unix"}
+	listener, err := net.ListenUnix("unix", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.SetUnlinkOnClose(false)
+	cfg := config.Default()
+	cfg.UpstreamNginx.UpstreamSocketEnabled = true
+	cfg.UpstreamNginx.UpstreamSocket = socketPath
+	controller := newController(cfg, nil, nil, nil)
+	if err := controller.prepareUpstreamEndpoint(); err == nil {
+		t.Fatal("live upstream socket was treated as stale")
+	}
+	if _, err := os.Lstat(socketPath); err != nil {
+		t.Fatalf("live upstream socket was removed: %v", err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.prepareUpstreamEndpoint(); err != nil {
+		t.Fatalf("confirmed stale upstream socket was not removed: %v", err)
+	}
+	if _, err := os.Lstat(socketPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale upstream socket still exists: %v", err)
 	}
 }
 

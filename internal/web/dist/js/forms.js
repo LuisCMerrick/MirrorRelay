@@ -2,6 +2,7 @@
 import { L } from './i18n.js';
 
 export function parseList(value) { return value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean); }
+export function parseLines(value) { return value.split(/\n+/).map(item => item.trim()).filter(Boolean); }
 
 export function parseHeaders(value) {
   const result = {};

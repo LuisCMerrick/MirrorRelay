@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,29 +36,16 @@ func (s *Server) createWarmupJob(w http.ResponseWriter, r *http.Request, session
 	if decodeJSON(w, r, &job) != nil {
 		return
 	}
-	job.Name = strings.TrimSpace(job.Name)
-	if job.Name == "" {
-		writeError(w, 400, "name is required")
+	if err := prepareWarmupJob(&job); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if job.MirrorID <= 0 {
-		writeError(w, 400, "mirror_id is required")
+	if _, err := s.store.Mirror(r.Context(), job.MirrorID); errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusBadRequest, "mirror_id does not identify an existing repository")
 		return
-	}
-	if len(job.URLPatterns) == 0 {
-		writeError(w, 400, "at least one URL pattern is required")
+	} else if err != nil {
+		writeInternal(w, err)
 		return
-	}
-	if err := warmup.ValidateSchedule(job.CronExpression); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
-		return
-	}
-	job.NextRunAt = ""
-	if next, err := warmup.NextRunAt(job.CronExpression, time.Now().UTC()); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
-		return
-	} else if !next.IsZero() {
-		job.NextRunAt = next.UTC().Format(time.RFC3339)
 	}
 
 	created, err := s.store.CreateWarmupJob(r.Context(), job)
@@ -103,21 +91,16 @@ func (s *Server) warmupJobAction(w http.ResponseWriter, r *http.Request, session
 				return
 			}
 			job.ID = id
-			job.Name = strings.TrimSpace(job.Name)
-			if job.Name == "" {
-				writeError(w, 400, "name is required")
+			if err := prepareWarmupJob(&job); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			if err := warmup.ValidateSchedule(job.CronExpression); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+			if _, err := s.store.Mirror(r.Context(), job.MirrorID); errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusBadRequest, "mirror_id does not identify an existing repository")
 				return
-			}
-			job.NextRunAt = ""
-			if next, err := warmup.NextRunAt(job.CronExpression, time.Now().UTC()); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid cron expression: "+err.Error())
+			} else if err != nil {
+				writeInternal(w, err)
 				return
-			} else if !next.IsZero() {
-				job.NextRunAt = next.UTC().Format(time.RFC3339)
 			}
 			updated, err := s.store.UpdateWarmupJob(r.Context(), job)
 			if errors.Is(err, database.ErrWarmupJobNotFound) {
@@ -164,7 +147,10 @@ func (s *Server) warmupJobAction(w http.ResponseWriter, r *http.Request, session
 				writeError(w, 400, "warmup engine is not initialized")
 				return
 			}
-			if err := s.warmupEngine.RunJob(r.Context(), id); err != nil {
+			if err := s.warmupEngine.RunJob(r.Context(), id); errors.Is(err, database.ErrWarmupJobNotFound) {
+				writeError(w, http.StatusNotFound, "warmup job not found")
+				return
+			} else if err != nil {
 				writeError(w, 400, err.Error())
 				return
 			}
@@ -191,6 +177,33 @@ func (s *Server) warmupJobAction(w http.ResponseWriter, r *http.Request, session
 	}
 
 	writeError(w, 404, "not found")
+}
+
+func prepareWarmupJob(job *model.WarmupJob) error {
+	job.Name = strings.TrimSpace(job.Name)
+	if job.Name == "" {
+		return errors.New("name is required")
+	}
+	if job.MirrorID <= 0 {
+		return errors.New("mirror_id is required")
+	}
+	patterns, err := warmup.NormalizeURLPatterns(job.URLPatterns)
+	if err != nil {
+		return err
+	}
+	job.URLPatterns = patterns
+	if err := warmup.ValidateSchedule(job.CronExpression); err != nil {
+		return errors.New("invalid cron expression: " + err.Error())
+	}
+	job.NextRunAt = ""
+	next, err := warmup.NextRunAt(job.CronExpression, time.Now().UTC())
+	if err != nil {
+		return errors.New("invalid cron expression: " + err.Error())
+	}
+	if !next.IsZero() {
+		job.NextRunAt = next.UTC().Format(time.RFC3339)
+	}
+	return nil
 }
 
 func (s *Server) warmupStatus(w http.ResponseWriter, r *http.Request) {

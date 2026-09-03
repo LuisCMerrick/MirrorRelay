@@ -259,7 +259,9 @@ export default {
     "running": "运行中",
     "completed": "已完成",
     "disabled": "已禁用",
-    "restarting": "重启中"
+    "restarting": "重启中",
+    "idle": "空闲",
+    "cancelled": "已取消"
 },
   duration: function(days, hours, minutes) {
     return days + '天 ' + hours + '小时 ' + minutes + '分';

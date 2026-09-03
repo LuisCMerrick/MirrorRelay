@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { registerAction } from '../actions.js';
 import { card, disclosure, kv } from '../components.js';
 import { $, esc, notice } from '../dom.js';
-import { date } from '../format.js';
+import { date, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 import { state } from '../state.js';
@@ -39,8 +39,8 @@ export async function loadCluster() {
       <td><code>${esc(node.url)}</code></td>
       <td>${esc(node.region)}${node.country ? ` <span class="badge">${esc(node.country)}</span>` : ''}</td>
       <td><code>${node.priority} / ${node.weight}</code></td>
-      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}"><span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>${esc(node.health_status || 'unknown')}</span></td>
-      <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(node.config_status || 'unknown')}</span></td>
+      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}"><span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>${esc(stateLabel(node.health_status || 'unknown'))}</span></td>
+      <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(stateLabel(node.config_status || 'unknown'))}</span></td>
       <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
       ${canOperate ? `<td>

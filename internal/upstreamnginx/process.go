@@ -338,6 +338,12 @@ func (c *Controller) prepareUpstreamEndpoint() error {
 		_ = connection.Close()
 		return errors.New("upstream socket already has a live listener but Managed Upstream Nginx PID is unavailable")
 	}
+	if errors.Is(dialErr, os.ErrNotExist) {
+		return nil
+	}
+	if !errors.Is(dialErr, syscall.ECONNREFUSED) {
+		return fmt.Errorf("cannot determine whether upstream socket is stale: %w", dialErr)
+	}
 	if err := os.Remove(c.cfg.UpstreamNginx.UpstreamSocket); err != nil {
 		return fmt.Errorf("remove stale upstream socket: %w", err)
 	}

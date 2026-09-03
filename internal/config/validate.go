@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
 	"github.com/LuisCMerrick/MirrorRelay/internal/security"
@@ -94,12 +93,22 @@ func (c Config) Validate() error {
 		c.Security.SessionTimeout <= 0 || c.Security.LoginWindow <= 0 || c.Security.LoginMaxFailures <= 0 ||
 		c.Transport.DialTimeout <= 0 || c.Transport.KeepAlive <= 0 || c.Transport.TLSHandshakeTimeout <= 0 ||
 		c.Transport.ResponseHeaderTimeout <= 0 || c.Transport.IdleConnTimeout <= 0 || c.Transport.MaxIdleConns <= 0 ||
-		c.Transport.MaxIdleConnsPerHost <= 0 || c.Health.WorkerInterval <= 0 || c.Shutdown.GracePeriod <= 0 {
+		c.Transport.MaxIdleConnsPerHost <= 0 || c.Health.WorkerInterval <= 0 || c.Shutdown.GracePeriod <= 0 ||
+		c.Warmup.Timeout <= 0 {
 		return errors.New("timeouts must be positive")
 	}
 	if c.Limits.MaxTotalConcurrency < 0 || c.Limits.MaxIPConcurrency < 0 || c.Limits.BandwidthLimitBPS < 0 ||
-		c.Warmup.MaxConcurrency < 0 || c.Warmup.BandwidthLimit < 0 || c.Warmup.RetryCount < 0 {
+		c.Warmup.BandwidthLimit < 0 {
 		return errors.New("global and warmup limits cannot be negative")
+	}
+	if c.Warmup.MaxConcurrency < 1 || c.Warmup.MaxConcurrency > 64 {
+		return errors.New("warmup.max_concurrency must be between 1 and 64")
+	}
+	if c.Warmup.RetryCount < 0 || c.Warmup.RetryCount > 10 {
+		return errors.New("warmup.retry_count must be between 0 and 10")
+	}
+	if c.Warmup.MetadataDepth < 0 || c.Warmup.MetadataDepth > 5 {
+		return errors.New("warmup.metadata_depth must be between 0 and 5")
 	}
 	adminPath, err := normalizeAdminPath(c.Admin.Path)
 	if err != nil || adminPath != c.Admin.Path {
@@ -315,7 +324,7 @@ func ValidateWebhook(w *model.WebhookConfig) error {
 		return fmt.Errorf("invalid webhook url %q: %w", w.URL, err)
 	}
 	if w.Timeout <= 0 {
-		w.Timeout = 5 * time.Second
+		return errors.New("webhook.timeout must be positive when webhook is enabled")
 	}
 	return nil
 }

@@ -84,6 +84,58 @@ func TestSameOriginIncludesSchemeHostAndEffectivePort(t *testing.T) {
 	}
 }
 
+func TestRedirectCredentialsCannotReappearAfterCrossOriginHop(t *testing.T) {
+	parse := func(value string) *url.URL {
+		parsed, err := url.Parse(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	original := httptest.NewRequest(http.MethodGet, "https://registry.example/v2/blob", nil)
+	original.Header.Set("Authorization", "Bearer secret")
+	original.Header.Set("Cookie", "session=secret")
+
+	firstTarget := parse("https://cdn.example/files/blob")
+	first := nextRedirectRequest(original, parse("https://registry.example/v2/blob"), firstTarget, http.StatusFound)
+	if first.Header.Get("Authorization") != "" || first.Header.Get("Cookie") != "" {
+		t.Fatal("credentials were retained on a cross-origin redirect")
+	}
+
+	second := nextRedirectRequest(first, firstTarget, parse("https://cdn.example/files/final"), http.StatusFound)
+	if second.Header.Get("Authorization") != "" || second.Header.Get("Cookie") != "" {
+		t.Fatal("credentials reappeared after a later same-origin redirect")
+	}
+}
+
+func TestDynamicAdapterCredentialsAreLimitedToRepositoryOrigin(t *testing.T) {
+	parse := func(value string) *url.URL {
+		parsed, err := url.Parse(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	credentials := func() http.Header {
+		header := make(http.Header)
+		header.Set("Authorization", "Bearer secret")
+		header.Set("Cookie", "repository_session=secret")
+		return header
+	}
+
+	crossOrigin := credentials()
+	stripCrossOriginCredentials(crossOrigin, parse("https://packages.example/simple/"), parse("https://cdn.example/file.whl"))
+	if crossOrigin.Get("Authorization") != "" || crossOrigin.Get("Cookie") != "" {
+		t.Fatal("credentials were retained for a cross-origin adapter target")
+	}
+
+	sameOriginHeader := credentials()
+	stripCrossOriginCredentials(sameOriginHeader, parse("https://packages.example/simple/"), parse("https://packages.example/files/file.whl"))
+	if sameOriginHeader.Get("Authorization") == "" || sameOriginHeader.Get("Cookie") == "" {
+		t.Fatal("credentials were removed from a same-origin adapter target")
+	}
+}
+
 func TestJoinPath(t *testing.T) {
 	cases := []struct{ base, relative, want string }{{"/debian/", "/dists/stable", "/debian/dists/stable"}, {"/", "/file", "/file"}, {"/repo", "/", "/repo/"}}
 	for _, tc := range cases {

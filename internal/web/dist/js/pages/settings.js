@@ -3,6 +3,7 @@
 import { api, apiResponse } from '../api.js';
 import { kv } from '../components.js';
 import { $, copyText, esc, notice } from '../dom.js';
+import { date } from '../format.js';
 import { nestedValue, parseList, setNestedValue } from '../forms.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
@@ -637,7 +638,7 @@ export async function loadSettings() {
       tbody.innerHTML = versions.map(v => `
         <tr>
           <td><strong>v${v.version}</strong></td>
-          <td>${esc(new Date(v.created_at).toLocaleString())}</td>
+          <td>${date(v.created_at)}</td>
           <td>${esc(v.operator || 'system')}</td>
           <td><span class="status-pill status-healthy">${esc(v.source)}</span></td>
           <td>${esc(v.description || '')}</td>
@@ -733,6 +734,7 @@ export async function loadSettings() {
       else if (input.dataset.settingType === 'number') value = Number(input.value);
       else if (input.dataset.settingType === 'list') value = parseList(input.value);
       else value = input.value.trim();
+      if (input.dataset.redacted === 'true' && value === '') return;
       setNestedValue(next, input.dataset.settingPath, value);
     });
 

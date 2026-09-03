@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { registerAction } from '../actions.js';
 import { $, notice } from '../dom.js';
-import { parseHeaders, parseList, parseUpstreams } from '../forms.js';
+import { parseHeaders, parseLines, parseList, parseUpstreams } from '../forms.js';
 import { L } from '../i18n.js';
 import { state } from '../state.js';
 import { loadDashboard } from './dashboard.js';
@@ -110,8 +110,8 @@ async function submitMirrorForm(event) {
       rate_limit_profile: $('#rate-profile').value, max_concurrency: Number($('#max-concurrency').value), bandwidth_limit_bps: Number($('#bandwidth-limit').value),
       auth_mode: $('#auth-mode').value, token_upstream: $('#token-upstream').value, blob_redirect_mode: $('#blob-redirect').value, pull_only: $('#pull-only').checked,
       allow_http_upstream: $('#allow-http').checked, allow_private_upstream: $('#allow-private').checked, insecure_skip_verify: false,
-      blocked_packages: parseList($('#blocked-packages').value),
-      allowed_packages: parseList($('#allowed-packages').value),
+      blocked_packages: parseLines($('#blocked-packages').value),
+      allowed_packages: parseLines($('#allowed-packages').value),
       help: {
         enabled: $('#help-enabled').checked,
         template: $('#help-template').value,

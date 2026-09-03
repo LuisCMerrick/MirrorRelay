@@ -26,6 +26,8 @@ When a repository or redirect target is evaluated:
    - IPv6: `::/128`, `::1/128`, `fc00::/7`, `fe80::/10`, `ff00::/8`, `::ffff:0:0/96`
 3. **IP Pinning with SNI Verification**: Connections are dialed directly to the validated IP address to prevent DNS rebinding attacks while preserving the original hostname for TLS SNI and certificate chain validation.
 
+Client `Authorization` and non-administration `Cookie` credentials are forwarded only while a proxy redirect or Metadata adapter target remains on the repository's effective origin. A cross-origin hop removes them permanently for the remainder of that redirect chain. The configured Registry full-proxy token route is the explicit exception because clients intentionally authenticate to that endpoint.
+
 ---
 
 ## 3. Authentication & Session Management

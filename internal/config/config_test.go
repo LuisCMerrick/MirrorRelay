@@ -83,6 +83,36 @@ func TestValidateRequires0660ForBothUnixSockets(t *testing.T) {
 	}
 }
 
+func TestValidateWarmupLimits(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"zero concurrency":         func(cfg *Config) { cfg.Warmup.MaxConcurrency = 0 },
+		"excessive concurrency":    func(cfg *Config) { cfg.Warmup.MaxConcurrency = 65 },
+		"negative retry count":     func(cfg *Config) { cfg.Warmup.RetryCount = -1 },
+		"excessive retry count":    func(cfg *Config) { cfg.Warmup.RetryCount = 11 },
+		"negative metadata depth":  func(cfg *Config) { cfg.Warmup.MetadataDepth = -1 },
+		"excessive metadata depth": func(cfg *Config) { cfg.Warmup.MetadataDepth = 6 },
+		"zero timeout":             func(cfg *Config) { cfg.Warmup.Timeout = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := Default()
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatal("invalid warm-up configuration was accepted")
+			}
+		})
+	}
+}
+
+func TestValidateRejectsEnabledWebhookWithoutPositiveTimeout(t *testing.T) {
+	candidate := Default()
+	candidate.Webhook.Enabled = true
+	candidate.Webhook.URL = "https://hooks.example.test/events"
+	candidate.Webhook.Timeout = 0
+	if err := candidate.Validate(); err == nil {
+		t.Fatal("enabled webhook with zero timeout was accepted")
+	}
+}
+
 func TestValidatePasskeyRelyingPartyAndOrigins(t *testing.T) {
 	valid := Default()
 	valid.Admin.Passkey.Enabled = true

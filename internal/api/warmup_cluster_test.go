@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,6 +92,21 @@ func TestWarmupAPI_CRUD(t *testing.T) {
 	handler.ServeHTTP(invalidRecorder, invalidRequest)
 	if invalidRecorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid cron expression was accepted: status=%d body=%s", invalidRecorder.Code, invalidRecorder.Body.String())
+	}
+
+	invalidUpdatePayload := map[string]any{
+		"mirror_id": mir.ID, "name": "Invalid update", "cron_expression": "@daily",
+		"url_patterns": []string{}, "enabled": true,
+	}
+	invalidUpdateBody, _ := json.Marshal(invalidUpdatePayload)
+	invalidUpdateRequest := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/admin/api/v1/warmup/jobs/%d", created.ID), bytes.NewReader(invalidUpdateBody))
+	invalidUpdateRequest.Header.Set("X-CSRF-Token", session.CSRFToken)
+	invalidUpdateRequest.AddCookie(&http.Cookie{Name: "mirrorrelay_session", Value: session.ID})
+	invalidUpdateRequest.RemoteAddr = "127.0.0.1:12345"
+	invalidUpdateRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(invalidUpdateRecorder, invalidUpdateRequest)
+	if invalidUpdateRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("empty URL patterns were accepted on update: status=%d body=%s", invalidUpdateRecorder.Code, invalidUpdateRecorder.Body.String())
 	}
 
 	// 2. List Warmup Jobs

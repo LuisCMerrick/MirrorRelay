@@ -168,6 +168,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	defer control.StopWebhook()
 	control.SetAppearanceStore(engine.AppearanceStore())
 	upstreamNginxController.SetActivePublisher(control.PublishActiveRepositories)
 	handler := control.Handler(engine)
@@ -177,6 +178,7 @@ func run() error {
 	metric.StartPersistence(ctx)
 	cacheManager.StartReclaimer(ctx)
 	control.StartWarmup(ctx)
+	defer control.StopWarmup()
 	restartChannel := make(chan struct{}, 1)
 	control.SetRestartTrigger(func() {
 		select {

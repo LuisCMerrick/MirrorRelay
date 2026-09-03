@@ -133,13 +133,13 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | Key | Description |
 |---|---|
 | `warmup.enabled` | Enable smart warm-up and predictive pre-fetching engine (default `false`) |
-| `warmup.max_concurrency` | Maximum concurrent warm-up download workers (default `4`) |
+| `warmup.max_concurrency` | Global maximum concurrent warm-up download workers (`1`–`64`, default `4`) |
 | `warmup.bandwidth_limit_bps` | Bandwidth throttling for warm-up requests in bytes/sec (default `0` = unlimited) |
 | `warmup.timeout` | Per-job warm-up timeout (default `30m`) |
-| `warmup.retry_count` | Maximum retry attempts per failed item (default `2`) |
-| `warmup.metadata_depth` | Metadata package extraction depth (default `1` = extract packages from APT/RPM/PyPI metadata) |
+| `warmup.retry_count` | Maximum retry attempts per failed item (`0`–`10`, default `2`) |
+| `warmup.metadata_depth` | Metadata package extraction depth (`0`–`5`, default `1` = extract packages from APT/RPM/PyPI metadata) |
 
-Warm-up jobs accept either a five-field numeric cron expression evaluated in UTC or one of `@hourly`, `@daily`, and `@every <duration>` (minimum interval `30s`). Numeric fields support `*`, lists, ranges and steps. MirrorRelay validates expressions on create/update, persists the calculated `next_run_at`, and never runs an invalid or unknown expression as a fallback. Metadata-discovered package URLs reuse the configured frontend endpoint, including `server.local_address` and `server.local_port` while the frontend Unix socket is disabled.
+Warm-up jobs accept bounded, repository-relative request URIs and either a five-field numeric cron expression evaluated in UTC or one of `@hourly`, `@daily`, and `@every <duration>` (minimum interval `30s`). Numeric fields support `*`, lists, ranges and steps. MirrorRelay applies the concurrency and bandwidth limits globally across jobs, retries retryable item failures, and enforces `warmup.timeout` over each whole job. Every warm-up connection re-enters the configured frontend endpoint; absolute package links discovered in metadata become policy-checked adapter routes, so the warm-up engine never connects directly to an Original Upstream. The engine validates jobs on create/update, persists the calculated `next_run_at`, recovers stale `running` schedules after restart, and waits for active workers during shutdown.
 
 ## Webhook delivery
 

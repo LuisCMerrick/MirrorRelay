@@ -25,19 +25,26 @@ import (
 
 // Dispatcher manages sending event notifications to external webhook endpoints.
 type Dispatcher struct {
-	mu    sync.RWMutex
-	cfg   model.WebhookConfig
-	queue chan model.WebhookPayload
-	stop  chan struct{}
-	wg    sync.WaitGroup
+	mu       sync.RWMutex
+	cfg      model.WebhookConfig
+	queue    chan model.WebhookPayload
+	stop     chan struct{}
+	stopOnce sync.Once
+	stopped  bool
+	runCtx   context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 // New creates and starts a new Webhook Dispatcher.
 func New(cfg model.WebhookConfig) *Dispatcher {
+	runCtx, cancel := context.WithCancel(context.Background())
 	d := &Dispatcher{
-		cfg:   cfg,
-		queue: make(chan model.WebhookPayload, 256),
-		stop:  make(chan struct{}),
+		cfg:    cfg,
+		queue:  make(chan model.WebhookPayload, 256),
+		stop:   make(chan struct{}),
+		runCtx: runCtx,
+		cancel: cancel,
 	}
 	d.wg.Add(1)
 	go d.worker()
@@ -53,7 +60,13 @@ func (d *Dispatcher) UpdateConfig(cfg model.WebhookConfig) {
 
 // Stop stops the background worker.
 func (d *Dispatcher) Stop() {
-	close(d.stop)
+	d.stopOnce.Do(func() {
+		d.mu.Lock()
+		d.stopped = true
+		d.mu.Unlock()
+		d.cancel()
+		close(d.stop)
+	})
 	d.wg.Wait()
 }
 
@@ -61,9 +74,10 @@ func (d *Dispatcher) Stop() {
 func (d *Dispatcher) Dispatch(event, title, message string, data map[string]any) {
 	d.mu.RLock()
 	cfg := d.cfg
+	stopped := d.stopped
 	d.mu.RUnlock()
 
-	if !cfg.Enabled || cfg.URL == "" {
+	if stopped || !cfg.Enabled || cfg.URL == "" {
 		return
 	}
 	if !d.isEventEnabled(cfg, event) {
@@ -79,6 +93,8 @@ func (d *Dispatcher) Dispatch(event, title, message string, data map[string]any)
 	}
 
 	select {
+	case <-d.stop:
+		return
 	case d.queue <- payload:
 	default:
 		slog.Warn("webhook queue full, dropping alert", "event", event, "title", title)
@@ -131,8 +147,8 @@ func (d *Dispatcher) worker() {
 			if !cfg.Enabled || cfg.URL == "" {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout(cfg))
-			if err := d.postPayload(ctx, cfg, payload); err != nil {
+			ctx, cancel := context.WithTimeout(d.runCtx, webhookTimeout(cfg))
+			if err := d.postPayload(ctx, cfg, payload); err != nil && d.runCtx.Err() == nil {
 				slog.Warn("failed to deliver webhook", "event", payload.Event, "error", err)
 			}
 			cancel()

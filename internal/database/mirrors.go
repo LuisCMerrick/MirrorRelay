@@ -196,6 +196,10 @@ func (s *Store) ReplaceMirrors(ctx context.Context, mirrors []model.Mirror) erro
 		return err
 	}
 	defer tx.Rollback()
+	preservedWarmupJobs, err := loadWarmupJobsForReplacement(ctx, tx)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM upstreams`); err != nil {
 		return err
 	}
@@ -232,7 +236,75 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 			return err
 		}
 	}
+	if err := restoreWarmupJobsAfterReplacement(ctx, tx, mirrors, preservedWarmupJobs); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+type preservedWarmupJob struct {
+	id              int64
+	mirrorID        int64
+	name            string
+	cronExpression  string
+	urlPatterns     string
+	status          string
+	totalItems      int
+	completedItems  int
+	failedItems     int
+	bytesDownloaded int64
+	errorMessage    string
+	lastRunAt       string
+	nextRunAt       string
+	enabled         int
+	createdAt       string
+	updatedAt       string
+}
+
+// Repository snapshots replace mirror rows so that IDs from a Coordinator or
+// historical configuration remain exact. Preserve local warm-up state across
+// that replacement for every repository ID that still exists in the incoming
+// snapshot; the mirrors foreign key would otherwise cascade-delete it.
+func loadWarmupJobsForReplacement(ctx context.Context, tx *sql.Tx) ([]preservedWarmupJob, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,mirror_id,name,cron_expression,url_patterns,status,total_items,
+completed_items,failed_items,bytes_downloaded,error_message,last_run_at,next_run_at,enabled,created_at,updated_at
+FROM warmup_jobs ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []preservedWarmupJob
+	for rows.Next() {
+		var job preservedWarmupJob
+		if err := rows.Scan(&job.id, &job.mirrorID, &job.name, &job.cronExpression, &job.urlPatterns, &job.status,
+			&job.totalItems, &job.completedItems, &job.failedItems, &job.bytesDownloaded, &job.errorMessage,
+			&job.lastRunAt, &job.nextRunAt, &job.enabled, &job.createdAt, &job.updatedAt); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func restoreWarmupJobsAfterReplacement(ctx context.Context, tx *sql.Tx, mirrors []model.Mirror, jobs []preservedWarmupJob) error {
+	present := make(map[int64]bool, len(mirrors))
+	for _, mirror := range mirrors {
+		present[mirror.ID] = true
+	}
+	for _, job := range jobs {
+		if !present[job.mirrorID] {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO warmup_jobs(
+id,mirror_id,name,cron_expression,url_patterns,status,total_items,completed_items,failed_items,bytes_downloaded,
+error_message,last_run_at,next_run_at,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			job.id, job.mirrorID, job.name, job.cronExpression, job.urlPatterns, job.status, job.totalItems,
+			job.completedItems, job.failedItems, job.bytesDownloaded, job.errorMessage, job.lastRunAt, job.nextRunAt,
+			job.enabled, job.createdAt, job.updatedAt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func replaceUpstreams(ctx context.Context, tx *sql.Tx, mirrorID int64, upstreams []model.Upstream) error {
@@ -293,6 +365,10 @@ func (s *Store) ReplaceConfiguration(ctx context.Context, mirrors []model.Mirror
 		return err
 	}
 	defer tx.Rollback()
+	preservedWarmupJobs, err := loadWarmupJobsForReplacement(ctx, tx)
+	if err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM upstreams`); err != nil {
 		return err
@@ -329,6 +405,9 @@ cache_enabled,cache_profile,rewrite_enabled,html_rewrite_enabled,rewrite_profile
 		if err := replaceUpstreams(ctx, tx, m.ID, m.Upstreams); err != nil {
 			return err
 		}
+	}
+	if err := restoreWarmupJobsAfterReplacement(ctx, tx, mirrors, preservedWarmupJobs); err != nil {
+		return err
 	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM custom_configs`); err != nil {

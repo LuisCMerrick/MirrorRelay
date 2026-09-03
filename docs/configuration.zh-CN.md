@@ -133,13 +133,13 @@ Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Ng
 | 配置 | 说明 |
 |---|---|
 | `warmup.enabled` | 启用智能主动预热与热点预取引擎（默认 `false` 关闭） |
-| `warmup.max_concurrency` | 最大预热并发下载协程数（默认 `4`） |
+| `warmup.max_concurrency` | 全局最大预热并发下载协程数（`1`–`64`，默认 `4`） |
 | `warmup.bandwidth_limit_bps` | 预热下载带宽限制速率（字节/秒，默认 `0` 不限速） |
 | `warmup.timeout` | 单个预热任务执行超时时间（默认 `30m`） |
-| `warmup.retry_count` | 预热对象失败重试次数（默认 `2`） |
-| `warmup.metadata_depth` | 元数据软件包递归解析深度（默认 `1` 自动提取 APT/RPM/PyPI 元数据中的软件包并预热） |
+| `warmup.retry_count` | 预热对象失败重试次数（`0`–`10`，默认 `2`） |
+| `warmup.metadata_depth` | 元数据软件包递归解析深度（`0`–`5`，默认 `1` 自动提取 APT/RPM/PyPI 元数据中的软件包并预热） |
 
-预热任务接受按 UTC 求值的五字段数字 Cron 表达式，或 `@hourly`、`@daily`、`@every <duration>`（最短间隔 `30s`）。数字字段支持 `*`、列表、范围和步长。MirrorRelay 在创建/更新时校验表达式，持久化计算出的 `next_run_at`，绝不会把非法或未知表达式作为兜底任务反复执行。由 Metadata 发现的软件包 URL 会复用已配置的 Frontend 端点；前端 Unix Socket 关闭时会保留 `server.local_address` 与 `server.local_port`。
+预热任务接受有界的仓库相对 Request URI，以及按 UTC 求值的五字段数字 Cron 表达式或 `@hourly`、`@daily`、`@every <duration>`（最短间隔 `30s`）。数字字段支持 `*`、列表、范围和步长。MirrorRelay 在所有任务间全局执行并发与带宽限制，对可重试的对象失败执行重试，并用 `warmup.timeout` 限制整个任务。所有预热连接都会重新进入已配置的 Frontend 端点；Metadata 中发现的绝对软件包链接会转换为经过策略校验的适配器路由，因此预热引擎不会直接连接 Original Upstream。引擎会在创建/更新时校验任务，持久化计算出的 `next_run_at`，重启后恢复遗留的 `running` 调度，并在退出时等待活动 Worker 收拢。
 
 ## Webhook 投递
 

@@ -177,3 +177,45 @@ func TestWebhookBlocksPrivateDestinationByDefault(t *testing.T) {
 		t.Fatalf("private webhook destination was not blocked before dialing: err=%v requests=%d", err, requests)
 	}
 }
+
+func TestWebhookStopIsIdempotentAndRejectsLaterDispatch(t *testing.T) {
+	dispatcher := New(model.WebhookConfig{Enabled: true, URL: "https://webhook.example.test"})
+	dispatcher.Stop()
+	dispatcher.Stop()
+	dispatcher.Dispatch("test", "ignored", "dispatcher is stopped", nil)
+	if len(dispatcher.queue) != 0 {
+		t.Fatal("stopped dispatcher accepted a new event")
+	}
+}
+
+func TestWebhookStopCancelsInFlightDelivery(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+	dispatcher := New(model.WebhookConfig{
+		Enabled: true, URL: server.URL, Events: []string{"test"}, Timeout: time.Minute, AllowHTTP: true, AllowPrivate: true,
+	})
+	dispatcher.Dispatch("test", "blocking", "wait", nil)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("webhook delivery did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		dispatcher.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("webhook shutdown did not cancel the in-flight delivery")
+	}
+}

@@ -64,6 +64,15 @@ func TestCanonicalFingerprintStability(t *testing.T) {
 	if CanonicalFingerprint([]model.Mirror{m4}) == fp1 {
 		t.Fatal("changing package guard policy should alter fingerprint")
 	}
+	hostMode := m1
+	hostMode.PublicMode = "host"
+	hostMode.PublicHost = "packages.example.com"
+	hostMode.PublicPath = "/"
+	hostFingerprint := CanonicalFingerprint([]model.Mirror{hostMode})
+	hostMode.PublicHost = "other.example.com"
+	if CanonicalFingerprint([]model.Mirror{hostMode}) == hostFingerprint {
+		t.Fatal("changing a host-mode repository routing host should alter fingerprint")
+	}
 	custom := []model.CustomConfig{{Name: "headers", Context: "server", Enabled: true, Content: "add_header X-Test one;\r\n"}}
 	customFingerprint := CanonicalClusterConfigFingerprint([]model.Mirror{m1}, custom)
 	custom[0].Content = "add_header X-Test one;\n"

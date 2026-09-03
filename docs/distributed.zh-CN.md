@@ -176,7 +176,7 @@ Protocol v2 有意不兼容 Protocol v1。升级后重新启用路由前，需�
 MirrorRelay 提供了一键式及自动化的多节点边缘配置分发与缓存广播机制：
 
 1. **完整 Active 配置同步**：
-   - Coordinator 从完整的 Active 仓库与自定义 Managed Upstream Nginx 配置快照计算权威指纹，绝不会把 Edge 指纹采纳为集群权威。数据库本地 ID/时间戳被排除，仓库关联使用稳定 Slug，自定义内容统一换行符。
+   - Coordinator 从完整的 Active 仓库与自定义 Managed Upstream Nginx 配置快照计算权威指纹，绝不会把 Edge 指纹采纳为集群权威。数据库本地 ID/时间戳被排除，仓库关联使用稳定 Slug，自定义内容统一换行符；`public_host` 在 Host 模式下作为路由键纳入指纹，而 Path 模式的节点本地 Host 提示仍被排除。
    - 通过 Web UI 上的「同步全部节点」按钮或 REST API（`POST /admin/api/v1/cluster/sync`），Coordinator 向每个启用的 Edge 的 `POST /api/v1/cluster/sync/apply` 并发发送完整 Active 仓库与自定义配置快照。
    - Edge 先验证 Protocol、Coordinator 身份/Epoch、单调递增 Generation、Payload 指纹、Capabilities、仓库与路由冲突，再进入正常的 Managed Upstream Nginx Candidate 校验、原子发布与 Graceful Reload 流程。校验或 Reload 失败时保留先前 Active 配置。
    - HTTP 200 本身不代表成功；Coordinator 只接受严格 JSON 中明确的 `applied` 状态以及完全匹配的指纹、协议、Generation 与 Capabilities，之后才把 Edge 记录为已同步。

@@ -7,19 +7,35 @@ import { L } from './i18n.js';
 let restartCompleted = async () => {};
 let restartInProgress = false;
 
+
 export function onRestartCompleted(handler) {
   restartCompleted = handler;
 }
 
 const restartButtons = () => document.querySelectorAll('#restart-header, #restart-sidebar, #restart-service-btn, #restart-settings-btn, #restart-system-btn');
 
+function setButtonLabel(btn, text) {
+  const span = btn.querySelector('span');
+  if (span) {
+    span.textContent = text;
+    return;
+  }
+  for (const child of btn.childNodes) {
+    if (child.nodeType === 3 && child.textContent.trim()) {
+      child.textContent = ' ' + text;
+      return;
+    }
+  }
+  btn.textContent = text;
+}
+
 function resetRestartButtons() {
   restartButtons().forEach(btn => {
     btn.disabled = false;
-    if (btn.id === 'restart-sidebar') btn.textContent = L('Restart');
-    else if (btn.id === 'restart-service-btn') btn.textContent = L('Restart now');
-    else if (btn.id === 'restart-settings-btn') btn.textContent = L('Restart MirrorRelay');
-    else btn.textContent = L('Restart service');
+    if (btn.id === 'restart-sidebar') setButtonLabel(btn, L('Restart'));
+    else if (btn.id === 'restart-service-btn') setButtonLabel(btn, L('Restart now'));
+    else if (btn.id === 'restart-settings-btn') setButtonLabel(btn, L('Restart MirrorRelay'));
+    else setButtonLabel(btn, L('Restart service'));
   });
 }
 
@@ -29,7 +45,7 @@ export async function triggerRestart() {
   restartInProgress = true;
   restartButtons().forEach(btn => {
     btn.disabled = true;
-    btn.textContent = L('Restarting...');
+    setButtonLabel(btn, L('Restarting...'));
   });
   try {
     notice(L('Requesting service restart...'));

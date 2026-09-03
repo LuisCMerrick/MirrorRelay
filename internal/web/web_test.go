@@ -334,3 +334,64 @@ func TestEmbeddedUILocaleResourcesCoverStaticReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFrontendHardeningAndFixes(t *testing.T) {
+	assets := FS()
+	read := func(name string) string {
+		t.Helper()
+		value, err := fs.ReadFile(assets, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(value)
+	}
+
+	en := read("locales/en.js")
+	zh := read("locales/zh.js")
+	for _, expected := range []string{`"idle": "Idle"`, `"cancelled": "Cancelled"`} {
+		if !strings.Contains(en, expected) {
+			t.Errorf("en.js missing state label %q", expected)
+		}
+	}
+	for _, expected := range []string{`"idle": "空闲"`, `"cancelled": "已取消"`} {
+		if !strings.Contains(zh, expected) {
+			t.Errorf("zh.js missing state label %q", expected)
+		}
+	}
+
+	cluster := read("js/pages/cluster.js")
+	if !strings.Contains(cluster, "stateLabel(node.health_status") || !strings.Contains(cluster, "stateLabel(node.config_status") {
+		t.Error("cluster.js does not use stateLabel for edge node statuses")
+	}
+
+	settings := read("js/pages/settings.js")
+	if !strings.Contains(settings, "input.dataset.redacted === 'true' && value === ''") {
+		t.Error("settings.js does not preserve redacted secrets when left blank")
+	}
+	if !strings.Contains(settings, "date(v.created_at)") {
+		t.Error("settings.js history does not use locale-aware date helper")
+	}
+
+	restart := read("js/restart.js")
+	if !strings.Contains(restart, "setButtonLabel") {
+		t.Error("restart.js does not preserve SVG icons on restart buttons")
+	}
+
+	forms := read("js/forms.js")
+	if !strings.Contains(forms, "export function parseLines") {
+		t.Error("forms.js does not export parseLines")
+	}
+
+	mirrorForm := read("js/pages/mirrorForm.js")
+	if !strings.Contains(mirrorForm, "blocked_packages: parseLines(") || !strings.Contains(mirrorForm, "allowed_packages: parseLines(") {
+		t.Error("mirrorForm.js does not use parseLines for package patterns")
+	}
+
+	cache := read("js/pages/cache.js")
+	if !strings.Contains(cache, "event.target.reset()") {
+		t.Error("cache.js does not reset warmup form on successful creation")
+	}
+	if !strings.Contains(cache, "title=\"${esc(job.error_message || '')}\"") {
+		t.Error("cache.js does not expose error_message tooltip on warmup status badge")
+	}
+}

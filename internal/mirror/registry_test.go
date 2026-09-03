@@ -99,6 +99,39 @@ func TestActiveSnapshotIsExplicitAndHealthDoesNotImportDesiredState(t *testing.T
 	}
 }
 
+func TestRegistrySnapshotDeepCopiesRepositoryConfiguration(t *testing.T) {
+	values := []model.Mirror{{
+		ID: 1, Slug: "repo", Enabled: true,
+		HeaderAdd:       map[string]string{"Authorization": "Bearer repository-secret"},
+		HeaderRemove:    []string{"X-Legacy"},
+		BlockedPackages: []string{"blocked-*"},
+		AllowedPackages: []string{"*.rpm"},
+		Help: model.HelpConfig{
+			Variants: []model.HelpVariant{{Key: "stable", Label: "Stable"}},
+			Formats:  []model.HelpFormat{{Key: "deb", Label: "DEB"}},
+		},
+	}}
+	registry := NewRegistry(nil)
+	registry.Replace(values)
+	values[0].HeaderAdd["Authorization"] = "mutated input"
+	values[0].BlockedPackages[0] = "mutated-input-*"
+
+	active, found := registry.GetByID(1)
+	if !found || active.HeaderAdd["Authorization"] != "Bearer repository-secret" || active.BlockedPackages[0] != "blocked-*" || active.PackagePolicy == nil {
+		t.Fatalf("active snapshot lost repository configuration: %+v", active)
+	}
+	active.HeaderAdd["Authorization"] = "mutated output"
+	active.BlockedPackages[0] = "mutated-output-*"
+	active.Help.Variants[0].Label = "Mutated"
+	active.PackagePolicy.Blocked[0].Pattern = "mutated-policy-*"
+
+	again, _ := registry.GetByID(1)
+	if again.HeaderAdd["Authorization"] != "Bearer repository-secret" || again.BlockedPackages[0] != "blocked-*" ||
+		again.Help.Variants[0].Label != "Stable" || again.PackagePolicy.Blocked[0].Pattern != "blocked-*" {
+		t.Fatalf("caller mutated the immutable active snapshot: %+v", again)
+	}
+}
+
 type mutableLoader struct{ values []model.Mirror }
 
 func (m *mutableLoader) ListMirrors(context.Context) ([]model.Mirror, error) { return m.values, nil }

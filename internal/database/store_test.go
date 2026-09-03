@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -510,6 +511,82 @@ func TestReplaceConfigurationAndSessionRevoke(t *testing.T) {
 	listC, err := store.ListCustomConfigs(ctx)
 	if err != nil || len(listC) != 1 || listC[0].Name != "c1" {
 		t.Fatalf("custom configs not restored properly: %+v", listC)
+	}
+}
+
+func TestRepositorySnapshotReplacementPreservesWarmupJobsForSurvivingMirrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		replace func(context.Context, *Store, []model.Mirror) error
+	}{
+		{
+			name: "mirrors",
+			replace: func(ctx context.Context, store *Store, mirrors []model.Mirror) error {
+				return store.ReplaceMirrors(ctx, mirrors)
+			},
+		},
+		{
+			name: "complete configuration",
+			replace: func(ctx context.Context, store *Store, mirrors []model.Mirror) error {
+				return store.ReplaceConfiguration(ctx, mirrors, []model.CustomConfig{})
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			ctx := t.Context()
+			first, err := store.CreateMirror(ctx, model.Mirror{
+				Name: "First", Slug: "first", Type: "generic", Enabled: true,
+				Upstreams: []model.Upstream{{URL: "https://first.example", Enabled: true}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := store.CreateMirror(ctx, model.Mirror{
+				Name: "Second", Slug: "second", Type: "generic", Enabled: true,
+				Upstreams: []model.Upstream{{URL: "https://second.example", Enabled: true}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			kept, err := store.CreateWarmupJob(ctx, model.WarmupJob{
+				MirrorID: first.ID, Name: "keep", URLPatterns: []string{"/one", "/two"}, Enabled: true,
+				Status: "completed", TotalItems: 2, CompletedItems: 2, BytesDownloaded: 1234,
+				LastRunAt: "2026-08-29T01:02:03Z", NextRunAt: "2026-08-30T01:02:03Z",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.CreateWarmupJob(ctx, model.WarmupJob{
+				MirrorID: second.ID, Name: "remove", URLPatterns: []string{"/gone"}, Enabled: true,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			first.Name = "First updated"
+			if err := test.replace(ctx, store, []model.Mirror{first}); err != nil {
+				t.Fatal(err)
+			}
+			jobs, err := store.ListWarmupJobs(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(jobs) != 1 {
+				t.Fatalf("warm-up jobs after replacement = %+v, want one surviving job", jobs)
+			}
+			actual := jobs[0]
+			if actual.ID != kept.ID || actual.MirrorID != first.ID || actual.MirrorName != "First updated" ||
+				actual.Name != kept.Name || !actual.Enabled || actual.Status != "completed" || actual.TotalItems != 2 ||
+				actual.CompletedItems != 2 || actual.BytesDownloaded != 1234 || actual.LastRunAt != kept.LastRunAt ||
+				actual.NextRunAt != kept.NextRunAt || !slices.Equal(actual.URLPatterns, kept.URLPatterns) {
+				t.Fatalf("surviving warm-up job changed: got %+v want %+v", actual, kept)
+			}
+		})
 	}
 }
 

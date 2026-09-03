@@ -21,6 +21,7 @@ type canonicalMirror struct {
 	Enabled            bool                `json:"enabled"`
 	Description        string              `json:"description"`
 	PublicMode         string              `json:"public_mode"`
+	PublicHost         string              `json:"public_host"`
 	PublicPath         string              `json:"public_path"`
 	ProxyMode          string              `json:"proxy_mode"`
 	CacheEnabled       bool                `json:"cache_enabled"`
@@ -188,6 +189,9 @@ func canonicalizeRepositories(repositories []model.Mirror) []canonicalMirror {
 			AllowedPackages:    allowedPackages,
 			Help:               m.Help,
 			Upstreams:          upstreams,
+		}
+		if strings.EqualFold(strings.TrimSpace(m.PublicMode), "host") {
+			cm.PublicHost = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(m.PublicHost), "."))
 		}
 		canonical = append(canonical, cm)
 	}
