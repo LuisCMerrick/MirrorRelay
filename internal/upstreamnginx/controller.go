@@ -126,14 +126,24 @@ func (c *Controller) ValidateWithCustom(ctx context.Context, repositories []mode
 	}
 	c.versionMu.Lock()
 	defer c.versionMu.Unlock()
-	versionDir, err := c.writeVersion(generated)
+	if err := c.ensureRuntime(); err != nil {
+		return Generated{}, "", err
+	}
+	// Validation owns only this temporary directory, never a published version.
+	versionDir, err := os.MkdirTemp(filepath.Join(c.cfg.UpstreamNginx.Prefix, "versions"), ".validate-")
 	if err != nil {
+		return Generated{}, "", err
+	}
+	defer os.RemoveAll(versionDir)
+	if err := c.writeVersionFiles(generated, versionDir, versionDir); err != nil {
 		return Generated{}, "", err
 	}
 	out, err := c.runUpstreamNginx(ctx, "-t", "-p", withTrailingSlash(c.cfg.UpstreamNginx.Prefix), "-c", filepath.Join(versionDir, "nginx.conf"))
 	if err != nil {
-		_ = os.RemoveAll(versionDir)
 		return generated, out, fmt.Errorf("nginx -t failed: %w", err)
+	}
+	if _, err := c.writeVersion(generated); err != nil {
+		return Generated{}, out, err
 	}
 	return generated, strings.TrimSpace(out), nil
 }
@@ -434,26 +444,40 @@ func (c *Controller) writeVersion(g Generated) (string, error) {
 	if _, err := os.Stat(filepath.Join(versionDir, "nginx.conf")); err == nil {
 		return versionDir, nil
 	}
-	if err := os.MkdirAll(filepath.Join(versionDir, "generated"), 0o750); err != nil {
+	staging, err := os.MkdirTemp(filepath.Join(c.cfg.UpstreamNginx.Prefix, "versions"), ".write-")
+	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Join(versionDir, "custom"), 0o750); err != nil {
+	defer os.RemoveAll(staging)
+	if err := c.writeVersionFiles(g, staging, versionDir); err != nil {
 		return "", err
 	}
-	main := strings.ReplaceAll(g.Main, filepath.Join(c.cfg.UpstreamNginx.Prefix, "current"), versionDir)
-	if err := writeFileAtomic(filepath.Join(versionDir, "nginx.conf"), []byte(main), 0o640); err != nil {
+	if err := os.Rename(staging, versionDir); err != nil {
 		return "", err
 	}
+	return versionDir, nil
+}
+
+func (c *Controller) writeVersionFiles(g Generated, directory, includeDirectory string) error {
+	if err := os.Chmod(directory, 0o750); err != nil {
+		return err
+	}
+	for _, name := range []string{"generated", "custom"} {
+		if err := os.MkdirAll(filepath.Join(directory, name), 0o750); err != nil {
+			return err
+		}
+	}
+	main := strings.ReplaceAll(g.Main, filepath.Join(c.cfg.UpstreamNginx.Prefix, "current"), includeDirectory)
 	for name, content := range g.Files {
 		dir := "generated"
 		if strings.HasPrefix(name, "custom-") {
 			dir = "custom"
 		}
-		if err := writeFileAtomic(filepath.Join(versionDir, dir, name), []byte(content), 0o640); err != nil {
-			return "", err
+		if err := writeFileAtomic(filepath.Join(directory, dir, name), []byte(content), 0o640); err != nil {
+			return err
 		}
 	}
-	return versionDir, nil
+	return writeFileAtomic(filepath.Join(directory, "nginx.conf"), []byte(main), 0o640)
 }
 
 func (c *Controller) publish(hash string) error {

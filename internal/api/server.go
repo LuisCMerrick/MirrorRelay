@@ -36,10 +36,7 @@ type Store interface {
 	CreateUser(context.Context, string, string, string) error
 	ListUsers(context.Context) ([]model.User, error)
 	DeleteUser(context.Context, int64) error
-	PutSession(context.Context, string, int64, string, string, string, time.Time) error
-	GetSession(context.Context, string) (int64, string, string, string, time.Time, error)
-	DeleteSession(context.Context, string) error
-	DeleteUserSessions(context.Context, int64, ...string) error
+	auth.SessionStore
 	CreateMirror(context.Context, model.Mirror) (model.Mirror, error)
 	UpdateMirror(context.Context, model.Mirror) (model.Mirror, error)
 	ListMirrors(context.Context) ([]model.Mirror, error)

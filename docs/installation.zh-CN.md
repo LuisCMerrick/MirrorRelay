@@ -139,6 +139,8 @@ sudo usermod -aG mirrorrelay www-data
 
 升级会替换 MirrorRelay、与其版本绑定的 Managed Upstream Nginx、systemd Unit 和内置文件，但保留 `/etc/mirrorrelay/config.yaml`、`/var/lib/mirrorrelay/mirrorrelay.db`、配置历史和 `/var/cache/mirrorrelay`。
 
+v0.0.22 不需要数据库迁移。升级后，应重新生成并审核 External Shared Nginx 接入片段，再激活新生成的 Managed Upstream Nginx 配置，使加固后的内部仓库 Location 与响应头策略生效。仓库 HTML/SVG 现在运行在不透明来源 Sandbox 中；若现有部署有意让仓库主动内容共享管理来源，应把该内容迁移到独立的可信来源，而不是放宽 Sandbox。
+
 v0.0.21 会在内存中迁移旧 Release 保存的 Web UI 设置：旧记录缺少的字段继承当前 YAML/默认值，旧版数字形式的预热 Timeout 会被规范化。它取代已撤回的 v0.0.20 Release。已经安装 v0.0.20 软件包的实例可正常升级到 v0.0.21；不要 Purge 或重建实例，持久状态会保留在原位。
 
 手动触发的开发构建使用 `0.0.1.git.<提交时间戳>.<提交>` 版本，使 DEB 与 RPM 包管理器能够按时间顺序比较快照。已发布 Release 与 Workflow 中显式指定的版本保持原值；直接 Push 不会触发远程 Release 构建。手动运行 Release Build 默认不发布容器；只有显式选择 `publish_container` 才会推送不可变的开发版本标签和 `edge`，并保持稳定 Release 的 `latest` 标签不变。

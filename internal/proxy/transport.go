@@ -106,12 +106,15 @@ func (t *upstreamNginxTransport) metaForUpstream(ctx context.Context, meta reque
 	meta.credentialOrigin = cloneURL(logicalURL)
 	meta.cacheKey = cacheKey
 	meta.objectID = objectID
-	meta.validatorKey = metadataValidatorKey(meta.repository, repositoryUpstreamIdentity(upstream, meta.auxiliary), meta.relativePath,
-		logicalURL.RawQuery, meta.publicBase, meta.auxiliary, acceptsGzip(meta.clientEncoding))
+	meta.validatorKey = metadataValidatorKey(meta.repository, cacheKey, meta.acceptHeader,
+		meta.publicBase, meta.auxiliary, acceptsGzip(meta.clientEncoding))
 	return meta, nil
 }
 
 func (t *upstreamNginxTransport) roundTrip(original *http.Request, meta requestMeta, upstreamID int64) (*http.Response, error) {
+	if err := validateRepositoryTarget(meta.repository, meta.logicalURL, meta.cacheBypass); err != nil {
+		return nil, err
+	}
 	out := original.Clone(context.WithValue(original.Context(), requestMetaKey{}, meta))
 	out.URL = &url.URL{Scheme: "http", Host: "mirrorrelay-upstream-nginx-internal"}
 	out.Host = "mirrorrelay-upstream-nginx-internal"
@@ -187,6 +190,10 @@ func (t *upstreamNginxTransport) followRedirects(original *http.Request, respons
 			return nil, meta, errors.New("invalid redirect location")
 		}
 		target := meta.logicalURL.ResolveReference(parsed)
+		if err := validateRepositoryTarget(meta.repository, target, meta.cacheBypass); err != nil {
+			_ = response.Body.Close()
+			return nil, meta, err
+		}
 		if !isAllowedRewriteOrigin(meta.repository, target) {
 			_ = response.Body.Close()
 			return nil, meta, fmt.Errorf("redirect target %s is not allowed", target.String())
@@ -199,6 +206,8 @@ func (t *upstreamNginxTransport) followRedirects(original *http.Request, respons
 		_ = response.Body.Close()
 		next := nextRedirectRequest(redirectRequest, meta.logicalURL, target, response.StatusCode)
 		meta.dynamicTarget = target
+		// A redirect chain must be revalidated through the transport on later requests.
+		meta.validatorCacheable = false
 		meta.logicalURL = cloneURL(target)
 		meta.cacheClass = classifyObject(meta.repository, target.EscapedPath(), target)
 		response, err = t.roundTrip(next, meta, upstreamID)

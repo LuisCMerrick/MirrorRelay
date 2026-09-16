@@ -90,6 +90,18 @@ ON CONFLICT(id_hash) DO UPDATE SET user_id=excluded.user_id,username=excluded.us
 	return err
 }
 
+// RefreshSession never creates a row: revocation wins over an in-flight refresh.
+func (s *Store) RefreshSession(ctx context.Context, idHash string, now, expires time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE sessions SET expires_at=?,updated_at=?
+WHERE id_hash=? AND julianday(expires_at)>julianday(?) AND julianday(expires_at)>julianday('now')`,
+		expires.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano), idHash, now.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return false, err
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
+}
+
 func (s *Store) GetSession(ctx context.Context, idHash string) (int64, string, string, string, time.Time, error) {
 	var userID int64
 	var username, role, csrf, expires string

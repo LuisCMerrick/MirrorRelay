@@ -26,6 +26,72 @@ type routeError struct {
 func (e *routeError) Error() string { return e.text }
 
 func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url.URL, bool, *routeError) {
+	repository, relative, target, auxiliary, err := e.resolveRequestRoute(request)
+	if err != nil {
+		return repository, relative, target, auxiliary, err
+	}
+	if target != nil {
+		err = validateRepositoryTarget(repository, target, isTokenRoute(request.URL.Path))
+	} else if auxiliary {
+		logical, parseErr := repositoryURL(repository, repository.Upstreams[0], relative, request.URL.RawQuery, true)
+		if parseErr != nil {
+			err = &routeError{http.StatusBadRequest, "invalid auxiliary target"}
+		} else {
+			err = validateRepositoryTarget(repository, logical, false)
+		}
+	} else {
+		err = validateRepositoryPath(repository, relative, false)
+	}
+	return repository, relative, target, auxiliary, err
+}
+
+// Validate decoded target paths, not the opaque adapter URL used to reach them.
+// Paths beneath a configured upstream base use the same policy names as direct
+// repository routes; external rewrite hosts use origin-relative paths.
+func validateRepositoryTarget(repository model.Mirror, target *url.URL, token bool) *routeError {
+	if target == nil {
+		return &routeError{http.StatusBadRequest, "missing repository target"}
+	}
+	if unsafeRepositoryPath(target.Path) {
+		return &routeError{http.StatusBadRequest, "repository path contains an unsafe segment"}
+	}
+	matched := false
+	for _, upstream := range repository.Upstreams {
+		base, err := effectiveRepositoryBaseURL(repository, upstream)
+		configured, parseErr := url.Parse(upstream.URL)
+		if err != nil || parseErr != nil || (!sameOrigin(base, target) && !sameOrigin(configured, target)) {
+			continue
+		}
+		prefix := strings.TrimRight(base.Path, "/") + "/"
+		if strings.HasPrefix(target.Path, prefix) {
+			matched = true
+			// Overlapping upstream bases must not let a more specific base
+			// strip a directory that is covered by a blocking rule.
+			if err := validateRepositoryPath(repository, "/"+strings.TrimPrefix(target.Path, prefix), token); err != nil {
+				return err
+			}
+		}
+	}
+	if matched {
+		return nil
+	}
+	return validateRepositoryPath(repository, target.Path, token)
+}
+
+func validateRepositoryPath(repository model.Mirror, relative string, token bool) *routeError {
+	if unsafeRepositoryPath(relative) {
+		return &routeError{http.StatusBadRequest, "repository path contains an unsafe segment"}
+	}
+	// Token exchange is authentication, not a package download.
+	if !token {
+		if blocked, reason := isPackageBlocked(repository, relative); blocked {
+			return &routeError{http.StatusForbidden, reason}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) resolveRequestRoute(request *http.Request) (model.Mirror, string, *url.URL, bool, *routeError) {
 	if strings.HasPrefix(request.URL.Path, auxiliaryUpstreamPrefix) {
 		if containsEncodedPathSeparator(request.URL.EscapedPath()) {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "upstream auxiliary resource path contains an encoded separator"}
@@ -74,9 +140,6 @@ func (e *Engine) routeRequest(request *http.Request) (model.Mirror, string, *url
 	}
 	if unsafeRepositoryPath(relative) {
 		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "repository path contains an unsafe segment"}
-	}
-	if blocked, reason := isPackageBlocked(repository, relative); blocked {
-		return model.Mirror{}, "", nil, false, &routeError{status: http.StatusForbidden, text: reason}
 	}
 	if !strings.HasPrefix(relative, "/__fetch/") {
 		if !strings.HasPrefix(relative, "/__fetch_template/") {
@@ -288,9 +351,9 @@ func classifyObject(repository model.Mirror, rawPath string, dynamic *url.URL) s
 	return "metadata"
 }
 
-func metadataValidatorKey(repository model.Mirror, upstreamIdentity, objectPath, rawQuery, publicBase string, auxiliary, gzip bool) string {
+func metadataValidatorKey(repository model.Mirror, cacheKey, acceptHeader, publicBase string, auxiliary, gzip bool) string {
 	value := strings.Join([]string{
-		strconv.FormatInt(repository.ID, 10), upstreamIdentity, objectPath, rawQuery, publicBase,
+		strconv.FormatInt(repository.ID, 10), cacheKey, acceptHeader, publicBase,
 		repository.PublicMode, repository.PublicPath, repository.StripPrefix, repository.AddPrefix, repository.HostRewrite,
 		repository.ProfileVersion, repository.RewriteProfile, strings.Join(repository.RewriteHosts, ","),
 		strconv.FormatBool(repository.HTMLRewriteEnabled), strconv.FormatBool(auxiliary), strconv.FormatBool(gzip),

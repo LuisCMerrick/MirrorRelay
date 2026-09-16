@@ -51,6 +51,12 @@ jobs:
             exit 1
           fi
           MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
+      - name: Verify repository browser-origin isolation
+        run: |
+          browser_binary="$(command -v google-chrome)"
+          MIRRORRELAY_TEST_BROWSER="$browser_binary" \
+          MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
+            go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginxBrowserOriginIsolation$' -count=1 -timeout=180s
       - name: Build both release architectures
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o /tmp/mirrorrelay-amd64 ./cmd/mirrorrelay

@@ -205,6 +205,11 @@ func (g *Generator) writeProxyHeaders(out *strings.Builder) {
 	out.WriteString("            proxy_request_buffering off;\n")
 	out.WriteString("            proxy_force_ranges on;\n")
 	out.WriteString("            proxy_redirect off;\n")
+	// Origin responses must never control internal routing or transport policy.
+	out.WriteString("            proxy_ignore_headers X-Accel-Redirect X-Accel-Expires X-Accel-Limit-Rate X-Accel-Buffering X-Accel-Charset;\n")
+	fmt.Fprintf(out, "            add_header Content-Security-Policy %s always;\n", strconv.Quote(security.RepositoryContentSecurityPolicy))
+	out.WriteString("            proxy_hide_header X-Content-Type-Options;\n")
+	out.WriteString("            add_header X-Content-Type-Options nosniff always;\n")
 	out.WriteString(indent(internalHeaderClears(), "            "))
 	out.WriteByte('\n')
 }

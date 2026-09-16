@@ -32,6 +32,7 @@ type Sessions struct {
 
 type SessionStore interface {
 	PutSession(context.Context, string, int64, string, string, string, time.Time) error
+	RefreshSession(context.Context, string, time.Time, time.Time) (bool, error)
 	GetSession(context.Context, string) (int64, string, string, string, time.Time, error)
 	DeleteSession(context.Context, string) error
 	DeleteUserSessions(context.Context, int64, ...string) error
@@ -123,16 +124,30 @@ func (s *Sessions) Get(r *http.Request) (Session, bool) {
 
 	// Only refresh sliding expiration if remaining TTL is less than half the total TTL
 	if time.Until(session.ExpiresAt) < s.ttl/2 {
-		newExpiry := time.Now().Add(s.ttl)
-		session.ExpiresAt = newExpiry
+		now := time.Now()
+		newExpiry := now.Add(s.ttl)
 		if s.store != nil {
-			if err := s.store.PutSession(r.Context(), key, session.UserID, session.Username, session.Role, session.CSRFToken, newExpiry); err != nil {
+			refreshed, err := s.store.RefreshSession(r.Context(), key, now, newExpiry)
+			if err != nil {
 				slog.Warn("failed to refresh session expiration", "user", session.Username, "error", err)
 			}
+			if err != nil || !refreshed {
+				return Session{}, false
+			}
+			session.ExpiresAt = newExpiry
+		} else {
+			// A concurrent logout/revocation must not be undone by a stale read.
+			s.mu.Lock()
+			current, exists := s.items[cookie.Value]
+			if !exists || !current.ExpiresAt.After(now) {
+				s.mu.Unlock()
+				return Session{}, false
+			}
+			session = current
+			session.ExpiresAt = newExpiry
+			s.items[cookie.Value] = session
+			s.mu.Unlock()
 		}
-		s.mu.Lock()
-		s.items[cookie.Value] = session
-		s.mu.Unlock()
 	}
 
 	return session, true

@@ -13,6 +13,8 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 3. **禁止绕过 TLS 证书链校验**：上游 HTTPS 连接始终强制执行严格的证书链与主机名验证（`proxy_ssl_verify on`），系统拒绝任何不安全证书绕过选项。
 4. **内部 Header 绝对净化**：客户端请求中携带的 `X-Mirror-Internal-*` 前缀请求头一律在代理前被强制剥离，杜绝内部路由上下文伪造。
 5. **最小权限原则**：系统以非特权专属账户 `mirrorrelay:mirrorrelay` 运行，并在 systemd 服务单元中开启全方位沙箱加固。
+6. **不信任上游控制头**：数据面所有面向源站的 Location 都忽略 `X-Accel-Redirect`、`X-Accel-Expires`、`X-Accel-Limit-Rate`、`X-Accel-Buffering` 和 `X-Accel-Charset`。只有 Go 完成授权后的响应可以指示外部入口加速；源站不能借内部跳转访问其他仓库或软件包。
+7. **浏览器 Origin 隔离**：所有仓库响应都强制携带不含 `allow-same-origin` 的 CSP 沙箱及 `X-Content-Type-Options: nosniff`，覆盖 HTML、SVG、重写文档和零拷贝下载，不依赖 MIME 类型，也不受 `?safe-ui=1` 影响。允许 DOM 脚本和下载，但禁止 Fetch、Worker、表单、插件和被嵌入；上游页面不能访问管理 Origin 的存储或读取管理响应。生产环境还应设置独立的 `admin.host`，且该管理 Origin 不提供仓库内容。不要在外层代理中移除沙箱，也不要向其中加入 `allow-same-origin`。相关依据见 [CSP sandbox 语义](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/sandbox) 和 [Nginx 上游响应头处理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_ignore_headers)。
 
 ---
 
@@ -31,6 +33,8 @@ MirrorRelay 从架构底层贯彻零信任网络边界、严格的上游源隔�
 ---
 
 ## 3. 身份认证与会话管理
+
+会话滑动续期只更新仍存在且未过期的记录；更新失败或未命中记录时拒绝认证。登出、账户会话撤销及密码恢复之后，旧请求不能通过重新插入会话使旧 Token 恢复有效。
 
 - **首次注册**：系统不提供默认管理员密码，也不通过环境变量预置管理员。用户表为空时，只允许通过配置的管理 Host/Path 与 CIDR 边界注册一次初始 Admin；数据库原子条件保证并发请求中只能有一个成功。
 - **密码哈希算法**：管理员密码限制为最多 1024 字节，并采用 **Argon2id**（内存：64 MB，迭代轮数：3，最多 4 个线程）高强度哈希算法。
@@ -87,6 +91,10 @@ CapabilityBoundingSet=
 ---
 
 ## 6. 软件供应链安全与包名黑白名单防御（Package Name Guard）
+
+直接路径、`__fetch`、`__fetch_template` 和签名辅助入口均按解码后的目标路径检查包策略，并在每次跟随重定向前重新检查。位于上游 Base（含 `add_prefix`）之内的目标使用仓库相对路径，其他允许的 Origin 使用源站相对路径；存在重叠 Base 时必须满足所有匹配范围的策略。认证 Token 交换不是软件包下载，因此不适用包名规则，但仍执行 URL、Origin 和路径校验。
+
+本地重写元数据的 `304` 仅用于仍新鲜的公开表示：关闭仓库缓存或携带凭据的请求始终访问数据面，即使启用了认证正文缓存。请求/响应缓存指令、响应 Cookie 或不支持的 `Vary` 维度会禁用本地复用。验证器身份包含内容协商信息和正文缓存代际；全局、仓库及对象清理都会使旧验证器失效，也覆盖清理后才完成的旧响应。
 
 MirrorRelay 内置企业级供应链投毒与依赖混淆（Dependency Confusion）主动防御机制：
 - **包名黑名单拦截（`blocked_packages`）**：支持正则表达式与 Glob 通配符（如 `^malicious-.*`、`bad-pkg-*.tar.gz`），实时阻断受污染恶意包的拉取。

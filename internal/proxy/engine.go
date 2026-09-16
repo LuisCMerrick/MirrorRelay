@@ -29,26 +29,27 @@ type selectedMetaKey struct{}
 type writerContextKey struct{}
 
 type requestMeta struct {
-	repository       model.Mirror
-	relativePath     string
-	cacheClass       string
-	cacheKey         string
-	authPartition    string
-	objectID         string
-	publicBase       string
-	requestID        string
-	clientIP         string
-	clientEncoding   string
-	acceptHeader     string
-	validatorKey     string
-	dynamicTarget    *url.URL
-	logicalURL       *url.URL
-	credentialOrigin *url.URL
-	auxiliary        bool
-	cacheBypass      bool
-	followRedirects  bool
-	rewriteMetadata  bool
-	rewriteHTML      bool
+	repository         model.Mirror
+	relativePath       string
+	cacheClass         string
+	cacheKey           string
+	authPartition      string
+	objectID           string
+	publicBase         string
+	requestID          string
+	clientIP           string
+	clientEncoding     string
+	acceptHeader       string
+	validatorKey       string
+	validatorCacheable bool
+	dynamicTarget      *url.URL
+	logicalURL         *url.URL
+	credentialOrigin   *url.URL
+	auxiliary          bool
+	cacheBypass        bool
+	followRedirects    bool
+	rewriteMetadata    bool
+	rewriteHTML        bool
 }
 
 type selectedMeta struct {
@@ -144,6 +145,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		http.Error(w, routeErr.Error(), routeErr.status)
 		return
 	}
+	security.SandboxRepositoryResponse(w.Header())
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -195,6 +197,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			credentialOrigin = cloneURL(dynamic)
 		}
 	}
+	if err := validateRepositoryTarget(repository, logicalURL, tokenRoute); err != nil {
+		http.Error(w, err.Error(), err.status)
+		return
+	}
 	cacheKey, objectID, keyErr := e.cacheKeys.Key(request.Context(), repository.ID, upstreamIdentity, objectPath, objectQuery)
 	if keyErr != nil {
 		http.Error(w, "cache generation state unavailable", http.StatusServiceUnavailable)
@@ -205,39 +211,44 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	cacheKey = representationCacheKey(cacheKey, repository, class, acceptHeader) + authPartition
 	rewriteMetadata := repository.RewriteEnabled && class == "metadata"
 	rewriteHTML := repository.HTMLRewriteEnabled && class == "metadata"
-	validatorKey := metadataValidatorKey(repository, upstreamIdentity, objectPath, objectQuery, publicBase, auxiliary,
+	validatorKey := metadataValidatorKey(repository, cacheKey, acceptHeader, publicBase, auxiliary,
 		acceptsGzip(request.Header.Get("Accept-Encoding")))
 	meta := requestMeta{
-		repository:       repository,
-		relativePath:     relative,
-		cacheClass:       class,
-		cacheKey:         cacheKey,
-		authPartition:    authPartition,
-		objectID:         objectID,
-		publicBase:       publicBase,
-		requestID:        requestID,
-		clientIP:         clientIP,
-		clientEncoding:   request.Header.Get("Accept-Encoding"),
-		acceptHeader:     acceptHeader,
-		validatorKey:     validatorKey,
-		dynamicTarget:    dynamic,
-		logicalURL:       logicalURL,
-		credentialOrigin: credentialOrigin,
-		auxiliary:        auxiliary,
-		cacheBypass:      tokenRoute,
-		followRedirects:  shouldFollowRedirects(repository, class, tokenRoute),
-		rewriteMetadata:  rewriteMetadata,
-		rewriteHTML:      rewriteHTML,
+		repository:         repository,
+		relativePath:       relative,
+		cacheClass:         class,
+		cacheKey:           cacheKey,
+		authPartition:      authPartition,
+		objectID:           objectID,
+		publicBase:         publicBase,
+		requestID:          requestID,
+		clientIP:           clientIP,
+		clientEncoding:     request.Header.Get("Accept-Encoding"),
+		acceptHeader:       acceptHeader,
+		validatorKey:       validatorKey,
+		validatorCacheable: !tokenRoute && validatorRequestCacheable(repository, request),
+		dynamicTarget:      dynamic,
+		logicalURL:         logicalURL,
+		credentialOrigin:   credentialOrigin,
+		auxiliary:          auxiliary,
+		cacheBypass:        tokenRoute,
+		followRedirects:    shouldFollowRedirects(repository, class, tokenRoute),
+		rewriteMetadata:    rewriteMetadata,
+		rewriteHTML:        rewriteHTML,
 	}
 
 	capture := &captureWriter{ResponseWriter: w, status: http.StatusOK, requestID: requestID}
-	if rewriteMetadata || rewriteHTML {
+	if (rewriteMetadata || rewriteHTML) && meta.validatorCacheable {
 		if validator, hit := e.validators.get(validatorKey, time.Now()); hit && conditionMatches(request, validator) {
+			for name, values := range validator.Headers {
+				capture.Header()[name] = append([]string(nil), values...)
+			}
+			security.SandboxRepositoryResponse(capture.Header())
+			capture.Header().Set("Age", strconv.FormatInt(int64((validator.InitialAge+time.Since(validator.StoredAt))/time.Second), 10))
 			capture.Header().Set("ETag", validator.ETag)
 			if validator.LastModified != "" {
 				capture.Header().Set("Last-Modified", validator.LastModified)
 			}
-			addVary(capture.Header(), "Accept-Encoding")
 			capture.WriteHeader(http.StatusNotModified)
 			e.finishRequest(started, clientIP, repository, request, capture, selectedMeta{upstream: active, cacheStatus: "VALIDATOR"})
 			return
@@ -246,6 +257,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 
 	if e.cfg.Performance.ZeroCopyBypass && supportsXAccel(request) &&
 		!rewriteMetadata && !rewriteHTML && dynamic == nil &&
+		!meta.followRedirects && !shouldRewriteRedirect(repository, class) &&
+		!(repository.ProxyMode == "registry" && repository.AuthMode == "full_proxy") &&
+		len(orderedRequestUpstreams(meta)) == 1 &&
 		(class == "package" || class == "immutable" || (class == "blob" && repository.BlobRedirectMode != "pass")) {
 		targetPath := "/_repo/" + strconv.FormatInt(repository.ID, 10) + "/" + strconv.FormatInt(active.ID, 10) + "/" + class + ensureLeadingSlash(relative)
 		if request.URL.RawQuery != "" {
@@ -282,6 +296,11 @@ func (e *Engine) rewrite(proxyRequest *httputil.ProxyRequest) {
 
 func (e *Engine) errorHandler(w http.ResponseWriter, _ *http.Request, err error) {
 	status := http.StatusBadGateway
+	var policyErr *routeError
+	if errors.As(err, &policyErr) {
+		http.Error(w, policyErr.Error(), policyErr.status)
+		return
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		status = http.StatusGatewayTimeout

@@ -59,7 +59,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/mirrorrelay
 # 4. Optional: Run integration test with local Managed Upstream Nginx fixture
 MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
   go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginx' -count=1
+
+# 5. Optional: Exercise HTML/SVG isolation in a real Chromium-compatible browser
+MIRRORRELAY_TEST_BROWSER="$(command -v google-chrome)" \
+MIRRORRELAY_TEST_UPSTREAM_NGINX="$PWD/nginx/sbin/nginx" \
+  go test ./internal/upstreamnginx -run '^TestRealManagedUpstreamNginxBrowserOriginIsolation$' -count=1 -timeout=180s
 ```
+
+The real-Nginx suite covers ingress → Go → data plane → loopback origins in both Host and Path modes. Browser tests use temporary profiles and synthetic administration endpoints, verify a working trusted-page positive control, and reject upstream HTML/SVG access to the same-origin session endpoint, cookies and storage with zero-copy enabled and disabled. No browser package is added to the application; CI uses the browser provided by the Ubuntu runner image. Without `MIRRORRELAY_TEST_BROWSER`, only the browser-specific test is skipped.
 
 ---
 

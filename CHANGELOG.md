@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## v0.0.22 - 2026-09-16
+
+- **Repository proxy security boundaries**:
+  - Prevented untrusted upstream `X-Accel-*` control headers from selecting
+    internal locations, crossing repository boundaries or bypassing Package
+    Guard policy in Managed Upstream Nginx deployments.
+  - Applied an opaque-origin CSP sandbox and `nosniff` protection to every
+    repository response, including zero-copy responses and active HTML/SVG
+    content, with a real-browser regression test for administrator-origin
+    cookie and storage isolation.
+  - Enforced Package Guard policy on decoded adapter targets, auxiliary URLs,
+    the final upstream target and every followed redirect, including routes
+    whose upstream base paths overlap.
+- **Session and metadata-cache correctness**:
+  - Made sliding session renewal update-only and fail closed, so concurrent
+    logout, password reset and explicit revocation cannot recreate a deleted
+    session.
+  - Restricted locally generated metadata validators to public, cacheable
+    representations; credentialed, private, varying, stale and cookie-setting
+    responses now retain upstream semantics. Validators are bound to cache
+    generations so purge and in-flight races cannot produce stale `304`
+    responses.
+- **Nginx publication and proxy-mode correctness**:
+  - Moved Nginx validation into a temporary directory and publish validated,
+    immutable version directories atomically.
+  - Added the internal repository acceleration location to host-mode ingress
+    snippets and kept requests in the Go transport whenever redirect rewriting,
+    full-proxy behavior, authentication challenges or multi-upstream failover
+    require it.
+- **Warm-up, UI and operational fixes**:
+  - Localized missing idle/cancelled and Edge status labels, preserved saved
+    credentials when settings password fields are left blank, and retained
+    restart icons and static SVG labels.
+  - Fixed comma splitting inside RE2 quantifiers, surfaced warm-up job errors,
+    normalized warm-up targets and bounds, stripped cross-origin credentials
+    across redirects, and hardened webhook cancellation and rollback failures.
+  - Corrected the Compose environment example to pin the image through the
+    supported `MIRRORRELAY_IMAGE_TAG` variable.
+- **Verification and documentation**:
+  - Added deterministic concurrency, proxy-policy, validator-cache, real Nginx
+    and browser-isolation regressions, plus a browser security check in CI.
+  - Documented the audited security boundaries and upgrade implications in
+    synchronized English and Chinese guides, with the full audit retained in
+    `PROJECT_AUDIT.md`.
+
 ## v0.0.21 - 2026-08-28
 
 - **Upgrade-compatibility fix**:

@@ -257,6 +257,7 @@ func (g *Generator) integrationSnippet(repositories []model.Mirror) string {
 		fmt.Fprintf(&out, "    server_name %s;\n", repository.PublicHost)
 		out.WriteString("    # Configure ssl_certificate and ssl_certificate_key for this host.\n")
 		out.WriteString(integrationLocation("/", nginxProxyPass(g.cfg.FrontendEndpoint()), "    "))
+		out.WriteString(g.integrationAccelerationLocation("    "))
 		out.WriteString("}\n\n")
 	}
 	out.WriteString("# Add this exact location to the shared repository TLS server block.\n")
@@ -272,20 +273,8 @@ func (g *Generator) integrationSnippet(repositories []model.Mirror) string {
 		out.WriteByte('\n')
 	}
 	out.WriteString("# Internal accelerated zero-copy location for large immutable binary packages.\n")
-	out.WriteString("location ^~ \"/_repo/\" {\n")
-	out.WriteString("    internal;\n")
-	fmt.Fprintf(&out, "    proxy_pass %s;\n", nginxProxyPass(g.cfg.UpstreamEndpoint()))
-	out.WriteString("    proxy_http_version 1.1;\n")
-	out.WriteString("    proxy_request_buffering off;\n")
-	out.WriteString("    proxy_buffering off;\n")
-	out.WriteString("    proxy_set_header Host mirrorrelay-upstream-nginx-internal;\n")
-	out.WriteString("    proxy_set_header X-Mirror-Internal-Repository-ID $upstream_http_x_mirror_internal_repository_id;\n")
-	out.WriteString("    proxy_set_header X-Mirror-Internal-Cache-Key $upstream_http_x_mirror_internal_cache_key;\n")
-	out.WriteString("    proxy_set_header X-Mirror-Internal-Client-IP $upstream_http_x_mirror_internal_client_ip;\n")
-	out.WriteString("    proxy_set_header X-Mirror-Internal-Request-ID $upstream_http_x_mirror_internal_request_id;\n")
-	out.WriteString("    proxy_read_timeout 1h;\n")
-	out.WriteString("    proxy_send_timeout 1h;\n")
-	out.WriteString("}\n\n")
+	out.WriteString(g.integrationAccelerationLocation(""))
+	out.WriteByte('\n')
 	if len(paths) > 0 {
 		out.WriteString("# Add these path-mode locations to the same TLS server block.\n")
 		for _, repository := range paths {
@@ -295,6 +284,29 @@ func (g *Generator) integrationSnippet(repositories []model.Mirror) string {
 		}
 	}
 	return out.String()
+}
+
+func (g *Generator) integrationAccelerationLocation(prefix string) string {
+	var out strings.Builder
+	out.WriteString("location ^~ \"/_repo/\" {\n")
+	out.WriteString("    internal;\n")
+	fmt.Fprintf(&out, "    proxy_pass %s;\n", nginxProxyPass(g.cfg.UpstreamEndpoint()))
+	out.WriteString("    proxy_http_version 1.1;\n")
+	out.WriteString("    proxy_request_buffering off;\n")
+	out.WriteString("    proxy_buffering off;\n")
+	out.WriteString("    proxy_ignore_headers X-Accel-Redirect X-Accel-Expires X-Accel-Limit-Rate X-Accel-Buffering X-Accel-Charset;\n")
+	fmt.Fprintf(&out, "    add_header Content-Security-Policy %s always;\n", strconv.Quote(security.RepositoryContentSecurityPolicy))
+	out.WriteString("    proxy_hide_header X-Content-Type-Options;\n")
+	out.WriteString("    add_header X-Content-Type-Options nosniff always;\n")
+	out.WriteString("    proxy_set_header Host mirrorrelay-upstream-nginx-internal;\n")
+	out.WriteString("    proxy_set_header X-Mirror-Internal-Repository-ID $upstream_http_x_mirror_internal_repository_id;\n")
+	out.WriteString("    proxy_set_header X-Mirror-Internal-Cache-Key $upstream_http_x_mirror_internal_cache_key;\n")
+	out.WriteString("    proxy_set_header X-Mirror-Internal-Client-IP $upstream_http_x_mirror_internal_client_ip;\n")
+	out.WriteString("    proxy_set_header X-Mirror-Internal-Request-ID $upstream_http_x_mirror_internal_request_id;\n")
+	out.WriteString("    proxy_read_timeout 1h;\n")
+	out.WriteString("    proxy_send_timeout 1h;\n")
+	out.WriteString("}\n")
+	return indent(out.String(), prefix) + "\n"
 }
 
 func integrationLocation(path, proxyPass, prefix string) string {

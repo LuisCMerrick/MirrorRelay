@@ -73,6 +73,8 @@ Go reaches Managed Upstream Nginx over its Unix socket by default. Only an expli
 
 External mode neither tests nor binds public ports and never reloads the shared External Shared Nginx process. Generated host-mode blocks contain certificate placeholders that must be completed by the ingress administrator.
 
+Each Host-mode server and the shared Path-mode server must include its generated `internal` `/_repo/` location when advertising `X-Accel-Supported`. After upgrading, regenerate/review the ingress snippet and apply it to the external Nginx yourself; MirrorRelay does not modify or reload that service. Production administration should use a separate `admin.host` TLS server with the administration location and no repository locations. Repository responses remain sandboxed even with a dedicated administration host; upstream JavaScript requiring cookies, storage, fetch, workers or forms is intentionally restricted.
+
 `admin.path` must be an absolute path made from safe URL segments. MirrorRelay adds the trailing slash, rejects system-path conflicts and does not publish the value in the public repository index. Treat a custom path only as reduced discoverability, not as a replacement for authentication or CIDR restrictions. Apply the generated administration location to External Shared Nginx after changing it.
 
 ## Managed Upstream Nginx
@@ -96,6 +98,8 @@ Managed Upstream Nginx runs as a supervised foreground child while started by Mi
 
 Every data-plane update is generated as a candidate, tested with the configured binary, published atomically and gracefully reloaded. A failure remains Desired/Failed and does not replace the active Go routing snapshot. That separation survives MirrorRelay restarts: if the failed Desired state still cannot reconcile, MirrorRelay validates and restores the latest persisted Active configuration and publishes its repository snapshot to the Go router.
 
+Validation uses a private temporary directory and cleans only that directory on failure or cancellation. Existing version directories, including the target of `current`, are immutable and are not deleted by a failed validation. New version directories are fully written before their atomic rename.
+
 ## Storage and cache
 
 | Key | Description |
@@ -110,6 +114,8 @@ Every data-plane update is generated as a candidate, tested with the configured 
 | `cache.minimum_free_bytes` | Reserved-free-space setting exposed to operations |
 
 Purge changes cache generations immediately. Old physical files remain unreachable and are reclaimed by Nginx `inactive`/`max_size`; job states remain Pending/Running until the observation window has elapsed and actual disk use is rescanned.
+
+The same generations invalidate local rewritten-metadata validators. Local `304` reuse requires caching to be enabled, a credential-free request and a fresh cacheable response; `Cache-Control`, `Age`, `Expires`, response cookies and `Vary` are respected conservatively. Authenticated requests, including repositories with static authentication headers, always reach the data plane even when `cache_authenticated` permits body caching.
 
 ## Proxy behavior and performance
 
@@ -127,6 +133,8 @@ Purge changes cache generations immediately. Old physical files remain unreachab
 | `redirect.pin_validated_ip` | Must remain `true` |
 | `redirect.reject_mixed_dns_result` | Reject a hostname if its answer set mixes permitted and forbidden addresses |
 | `transport.*` | Go-to-Managed Upstream Nginx connection pool and response-header timeouts; no fixed total body timeout is applied |
+
+Zero-copy is used only for eligible single-upstream static downloads that need no Go redirect following/rewriting or Registry full-proxy challenge handling. `redirect_mode=follow` and `full_proxy` (including non-Registry repositories), Registry Full-proxy and multi-upstream failover retain the Go transport. This can reduce acceleration relative to older releases but preserves the configured proxy behavior.
 
 ## Smart Cache Warm-Up & Predictive Pre-Fetching
 

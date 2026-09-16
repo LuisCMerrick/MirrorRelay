@@ -23,6 +23,9 @@ type metadataValidator struct {
 	ETag         string
 	LastModified string
 	ExpiresAt    time.Time
+	StoredAt     time.Time
+	InitialAge   time.Duration
+	Headers      http.Header
 }
 
 type metadataValidators struct {
@@ -73,6 +76,12 @@ func (v *metadataValidators) put(key string, entry metadataValidator) {
 		}
 		v.order = compacted
 	}
+}
+
+func (v *metadataValidators) remove(key string) {
+	v.mu.Lock()
+	delete(v.entries, key)
+	v.mu.Unlock()
 }
 
 type gzipPool struct {

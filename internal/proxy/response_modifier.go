@@ -9,12 +9,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/LuisCMerrick/MirrorRelay/internal/model"
+	"github.com/LuisCMerrick/MirrorRelay/internal/security"
 )
 
 func (e *Engine) modifyResponse(response *http.Response) error {
+	// Apply after HTML rewriting, which can install its own (additional) CSP.
+	defer security.SandboxRepositoryResponse(response.Header)
 	uiEnhancement := e.appearanceConfig()
 	meta, ok := response.Request.Context().Value(requestMetaKey{}).(requestMeta)
 	if !ok {
@@ -25,11 +27,14 @@ func (e *Engine) modifyResponse(response *http.Response) error {
 		writer.selected = selected
 	}
 	for name := range response.Header {
-		if strings.HasPrefix(strings.ToLower(name), "x-mirror-internal-") {
+		if lower := strings.ToLower(name); strings.HasPrefix(lower, "x-mirror-internal-") || strings.HasPrefix(lower, "x-accel-") {
 			response.Header.Del(name)
 		}
 	}
 	response.Header.Set("X-Mirror-Request-ID", meta.requestID)
+	// A fresh upstream observation supersedes any previously cached validator,
+	// including responses that can no longer be rewritten or cached.
+	e.validators.remove(meta.validatorKey)
 
 	if isRedirect(response.StatusCode) && shouldRewriteRedirect(meta.repository, meta.cacheClass) {
 		e.rewriteLocation(response, meta)
@@ -56,12 +61,7 @@ func (e *Engine) modifyResponse(response *http.Response) error {
 			return err
 		}
 		if changed {
-			metadataTTL := e.cfg.Cache.MetadataTTL
-			if meta.repository.MetadataTTLSec > 0 {
-				metadataTTL = time.Duration(meta.repository.MetadataTTLSec) * time.Second
-			}
-			validator.ExpiresAt = time.Now().Add(metadataTTL)
-			e.validators.put(meta.validatorKey, validator)
+			e.storeMetadataValidator(meta, response, validator)
 		}
 		return nil
 	}
@@ -75,12 +75,7 @@ func (e *Engine) modifyResponse(response *http.Response) error {
 		if err != nil {
 			return err
 		}
-		metadataTTL := e.cfg.Cache.MetadataTTL
-		if meta.repository.MetadataTTLSec > 0 {
-			metadataTTL = time.Duration(meta.repository.MetadataTTLSec) * time.Second
-		}
-		validator.ExpiresAt = time.Now().Add(metadataTTL)
-		e.validators.put(meta.validatorKey, validator)
+		e.storeMetadataValidator(meta, response, validator)
 	}
 	return nil
 }
@@ -366,12 +361,7 @@ func shouldFollowRedirects(repository model.Mirror, class string, tokenRoute boo
 	if repository.ProxyMode == "registry" {
 		return repository.BlobRedirectMode == "full_proxy"
 	}
-	if repository.ProxyMode == "packages" || repository.ProxyMode == "transparent" {
-		if repository.RedirectMode == "follow" {
-			return true
-		}
-	}
-	return false
+	return repository.RedirectMode == "follow" || repository.RedirectMode == "full_proxy"
 }
 
 func shouldRewriteRedirect(repository model.Mirror, class string) bool {

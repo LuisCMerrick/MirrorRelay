@@ -77,6 +77,10 @@ External 模式不测试或绑定公网端口，也绝不会 Reload 共享 Exter
 
 ## Managed Upstream Nginx
 
+每个声明 `X-Accel-Supported` 的 Host 模式 Server 和共享 Path 模式 Server 都必须包含生成的 `internal` `/_repo/` Location。升级后请重新生成、审阅入口片段，并自行应用到外部 Nginx；MirrorRelay 不会修改或重载该服务。生产管理端应使用独立的 `admin.host` TLS Server，只配置管理 Location，不配置仓库 Location。即使管理 Host 已分离，仓库响应仍受沙箱约束；依赖 Cookie、存储、Fetch、Worker 或表单的上游脚本会受到有意限制。
+
+配置验证使用独立临时目录，失败或取消时只清理该临时目录。现有版本目录（包括 `current` 的目标）保持不可变，不会被失败的验证删除。新版本目录完整写入后才会通过原子重命名发布。
+
 | 配置 | 说明 |
 |---|---|
 | `upstream_nginx.mode` | `managed`、高级 `external` 或 `disabled` |
@@ -111,7 +115,11 @@ External 模式不测试或绑定公网端口，也绝不会 Reload 共享 Exter
 
 Purge 会立即改变 Cache Generation。旧物理文件无法再命中，由 Nginx 的 `inactive`/`max_size` 回收；任务会保持 Pending/Running，直到观测窗口结束并重新扫描实际磁盘用量。
 
+同一代际也会使本地重写元数据验证器失效。本地 `304` 复用要求启用缓存、请求不携带凭据、响应仍新鲜且可缓存；保守遵守 `Cache-Control`、`Age`、`Expires`、响应 Cookie 及 `Vary`。认证请求（包括配置了静态认证 Header 的仓库）始终访问数据面，即使 `cache_authenticated` 允许正文缓存。
+
 ## 代理行为与性能
+
+零拷贝仅用于单上游、静态目标且无需 Go 跟随/重写重定向或处理 Registry Full-proxy 认证挑战的下载。`redirect_mode=follow` 和 `full_proxy`（包括非 Registry 仓库）、Registry Full-proxy 及多上游回退都会保留 Go Transport。这可能比旧版本减少加速请求，但能保持配置的代理行为。
 
 | 配置 | 说明 |
 |---|---|
