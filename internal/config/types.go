@@ -193,42 +193,42 @@ type DistributedConfig struct {
 }
 
 type DistributedNodeConfig struct {
-	Name          string `yaml:"name"`
-	PublicBaseURL string `yaml:"public_base_url"`
-	Region        string `yaml:"region"`
-	Country       string `yaml:"country"`
+	Name          string `yaml:"name" json:"name"`
+	PublicBaseURL string `yaml:"public_base_url" json:"public_base_url"`
+	Region        string `yaml:"region" json:"region"`
+	Country       string `yaml:"country" json:"country"`
 }
 
 type DistributedRoutingConfig struct {
-	Mode           string                 `yaml:"mode"`
-	ClientNetworks []ClientNetworkMapping `yaml:"client_networks"`
-	Regions        []RegionMapping        `yaml:"regions"`
+	Mode           string                 `yaml:"mode" json:"mode"`
+	ClientNetworks []ClientNetworkMapping `yaml:"client_networks" json:"client_networks"`
+	Regions        []RegionMapping        `yaml:"regions" json:"regions"`
 }
 
 type ClientNetworkMapping struct {
-	CIDR   string `yaml:"cidr"`
-	Region string `yaml:"region"`
+	CIDR   string `yaml:"cidr" json:"cidr"`
+	Region string `yaml:"region" json:"region"`
 }
 
 type RegionMapping struct {
-	Code      string   `yaml:"code"`
-	Countries []string `yaml:"countries"`
+	Code      string   `yaml:"code" json:"code"`
+	Countries []string `yaml:"countries" json:"countries"`
 }
 
 type DistributedHealthConfig struct {
-	Interval           time.Duration `yaml:"interval"`
-	Timeout            time.Duration `yaml:"timeout"`
-	UnhealthyThreshold int           `yaml:"unhealthy_threshold"`
-	HealthyThreshold   int           `yaml:"healthy_threshold"`
+	Interval           time.Duration `yaml:"interval" json:"interval"`
+	Timeout            time.Duration `yaml:"timeout" json:"timeout"`
+	UnhealthyThreshold int           `yaml:"unhealthy_threshold" json:"unhealthy_threshold"`
+	HealthyThreshold   int           `yaml:"healthy_threshold" json:"healthy_threshold"`
 }
 
 type DistributedNodeSeed struct {
-	Name          string `yaml:"name"`
-	URL           string `yaml:"url"`
-	MutationToken string `yaml:"mutation_token"`
-	Region        string `yaml:"region"`
-	Country       string `yaml:"country"`
-	Priority      int    `yaml:"priority"`
-	Weight        int    `yaml:"weight"`
-	Enabled       bool   `yaml:"enabled"`
+	Name          string `yaml:"name" json:"name"`
+	URL           string `yaml:"url" json:"url"`
+	MutationToken string `yaml:"mutation_token" json:"mutation_token"`
+	Region        string `yaml:"region" json:"region"`
+	Country       string `yaml:"country" json:"country"`
+	Priority      int    `yaml:"priority" json:"priority"`
+	Weight        int    `yaml:"weight" json:"weight"`
+	Enabled       bool   `yaml:"enabled" json:"enabled"`
 }
