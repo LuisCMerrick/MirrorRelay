@@ -146,6 +146,9 @@ func run() error {
 	}
 
 	registry := mirror.NewRegistry(store)
+	if bp := cfg.BasePath(); bp != "" {
+		registry.SetBasePath(bp)
+	}
 	cacheManager := cachectl.New(cfg, store)
 	if err := cacheManager.Load(context.Background()); err != nil {
 		return fmt.Errorf("load cache generations: %w", err)

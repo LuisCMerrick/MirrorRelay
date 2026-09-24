@@ -765,7 +765,8 @@ func TestValidateRejectsGeneratedNginxInjectionAndInvalidRuntimeLimits(t *testin
 		func(cfg *Config) { cfg.UpstreamNginx.ResolverRefresh = 0 },
 		func(cfg *Config) { cfg.HTTP.PublicBaseURL = "https://user@example.com/base" },
 		func(cfg *Config) { cfg.HTTP.PublicBaseURL = "https://example.com/base?unsafe=1" },
-		func(cfg *Config) { cfg.HTTP.PublicBaseURL = "https://example.com/base" },
+		func(cfg *Config) { cfg.HTTP.PublicBaseURL = "https://example.com/base/../evil" },
+		func(cfg *Config) { cfg.HTTP.BasePath = "/invalid path/" },
 		func(cfg *Config) { cfg.Admin.Path = "/unsafe path/" },
 		func(cfg *Config) {
 			cfg.Ingress.Mode = "managed-standalone"
@@ -876,5 +877,46 @@ func TestComputeSettingsDiffRedactsSensitiveChanges(t *testing.T) {
 				t.Fatalf("diff for %s leaked secret: %s", d.Path, d.NewValue)
 			}
 		}
+	}
+}
+
+func TestBasePathAndPublicBaseURLSupport(t *testing.T) {
+	cfg := Default()
+	cfg.HTTP.BasePath = "/mirrors"
+	cfg.HTTP.PublicBaseURL = "https://mirror.example.com/mirrors"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid base_path and public_base_url, got: %v", err)
+	}
+	if err := cfg.NormalizeRuntime(); err != nil {
+		t.Fatalf("normalize runtime failed: %v", err)
+	}
+	if cfg.BasePath() != "/mirrors" {
+		t.Fatalf("expected BasePath to be /mirrors, got: %s", cfg.BasePath())
+	}
+	if cfg.Subpath("/debian/") != "/mirrors/debian/" {
+		t.Fatalf("expected /mirrors/debian/, got: %s", cfg.Subpath("/debian/"))
+	}
+	if cfg.Subpath("/mirrors/debian/") != "/mirrors/debian/" {
+		t.Fatalf("expected idempotent Subpath /mirrors/debian/, got: %s", cfg.Subpath("/mirrors/debian/"))
+	}
+	if cfg.EffectiveAdminPath() != "/mirrors/admin/" {
+		t.Fatalf("expected EffectiveAdminPath to be /mirrors/admin/, got: %s", cfg.EffectiveAdminPath())
+	}
+	if cfg.EffectiveAdminAPIPath() != "/mirrors/admin/api/v1/" {
+		t.Fatalf("expected EffectiveAdminAPIPath to be /mirrors/admin/api/v1/, got: %s", cfg.EffectiveAdminAPIPath())
+	}
+
+	// Test automatic inference from PublicBaseURL when BasePath is empty
+	cfgAuto := Default()
+	cfgAuto.HTTP.BasePath = ""
+	cfgAuto.HTTP.PublicBaseURL = "https://mirror.example.com/mirrors"
+	if err := cfgAuto.Validate(); err != nil {
+		t.Fatalf("expected valid public_base_url with path, got: %v", err)
+	}
+	if err := cfgAuto.NormalizeRuntime(); err != nil {
+		t.Fatalf("normalize runtime failed: %v", err)
+	}
+	if cfgAuto.BasePath() != "/mirrors" {
+		t.Fatalf("expected inferred BasePath /mirrors, got: %s", cfgAuto.BasePath())
 	}
 }

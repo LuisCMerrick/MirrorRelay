@@ -102,6 +102,7 @@ type HTTPConfig struct {
 	Listen        string        `yaml:"listen"`
 	HTTPSListen   string        `yaml:"https_listen"`
 	PublicBaseURL string        `yaml:"public_base_url"`
+	BasePath      string        `yaml:"base_path"`
 	ReadTimeout   time.Duration `yaml:"read_timeout"`
 	WriteTimeout  time.Duration `yaml:"write_timeout"`
 	IdleTimeout   time.Duration `yaml:"idle_timeout"`

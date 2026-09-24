@@ -27,6 +27,7 @@ redirect:
 http:
   listen: ":80"
   https_listen: ":443"
+  base_path: "" # Optional subpath mount prefix (e.g. "/mirrors"). Omit or leave empty for root deployment.
   public_base_url: "https://mirror.example.com"
   read_timeout: 15s
   write_timeout: 0s

@@ -64,7 +64,8 @@ Go reaches Managed Upstream Nginx over its Unix socket by default. Only an expli
 | `ingress.mode` | `external` (default) or `managed-standalone` |
 | `ingress.generate_snippet` | Publish a reviewed External Shared Nginx integration aid after successful activation |
 | `ingress.snippet_path` | Target `.conf` file or directory; a directory receives `mirrorrelay.conf` |
-| `http.public_base_url` | HTTPS origin (no path/query/fragment) used in client examples and rewritten metadata |
+| `http.base_path` | Optional subpath mount prefix (e.g. `/mirrors`); empty or `/` for root deployment |
+| `http.public_base_url` | Canonical public base URL (optional subpath supported, no query/fragment) used in client examples and rewritten metadata |
 | `http.listen`, `http.https_listen` | Used only by managed standalone ingress |
 | `http.read_timeout`, `http.idle_timeout` | MirrorRelay HTTP server header/request and keepalive limits |
 | `http.write_timeout` | MirrorRelay HTTP write limit; `0` intentionally permits long streaming responses |

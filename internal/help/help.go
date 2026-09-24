@@ -59,6 +59,12 @@ func ComputeRepositoryURL(publicBaseURL string, repo model.Mirror) string {
 	if !strings.HasSuffix(publicPath, "/") {
 		publicPath = publicPath + "/"
 	}
+	if parsed, err := url.Parse(baseURL); err == nil && parsed.Path != "" && parsed.Path != "/" {
+		prefix := strings.TrimRight(parsed.Path, "/")
+		if strings.HasPrefix(publicPath, prefix+"/") {
+			publicPath = strings.TrimPrefix(publicPath, prefix)
+		}
+	}
 	return baseURL + publicPath
 }
 

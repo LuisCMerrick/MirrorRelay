@@ -28,38 +28,69 @@ func requestHostname(raw string) string {
 
 func (s *Server) requestPublicBase(request *http.Request) (string, error) {
 	if s.cfg.HTTP.PublicBaseURL != "" {
-		return strings.TrimRight(s.cfg.HTTP.PublicBaseURL, "/"), nil
+		base := strings.TrimRight(s.cfg.HTTP.PublicBaseURL, "/")
+		if bp := s.cfg.BasePath(); bp != "" && !strings.HasSuffix(base, bp) {
+			base += bp
+		}
+		return base, nil
 	}
 	if request == nil || !security.ValidRequestAuthority(request.Host) {
 		return "", fmt.Errorf("invalid request host")
 	}
-	return "https://" + request.Host, nil
+	base := "https://" + request.Host
+	if bp := s.cfg.BasePath(); bp != "" {
+		base += bp
+	}
+	return base, nil
 }
 
 func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public UI resources and help are reserved instance routes on both
-		// path- and host-routed repositories. This prevents a host-routed
-		// origin from supplying CSS to MirrorRelay-generated pages.
-		if r.URL.Path == "/ui/custom.css" {
-			s.serveCustomCSS(w, r)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/ui/icons/") {
-			s.serveUIIcon(w, r)
-			return
-		}
-		if r.URL.Path == "/help" || r.URL.Path == "/help/" {
-			s.helpOverview(w, r)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/help/") {
-			s.helpDetail(w, r, strings.TrimPrefix(r.URL.Path, "/help/"))
+		basePath := s.cfg.BasePath()
+
+		// Redirect basePath without trailing slash (e.g. /mirrors -> /mirrors/)
+		if basePath != "" && r.URL.Path == basePath {
+			target := basePath + "/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
 			return
 		}
 
+		if r.URL.Path == "/ui/custom.css" || (basePath != "" && r.URL.Path == basePath+"/ui/custom.css") {
+			s.serveCustomCSS(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/ui/icons/") || (basePath != "" && strings.HasPrefix(r.URL.Path, basePath+"/ui/icons/")) {
+			s.serveUIIcon(w, r)
+			return
+		}
+		if r.URL.Path == "/help" || r.URL.Path == "/help/" || (basePath != "" && (r.URL.Path == basePath+"/help" || r.URL.Path == basePath+"/help/")) {
+			if basePath != "" && r.URL.Path == basePath+"/help" {
+				target := basePath + "/help/"
+				if r.URL.RawQuery != "" {
+					target += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+				return
+			}
+			s.helpOverview(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/help/") || (basePath != "" && strings.HasPrefix(r.URL.Path, basePath+"/help/")) {
+			sub := strings.TrimPrefix(r.URL.Path, "/help/")
+			if basePath != "" && strings.HasPrefix(r.URL.Path, basePath+"/help/") {
+				sub = strings.TrimPrefix(r.URL.Path, basePath+"/help/")
+			}
+			s.helpDetail(w, r, sub)
+			return
+		}
+
+		isIndex := !s.hostRepository(r.Host) && (r.URL.Path == "/" || (basePath != "" && r.URL.Path == basePath+"/"))
+
 		if s.cfg.Distributed.Enabled && s.cfg.Distributed.Role == "coordinator" {
-			if r.URL.Path == "/" && !s.hostRepository(r.Host) {
+			if isIndex {
 				s.repositoryIndex(w, r)
 				return
 			}
@@ -105,7 +136,7 @@ func (s *Server) publicHandler(proxy http.Handler) http.Handler {
 			}
 		}
 
-		if r.URL.Path != "/" || s.hostRepository(r.Host) {
+		if !isIndex {
 			proxy.ServeHTTP(w, r)
 			return
 		}
@@ -219,6 +250,9 @@ func (s *Server) serveUIIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/ui/icons/"), ".svg")
+	if bp := s.cfg.BasePath(); bp != "" && strings.HasPrefix(r.URL.Path, bp+"/ui/icons/") {
+		name = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, bp+"/ui/icons/"), ".svg")
+	}
 	svg, ok := browser.Icons[name]
 	if !ok {
 		http.NotFound(w, r)
@@ -340,7 +374,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 
 	customCSSLink := ""
 	if appearance.Enabled && appearance.CustomCSS.Enabled && appearance.CustomCSS.File != "" {
-		customCSSLink = `<link rel="stylesheet" href="/ui/custom.css">`
+		customCSSLink = fmt.Sprintf(`<link rel="stylesheet" href="%s">`, html.EscapeString(s.cfg.Subpath("/ui/custom.css")))
 	}
 
 	var body strings.Builder
@@ -593,7 +627,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 	<div class="container">
 		<header>
 			<div class="header-left">
-				<a href="/" class="site-brand">%s</a>
+				<a href="%s" class="site-brand">%s</a>
 			</div>
 			<div class="header-right">
 				<select id="public-theme" class="theme-select" onchange="changeTheme(this)" aria-label="Theme / 主题">
@@ -620,7 +654,7 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 					</thead>
 					<tbody>`,
 		html.EscapeString(themeAttr), html.EscapeString(siteTitle), faviconLink, customCSSLink,
-		html.EscapeString(accentColor), html.EscapeString(accentColor), brandMarkup)
+		html.EscapeString(accentColor), html.EscapeString(accentColor), html.EscapeString(s.cfg.Subpath("/")), brandMarkup)
 
 	visible := 0
 	for _, repository := range repositories {
@@ -632,13 +666,16 @@ func (s *Server) repositoryIndex(w http.ResponseWriter, r *http.Request) {
 		if repository.PublicMode == "host" {
 			href = "https://" + repository.PublicHost + "/"
 			label = repository.PublicHost + "/"
-		} else if href == "" {
-			href = "/" + repository.Slug + "/"
-			label = href
+		} else {
+			if href == "" {
+				href = "/" + repository.Slug + "/"
+			}
+			href = s.cfg.Subpath(href)
+			label = s.cfg.Subpath(label)
 		}
 		helpBadge := ""
 		if repository.Help.Enabled && repository.Help.Template != "" {
-			helpBadge = fmt.Sprintf(`<a href="/help/%s/" class="btn-help" title="Help / 配置说明">Help / 说明</a>`, html.EscapeString(repository.Slug))
+			helpBadge = fmt.Sprintf(`<a href="%s" class="btn-help" title="Help / 配置说明">Help / 说明</a>`, html.EscapeString(s.cfg.Subpath("/help/"+repository.Slug+"/")))
 		}
 		fmt.Fprintf(&body, `<tr>
 			<td><a href="%s" class="repo-link">%s</a>%s<br><code>%s</code></td>

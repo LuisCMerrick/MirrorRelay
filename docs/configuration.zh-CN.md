@@ -64,7 +64,8 @@ Go 默认通过 Unix Socket 连接 Managed Upstream Nginx。只有显式设置 `
 | `ingress.mode` | `external`（默认）或 `managed-standalone` |
 | `ingress.generate_snippet` | 成功激活后生成供审核的 External Shared Nginx 接入辅助文件 |
 | `ingress.snippet_path` | 目标 `.conf` 文件或目录；目录内生成 `mirrorrelay.conf` |
-| `http.public_base_url` | 客户端示例与 Metadata 改写使用的 HTTPS Origin（不得包含路径、查询或片段） |
+| `http.base_path` | 可选子路径挂载前缀（如 `/mirrors`）；留空或 `/` 表示根路径部署 |
+| `http.public_base_url` | 客户端示例与 Metadata 改写使用的公开基准 URL（支持可选子路径，不得包含查询或片段） |
 | `http.listen`、`http.https_listen` | 仅 Managed Standalone Ingress 使用 |
 | `http.read_timeout`、`http.idle_timeout` | MirrorRelay HTTP Server 的 Header/请求与 Keepalive 时限 |
 | `http.write_timeout` | MirrorRelay HTTP 写入时限；`0` 表示有意允许长时间流式响应 |

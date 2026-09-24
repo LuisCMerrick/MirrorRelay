@@ -7,6 +7,7 @@ redirect: {max_hops: 5, pin_validated_ip: true, reject_mixed_dns_result: true}
 http:
   listen: ":8080"
   https_listen: ":8443"
+  base_path: ""
   public_base_url: "https://mirror.example.com"
   read_timeout: 15s
   idle_timeout: 2m

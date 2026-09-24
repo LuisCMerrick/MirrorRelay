@@ -260,16 +260,24 @@ func (g *Generator) integrationSnippet(repositories []model.Mirror) string {
 		out.WriteString(g.integrationAccelerationLocation("    "))
 		out.WriteString("}\n\n")
 	}
+	basePath := g.cfg.BasePath()
 	out.WriteString("# Add this exact location to the shared repository TLS server block.\n")
 	out.WriteString("# Shared-host repository index.\n")
-	out.WriteString(integrationLocationWithModifier("=", "/", nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+	if basePath != "" {
+		out.WriteString(integrationLocationWithModifier("=", basePath, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+		out.WriteString(integrationLocationWithModifier("=", basePath+"/", nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+	} else {
+		out.WriteString(integrationLocationWithModifier("=", "/", nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+	}
 	out.WriteByte('\n')
 	out.WriteString("# Administration UI and API. Keep this path private.\n")
-	out.WriteString(integrationLocation(g.cfg.Admin.Path, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+	adminPath := g.cfg.EffectiveAdminPath()
+	out.WriteString(integrationLocation(adminPath, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
 	out.WriteByte('\n')
 	if hasSharedAuxiliaryRoute {
 		out.WriteString("# Same-origin auxiliary resources for browsable repository HTML.\n")
-		out.WriteString(integrationLocation("/_mirrorrelay/upstream/", nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+		auxPath := g.cfg.Subpath("/_mirrorrelay/upstream/")
+		out.WriteString(integrationLocation(auxPath, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
 		out.WriteByte('\n')
 	}
 	out.WriteString("# Internal accelerated zero-copy location for large immutable binary packages.\n")
@@ -279,7 +287,8 @@ func (g *Generator) integrationSnippet(repositories []model.Mirror) string {
 		out.WriteString("# Add these path-mode locations to the same TLS server block.\n")
 		for _, repository := range paths {
 			fmt.Fprintf(&out, "# Repository: %s\n", repository.Name)
-			out.WriteString(integrationLocation(repository.PublicPath, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
+			repoPath := g.cfg.Subpath(repository.PublicPath)
+			out.WriteString(integrationLocation(repoPath, nginxProxyPass(g.cfg.FrontendEndpoint()), ""))
 			out.WriteByte('\n')
 		}
 	}

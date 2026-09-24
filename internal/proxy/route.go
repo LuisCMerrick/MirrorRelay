@@ -92,11 +92,19 @@ func validateRepositoryPath(repository model.Mirror, relative string, token bool
 }
 
 func (e *Engine) resolveRequestRoute(request *http.Request) (model.Mirror, string, *url.URL, bool, *routeError) {
-	if strings.HasPrefix(request.URL.Path, auxiliaryUpstreamPrefix) {
+	reqPath := request.URL.Path
+	bp := e.cfg.BasePath()
+	if bp != "" && strings.HasPrefix(reqPath, bp+"/") {
+		trimmedReqPath := strings.TrimPrefix(reqPath, bp)
+		if strings.HasPrefix(trimmedReqPath, auxiliaryUpstreamPrefix) || isTokenRoute(trimmedReqPath) {
+			reqPath = trimmedReqPath
+		}
+	}
+	if strings.HasPrefix(reqPath, auxiliaryUpstreamPrefix) {
 		if containsEncodedPathSeparator(request.URL.EscapedPath()) {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: "upstream auxiliary resource path contains an encoded separator"}
 		}
-		route, err := parseAuxiliaryUpstreamRoute(request.URL.Path, request.URL.RawQuery)
+		route, err := parseAuxiliaryUpstreamRoute(reqPath, request.URL.RawQuery)
 		if err != nil {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusBadRequest, text: err.Error()}
 		}
@@ -117,7 +125,7 @@ func (e *Engine) resolveRequestRoute(request *http.Request) (model.Mirror, strin
 		repository.Upstreams = []model.Upstream{selected}
 		return repository, route.target.Path, nil, true, nil
 	}
-	if repositoryID, ok := parseTokenRoute(request.URL.Path); ok {
+	if repositoryID, ok := parseTokenRoute(reqPath); ok {
 		repository, found := e.registry.GetByID(repositoryID)
 		if !found || !repository.Enabled || repository.ProxyMode != "registry" || repository.AuthMode != "full_proxy" {
 			return model.Mirror{}, "", nil, false, &routeError{status: http.StatusNotFound, text: "token route not found"}
@@ -202,12 +210,20 @@ func requestPublicBase(cfg config.Config, repository model.Mirror, request *http
 		return "https://" + repository.PublicHost, nil
 	}
 	if cfg.HTTP.PublicBaseURL != "" {
-		return strings.TrimRight(cfg.HTTP.PublicBaseURL, "/"), nil
+		base := strings.TrimRight(cfg.HTTP.PublicBaseURL, "/")
+		if bp := cfg.BasePath(); bp != "" && !strings.HasSuffix(base, bp) {
+			base += bp
+		}
+		return base, nil
 	}
 	if !security.ValidRequestAuthority(request.Host) {
 		return "", errors.New("invalid request host")
 	}
-	return "https://" + request.Host, nil
+	base := "https://" + request.Host
+	if bp := cfg.BasePath(); bp != "" {
+		base += bp
+	}
+	return base, nil
 }
 
 func stripUntrustedHeaders(header http.Header) {

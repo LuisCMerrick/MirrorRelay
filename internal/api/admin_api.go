@@ -29,7 +29,10 @@ func (s *Server) adminAccess(next http.Handler) http.Handler {
 }
 
 func (s *Server) webHandler(w http.ResponseWriter, r *http.Request) {
-	adminPath := s.cfg.Admin.Path
+	adminPath := s.cfg.EffectiveAdminPath()
+	if !strings.HasPrefix(r.URL.Path, adminPath) && strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) {
+		adminPath = s.cfg.Admin.Path
+	}
 	if r.URL.Path == strings.TrimSuffix(adminPath, "/") {
 		http.Redirect(w, r, adminPath, http.StatusPermanentRedirect)
 		return
@@ -45,7 +48,11 @@ func (s *Server) webHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	path := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(s.cfg.AdminAPIPath(), "/"))
+	adminAPIPath := s.cfg.EffectiveAdminAPIPath()
+	if !strings.HasPrefix(r.URL.Path, strings.TrimSuffix(adminAPIPath, "/")) && strings.HasPrefix(r.URL.Path, strings.TrimSuffix(s.cfg.Admin.Path+"api/v1/", "/")) {
+		adminAPIPath = s.cfg.Admin.Path + "api/v1/"
+	}
+	path := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(adminAPIPath, "/"))
 	if path == "/auth/bootstrap" {
 		switch r.Method {
 		case http.MethodGet:

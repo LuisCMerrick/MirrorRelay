@@ -58,12 +58,29 @@ func (c Config) Validate() error {
 	if c.Ingress.Mode == "managed-standalone" && (!validListenAddress(c.HTTP.Listen) || !validListenAddress(c.HTTP.HTTPSListen)) {
 		return errors.New("standalone ingress listen addresses must contain a valid IP address and port")
 	}
+	if c.HTTP.BasePath != "" {
+		if _, err := NormalizeBasePath(c.HTTP.BasePath); err != nil {
+			return err
+		}
+	}
 	if c.HTTP.PublicBaseURL != "" {
 		u, err := url.Parse(c.HTTP.PublicBaseURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" || u.Opaque != "" || u.User != nil ||
-			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || (u.EscapedPath() != "" && u.EscapedPath() != "/") ||
+			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
 			!validURLAuthority(u.Host) || strings.ContainsAny(c.HTTP.PublicBaseURL, "\x00\r\n\\{}") {
-			return errors.New("http.public_base_url must be an HTTPS origin without credentials, path, query or fragment")
+			return errors.New("http.public_base_url must be an HTTPS URL without credentials, query or fragment")
+		}
+		if u.Path != "" && u.Path != "/" {
+			publicPath, err := NormalizeBasePath(u.Path)
+			if err != nil {
+				return errors.New("http.public_base_url contains an invalid path")
+			}
+			if c.HTTP.BasePath != "" {
+				configuredBase, _ := NormalizeBasePath(c.HTTP.BasePath)
+				if configuredBase != publicPath {
+					return errors.New("http.base_path and http.public_base_url path must match")
+				}
+			}
 		}
 	}
 	if c.Admin.Host != "" {

@@ -32,15 +32,28 @@ type snapshot struct {
 }
 
 type Registry struct {
-	loader Loader
-	mu     sync.Mutex
-	value  atomic.Value
+	loader   Loader
+	mu       sync.Mutex
+	value    atomic.Value
+	basePath string
 }
 
 func NewRegistry(loader Loader) *Registry {
 	r := &Registry{loader: loader}
 	r.value.Store(snapshot{bySlug: make(map[string]model.Mirror), byHost: make(map[string]model.Mirror), byID: make(map[int64]model.Mirror)})
 	return r
+}
+
+func (r *Registry) SetBasePath(basePath string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.basePath = strings.TrimRight(basePath, "/")
+}
+
+func (r *Registry) BasePath() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.basePath
 }
 
 func (r *Registry) Reload(ctx context.Context) error {
@@ -140,6 +153,31 @@ func (r *Registry) Route(host, path string) (model.Mirror, string, bool) {
 		if (path == root || strings.HasPrefix(path, prefix)) && len(root) > len(selectedPrefix) {
 			selected = m
 			selectedPrefix = root
+		}
+	}
+	bp := r.BasePath()
+	if selectedPrefix == "" && bp != "" && strings.HasPrefix(path, bp+"/") {
+		sub := strings.TrimPrefix(path, bp)
+		for _, m := range s.all {
+			if !m.Enabled || m.PublicMode == "host" {
+				continue
+			}
+			prefix := m.PublicPath
+			if prefix == "" {
+				prefix = "/" + m.Slug + "/"
+			}
+			root := strings.TrimSuffix(prefix, "/")
+			if (sub == root || strings.HasPrefix(sub, prefix)) && len(root) > len(selectedPrefix) {
+				selected = m
+				selectedPrefix = root
+			}
+		}
+		if selectedPrefix != "" {
+			relative := strings.TrimPrefix(sub, selectedPrefix)
+			if relative == "" {
+				relative = "/"
+			}
+			return clone(selected), relative, true
 		}
 	}
 	if selectedPrefix == "" {

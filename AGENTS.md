@@ -155,6 +155,10 @@ When modifying or extending MirrorRelay, you must uphold these invariants withou
     - **Security & Passkeys (WebAuthn)**: FIDO2/WebAuthn passkey registration and management, credential counters, and single-use emergency recovery code generation.
     - **Logs & Audit Trails**: Real-time and historical access log search, daemon application logs with size/day rotation, and security audit event streams.
     - **Client Configuration Snippets**: Interactive client setup guide with copy-ready configuration snippets (APT `sources.list`, DNF/YUM `.repo`, pip `pip.conf`, npm `.npmrc`, Docker `daemon.json`, etc.).
+- **Subpath Deployment Native Support (e.g. `/mirrors`)**:
+  - MirrorRelay natively supports running under an arbitrary subpath prefix (e.g., `/mirrors`), configured via `http.base_path` or inferred from `http.public_base_url`.
+  - The Web Management UI, static asset links, API fetch calls, and router must remain strictly relative (e.g. `api/v1/...`), never assuming root `/` or fixed `/admin/`.
+  - The repository index portal, help docs, breadcrumbs, and External Shared Nginx integration snippet generator must dynamically adapt to the active base path.
 - **Strict Bilingual Localization Parity**:
   - Every UI string must be localized in both `internal/web/dist/locales/en.js` and `locales/zh.js`.
   - Keys in both dictionaries must match exactly.

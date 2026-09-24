@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -109,11 +110,73 @@ func (c Config) UpstreamEndpoint() (network, address string) {
 	return "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(c.UpstreamNginx.UpstreamLocalPort))
 }
 
+func (c Config) BasePath() string {
+	return c.HTTP.NormalizedBasePath()
+}
+
+func (h HTTPConfig) NormalizedBasePath() string {
+	base := strings.TrimSpace(h.BasePath)
+	if base == "" || base == "/" {
+		if h.PublicBaseURL != "" {
+			if u, err := url.Parse(h.PublicBaseURL); err == nil && u.Path != "" && u.Path != "/" {
+				base = u.Path
+			}
+		}
+	}
+	base = strings.TrimSpace(base)
+	if base == "" || base == "/" {
+		return ""
+	}
+	return "/" + strings.Trim(base, "/")
+}
+
+func (c Config) Subpath(p string) string {
+	bp := c.BasePath()
+	if bp == "" {
+		if !strings.HasPrefix(p, "/") {
+			return "/" + p
+		}
+		return p
+	}
+	if p == "" || p == "/" {
+		return bp + "/"
+	}
+	trimmed := "/" + strings.TrimPrefix(p, "/")
+	if strings.HasPrefix(trimmed, bp+"/") || trimmed == bp {
+		return trimmed
+	}
+	return bp + trimmed
+}
+
+func (c Config) EffectiveAdminPath() string {
+	bp := c.BasePath()
+	if bp == "" || strings.HasPrefix(c.Admin.Path, bp+"/") {
+		return c.Admin.Path
+	}
+	return bp + c.Admin.Path
+}
+
+func (c Config) EffectiveAdminAPIPath() string {
+	return c.EffectiveAdminPath() + "api/v1/"
+}
+
 func (c Config) AdminAPIPath() string {
-	return c.Admin.Path + "api/v1/"
+	return c.EffectiveAdminAPIPath()
 }
 
 func (c *Config) NormalizeRuntime() error {
+	basePath, err := NormalizeBasePath(c.HTTP.BasePath)
+	if err != nil {
+		return err
+	}
+	c.HTTP.BasePath = basePath
+	if c.HTTP.BasePath == "" && c.HTTP.PublicBaseURL != "" {
+		if u, err := url.Parse(c.HTTP.PublicBaseURL); err == nil && u.Path != "" && u.Path != "/" {
+			if inferred, err := NormalizeBasePath(u.Path); err == nil {
+				c.HTTP.BasePath = inferred
+			}
+		}
+	}
 	adminPath, err := normalizeAdminPath(c.Admin.Path)
 	if err != nil {
 		return err
@@ -125,6 +188,35 @@ func (c *Config) NormalizeRuntime() error {
 	}
 	c.UpstreamNginx.UpstreamSocketMode, err = parseSocketMode(c.UpstreamNginx.UpstreamSocketModeText)
 	return err
+}
+
+func NormalizeBasePath(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "/" {
+		return "", nil
+	}
+	if !strings.HasPrefix(value, "/") || len(value) > 256 ||
+		strings.Contains(value, "//") || strings.ContainsAny(value, "\\%?#\x00\r\n\t ") {
+		return "", errors.New("http.base_path must be an absolute URL path with safe segments")
+	}
+	segments := strings.Split(strings.Trim(value, "/"), "/")
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." || len(segment) > 64 {
+			return "", errors.New("http.base_path contains an invalid segment")
+		}
+		for _, character := range segment {
+			if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+				(character >= '0' && character <= '9') || strings.ContainsRune("._~-", character) {
+				continue
+			}
+			return "", errors.New("http.base_path contains an unsafe character")
+		}
+	}
+	first := strings.ToLower(segments[0])
+	if first == "_repo" || first == "_mirrorrelay" || first == "_mirror_auth" {
+		return "", errors.New("http.base_path conflicts with a reserved system prefix")
+	}
+	return "/" + strings.Join(segments, "/"), nil
 }
 
 func normalizeAdminPath(value string) (string, error) {

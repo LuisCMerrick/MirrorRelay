@@ -295,13 +295,47 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 	if s.appearance == nil {
 		s.appearance = appearance.New(s.cfg.UIEnhancement)
 	}
+	basePath := s.cfg.BasePath()
+	effectiveAdminPath := s.cfg.EffectiveAdminPath()
+	effectiveAdminAPIPath := s.cfg.EffectiveAdminAPIPath()
+
 	adminMux := http.NewServeMux()
 	adminMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	adminMux.Handle("/metrics", s.adminAccess(http.HandlerFunc(s.metrics)))
-	adminMux.Handle(s.cfg.Admin.Path, s.adminAccess(securityHeaders(http.HandlerFunc(s.webHandler))))
-	adminMux.Handle(s.cfg.AdminAPIPath(), s.adminAccess(securityHeaders(http.HandlerFunc(s.apiHandler))))
+	adminMux.Handle(effectiveAdminPath, s.adminAccess(securityHeaders(http.HandlerFunc(s.webHandler))))
+	adminMux.Handle(effectiveAdminAPIPath, s.adminAccess(securityHeaders(http.HandlerFunc(s.apiHandler))))
+
+	if basePath != "" {
+		adminMux.HandleFunc(basePath+"/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+		adminMux.Handle(basePath+"/metrics", s.adminAccess(http.HandlerFunc(s.metrics)))
+		if s.cfg.Admin.Path != effectiveAdminPath {
+			adminMux.Handle(s.cfg.Admin.Path, s.adminAccess(securityHeaders(http.HandlerFunc(s.webHandler))))
+			rawAdminAPI := s.cfg.Admin.Path + "api/v1/"
+			if rawAdminAPI != effectiveAdminAPIPath {
+				adminMux.Handle(rawAdminAPI, s.adminAccess(securityHeaders(http.HandlerFunc(s.apiHandler))))
+			}
+		}
+	}
 
 	adminHost := strings.ToLower(strings.TrimSuffix(s.cfg.Admin.Host, "."))
+
+	isAdminPath := func(p string) bool {
+		if p == "/healthz" || p == "/metrics" ||
+			strings.HasPrefix(p, s.cfg.Admin.Path) ||
+			strings.HasPrefix(p, s.cfg.AdminAPIPath()) ||
+			p == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+			return true
+		}
+		if basePath != "" {
+			if p == basePath+"/healthz" || p == basePath+"/metrics" ||
+				strings.HasPrefix(p, effectiveAdminPath) ||
+				strings.HasPrefix(p, effectiveAdminAPIPath) ||
+				p == strings.TrimSuffix(effectiveAdminPath, "/") {
+				return true
+			}
+		}
+		return false
+	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == cluster.SyncApplyPath || r.URL.Path == cluster.SyncPurgePath {
@@ -311,19 +345,14 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 		reqHost := requestHostname(r.Host)
 		if adminHost != "" {
 			if reqHost == adminHost {
-				if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" ||
-					strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
-					strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
-					r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+				if isAdminPath(r.URL.Path) {
 					adminMux.ServeHTTP(w, r)
 					return
 				}
 				http.NotFound(w, r)
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
-				strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
-				r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+			if isAdminPath(r.URL.Path) {
 				http.NotFound(w, r)
 				return
 			}
@@ -354,10 +383,7 @@ func (s *Server) Handler(proxy http.Handler) http.Handler {
 			}
 		}
 
-		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" ||
-			strings.HasPrefix(r.URL.Path, s.cfg.Admin.Path) ||
-			strings.HasPrefix(r.URL.Path, s.cfg.AdminAPIPath()) ||
-			r.URL.Path == strings.TrimSuffix(s.cfg.Admin.Path, "/") {
+		if isAdminPath(r.URL.Path) {
 			adminMux.ServeHTTP(w, r)
 			return
 		}

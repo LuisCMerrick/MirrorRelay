@@ -97,6 +97,7 @@ type WebHTTPSettings struct {
 	Listen        string `json:"listen"`
 	HTTPSListen   string `json:"https_listen"`
 	PublicBaseURL string `json:"public_base_url"`
+	BasePath      string `json:"base_path"`
 	ReadTimeout   string `json:"read_timeout"`
 	WriteTimeout  string `json:"write_timeout"`
 	IdleTimeout   string `json:"idle_timeout"`
@@ -301,6 +302,7 @@ func WebSettingsFrom(c Config) WebSettings {
 			Listen:        c.HTTP.Listen,
 			HTTPSListen:   c.HTTP.HTTPSListen,
 			PublicBaseURL: c.HTTP.PublicBaseURL,
+			BasePath:      c.HTTP.BasePath,
 			ReadTimeout:   c.HTTP.ReadTimeout.String(),
 			WriteTimeout:  c.HTTP.WriteTimeout.String(),
 			IdleTimeout:   c.HTTP.IdleTimeout.String(),
@@ -514,6 +516,7 @@ func (w WebSettings) Apply(base Config) (Config, error) {
 	candidate.HTTP.Listen = w.HTTP.Listen
 	candidate.HTTP.HTTPSListen = w.HTTP.HTTPSListen
 	candidate.HTTP.PublicBaseURL = w.HTTP.PublicBaseURL
+	candidate.HTTP.BasePath = w.HTTP.BasePath
 
 	// TLS
 	if w.TLS.Certificate != "" {
@@ -963,6 +966,7 @@ func ComputeSettingsDiff(oldWS, newWS WebSettings) []model.SettingDiffEntry {
 	check("http.listen", oldWS.HTTP.Listen, newWS.HTTP.Listen, false)
 	check("http.https_listen", oldWS.HTTP.HTTPSListen, newWS.HTTP.HTTPSListen, false)
 	check("http.public_base_url", oldWS.HTTP.PublicBaseURL, newWS.HTTP.PublicBaseURL, false)
+	check("http.base_path", oldWS.HTTP.BasePath, newWS.HTTP.BasePath, false)
 	check("http.read_timeout", oldWS.HTTP.ReadTimeout, newWS.HTTP.ReadTimeout, false)
 	check("http.write_timeout", oldWS.HTTP.WriteTimeout, newWS.HTTP.WriteTimeout, false)
 	check("http.idle_timeout", oldWS.HTTP.IdleTimeout, newWS.HTTP.IdleTimeout, false)

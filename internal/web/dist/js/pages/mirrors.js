@@ -5,7 +5,7 @@ import { $, copyText, esc, notice } from '../dom.js';
 import { number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
-import { activeUpstreamFor, healthFor, publicURL } from '../repositories.js';
+import { activeUpstreamFor, getBasePath, healthFor, publicURL } from '../repositories.js';
 import { state } from '../state.js';
 
 export async function loadMirrors() {
@@ -34,7 +34,7 @@ function renderMirrorsTable() {
     const health = healthFor(repository);
     const isHealthy = health === 'healthy';
     const helpBtn = repository.help?.enabled && repository.help?.template
-      ? `<a class="button-link" href="/help/${esc(repository.slug)}/" target="_blank" rel="noopener noreferrer" title="${L('Help documentation')}">${icon('help', 13)} ${L('Help')}</a>`
+      ? `<a class="button-link" href="${getBasePath()}/help/${esc(repository.slug)}/" target="_blank" rel="noopener noreferrer" title="${L('Help documentation')}">${icon('help', 13)} ${L('Help')}</a>`
       : '';
 
     return `<tr>

@@ -1,6 +1,19 @@
 // Repository domain helpers shared by the dashboard and repository pages.
+export function getBasePath() {
+  if (typeof window === 'undefined' || !window.location) return '';
+  return window.location.pathname.replace(/\/admin\/?$/, '').replace(/\/+$/, '');
+}
+
 export function publicURL(repository) {
-  return repository.public_mode === 'host' ? `https://${repository.public_host}/` : `${location.origin}${repository.public_path}`;
+  if (repository.public_mode === 'host') {
+    return `https://${repository.public_host}/`;
+  }
+  const basePath = getBasePath();
+  const repoPath = (repository.public_path || `/${repository.slug}/`).startsWith('/')
+    ? (repository.public_path || `/${repository.slug}/`)
+    : '/' + (repository.public_path || `/${repository.slug}/`);
+  const fullPath = (basePath && !repoPath.startsWith(basePath + '/')) ? `${basePath}${repoPath}` : repoPath;
+  return `${location.origin}${fullPath}`;
 }
 
 export function activeUpstreamFor(repository) {

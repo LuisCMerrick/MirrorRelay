@@ -27,7 +27,8 @@ func RenderHTML(listing *ParsedListing, repo model.Mirror, reqPath string, brand
 		faviconLink = fmt.Sprintf(`<link rel="icon" href="%s">`, html.EscapeString(branding.Favicon))
 	}
 
-	breadcrumbs := buildBreadcrumbs(reqPath, repo)
+	basePrefix := deriveBasePrefix(reqPath, repo)
+	breadcrumbs := buildBreadcrumbs(reqPath, repo, basePrefix)
 
 	var rows strings.Builder
 	for _, entry := range listing.Entries {
@@ -66,12 +67,12 @@ func RenderHTML(listing *ParsedListing, repo model.Mirror, reqPath string, brand
 
 	customCSSLink := ""
 	if !safeUI {
-		customCSSLink = `<link rel="stylesheet" href="/ui/custom.css">`
+		customCSSLink = fmt.Sprintf(`<link rel="stylesheet" href="%s/ui/custom.css">`, basePrefix)
 	}
 
 	helpButton := ""
 	if repo.Help.Enabled {
-		helpButton = fmt.Sprintf(`<a href="/help/%s/" class="btn btn-help" title="View configuration help">Help / 说明</a>`, html.EscapeString(repo.Slug))
+		helpButton = fmt.Sprintf(`<a href="%s/help/%s/" class="btn btn-help" title="View configuration help">Help / 说明</a>`, basePrefix, html.EscapeString(repo.Slug))
 	}
 
 	return fmt.Sprintf(`<!doctype html>
@@ -373,15 +374,41 @@ func RenderHTML(listing *ParsedListing, repo model.Mirror, reqPath string, brand
 	)
 }
 
-func buildBreadcrumbs(reqPath string, repo model.Mirror) string {
+func deriveBasePrefix(reqPath string, repo model.Mirror) string {
+	if repo.PublicMode == "host" {
+		return ""
+	}
+	publicPath := strings.Trim(repo.PublicPath, "/")
+	if publicPath == "" {
+		publicPath = strings.Trim(repo.Slug, "/")
+	}
+	cleanReq := strings.Trim(reqPath, "/")
+	if publicPath != "" && strings.Contains(cleanReq, publicPath) {
+		idx := strings.Index(cleanReq, publicPath)
+		if idx > 0 {
+			prefix := cleanReq[:idx]
+			prefix = strings.Trim(prefix, "/")
+			if prefix != "" {
+				return "/" + prefix
+			}
+		}
+	}
+	return ""
+}
+
+func buildBreadcrumbs(reqPath string, repo model.Mirror, basePrefix ...string) string {
+	homeHref := "/"
+	if len(basePrefix) > 0 && basePrefix[0] != "" {
+		homeHref = basePrefix[0] + "/"
+	}
 	cleanPath := strings.Trim(reqPath, "/")
 	parts := strings.Split(cleanPath, "/")
 	if len(parts) == 0 || (len(parts) == 1 && parts[0] == "") {
-		return fmt.Sprintf(`<a href="/">Home</a> <span class="separator">/</span> <span class="current">%s</span>`, html.EscapeString(repo.Name))
+		return fmt.Sprintf(`<a href="%s">Home</a> <span class="separator">/</span> <span class="current">%s</span>`, html.EscapeString(homeHref), html.EscapeString(repo.Name))
 	}
 
 	var buf strings.Builder
-	buf.WriteString(`<a href="/">Home</a> <span class="separator">/</span> `)
+	fmt.Fprintf(&buf, `<a href="%s">Home</a> <span class="separator">/</span> `, html.EscapeString(homeHref))
 
 	currentAcc := "/"
 	for i, part := range parts {
