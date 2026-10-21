@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.0.30 - 2026-10-21
 
 - **Web UI architecture**:
   - Hash-based router (`#/mirrors`, `#/cache`, ...): reloads, bookmarks and
