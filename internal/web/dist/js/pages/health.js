@@ -5,6 +5,7 @@ import { card, disclosure, kv } from '../components.js';
 import { $, esc } from '../dom.js';
 import { stateLabel } from '../format.js';
 import { icon } from '../icons.js';
+import { healthBadge } from '../ui.js';
 import { L } from '../i18n.js';
 
 export async function loadHealth() {
@@ -12,7 +13,7 @@ export async function loadHealth() {
   const repositories = health.repositories || [];
   const enabledRepositories = repositories.filter(repository => repository.health_state !== 'disabled');
   const healthyRepositories = enabledRepositories.filter(repository => repository.health_state === 'healthy').length;
-  const repositoryHealthOK = healthyRepositories === enabledRepositories.length;
+  const repositoryHealthOK = enabledRepositories.length > 0 && healthyRepositories === enabledRepositories.length;
   const endpointLabel = health.upstream_network && health.upstream_address ? ` · ${health.upstream_network} · ${health.upstream_address}` : '';
   const frontendLabel = health.frontend_network && health.frontend_address ? ` · ${health.frontend_network} · ${health.frontend_address}` : '';
   const nginxRunning = health.managed_upstream_nginx === 'running';
@@ -38,14 +39,9 @@ export async function loadHealth() {
       <h2>${icon('layers', 18)} ${L('Repositories')}</h2>
       <div class="health-repo-list">
         ${repositories.map(repository => {
-          const isHealthy = repository.health_state === 'healthy';
-          const isDisabled = repository.health_state === 'disabled';
           return `<div class="kv">
             <span><strong>${esc(repository.name)}</strong></span>
-            <span class="badge ${isHealthy ? 'ok' : (isDisabled ? '' : (repository.health_state === 'unknown' ? 'yellow' : 'bad'))}">
-              ${isDisabled ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
-              ${esc(stateLabel(repository.health_state))}
-            </span>
+            ${healthBadge(repository.health_state)}
           </div>`;
         }).join('') || `<p class="muted">${L('No repositories yet.')}</p>`}
       </div>

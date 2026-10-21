@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { $, notice } from './dom.js';
 import { L } from './i18n.js';
+import { confirmDialog } from './ui.js';
 
 let restartCompleted = async () => {};
 let restartInProgress = false;
@@ -41,7 +42,7 @@ function resetRestartButtons() {
 
 export async function triggerRestart() {
   if (restartInProgress) return;
-  if (!confirm(L('Restart MirrorRelay service now? The application will reconnect automatically once ready.'))) return;
+  if (!await confirmDialog(L('Restart MirrorRelay service now? The application will reconnect automatically once ready.'), {danger: true})) return;
   restartInProgress = true;
   restartButtons().forEach(btn => {
     btn.disabled = true;

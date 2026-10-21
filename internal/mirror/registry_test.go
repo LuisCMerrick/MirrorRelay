@@ -41,6 +41,13 @@ func TestNormalizeAndValidate(t *testing.T) {
 	}
 }
 
+func TestNormalizeAndValidateAcceptsPercentEncodedDollarInUpstreamPath(t *testing.T) {
+	m := model.Mirror{Name: "Dollar", Slug: "dollar", Upstreams: []model.Upstream{{URL: "https://repo.example/a%24b", Enabled: true}}}
+	if err := NormalizeAndValidate(&m, false, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNormalizeAndValidatePreservesEscapedUpstreamPath(t *testing.T) {
 	m := model.Mirror{Name: "Escaped", Slug: "escaped", Upstreams: []model.Upstream{{URL: "https://repo.example/base%20directory", Enabled: true}}}
 	if err := NormalizeAndValidate(&m, false, false); err != nil {
@@ -63,6 +70,16 @@ func TestNormalizeAndValidateRejectsGeneratedConfigInjection(t *testing.T) {
 		"public auxiliary route": func(m *model.Mirror) { m.PublicMode, m.PublicPath = "path", "/_mirrorrelay/upstream/" },
 		"host rewrite directive": func(m *model.Mirror) { m.HostRewrite = "repo.example;return" },
 		"rewrite host directive": func(m *model.Mirror) { m.RewriteHosts = []string{"cdn.example;return"} },
+		"upstream path variable": func(m *model.Mirror) {
+			m.Upstreams = []model.Upstream{{URL: "https://repo.example/a$http_authorization/", Enabled: true}}
+		},
+		"header value variable": func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-Token": "$http_cookie"} },
+		"header name comment":   func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-A#b": "1"} },
+		"header name quote":     func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-A'b": "1"} },
+		"header name variable":  func(m *model.Mirror) { m.HeaderRemove = []string{"X-$host"} },
+		"header name backtick":  func(m *model.Mirror) { m.HeaderRemove = []string{"X-`b"} },
+		"header value control":  func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-Token": "a\x01b"} },
+		"header value delete":   func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-Token": "a\x7fb"} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			candidate := base
@@ -71,6 +88,16 @@ func TestNormalizeAndValidateRejectsGeneratedConfigInjection(t *testing.T) {
 				t.Fatal("unsafe value was accepted")
 			}
 		})
+	}
+}
+
+func TestNormalizeAndValidateAcceptsOrdinaryHeaderNames(t *testing.T) {
+	candidate := model.Mirror{Name: "Safe", Slug: "safe", PublicMode: "host", PublicHost: "repo.example",
+		Upstreams:    []model.Upstream{{URL: "https://repo.example/", Enabled: true}},
+		HeaderAdd:    map[string]string{"X-Api_Key.V2": "token\twith tab"},
+		HeaderRemove: []string{"Accept-Encoding"}}
+	if err := NormalizeAndValidate(&candidate, false, false); err != nil {
+		t.Fatal(err)
 	}
 }
 

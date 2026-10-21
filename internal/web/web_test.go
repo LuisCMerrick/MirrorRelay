@@ -22,6 +22,10 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	authScript, err := fs.ReadFile(assets, "js/auth.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	themeBootstrap, err := fs.ReadFile(assets, "js/theme-bootstrap.js")
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +82,10 @@ func TestEmbeddedUIHasEnglishDefaultAndAutomaticManualLanguageSelection(t *testi
 			"本地端点与入口", "启用前端 Unix Socket", "前端监听 IP",
 		}},
 		"mainScript": {content: string(mainScript), expected: []string{
-			"import", "boot()", "applyLanguage", "triggerRestart", "initThemeControls", "/auth/bootstrap",
+			"import", "boot()", "applyLanguage", "triggerRestart", "initThemeControls", "initAuth(boot)", "onUnauthorized",
+		}},
+		"authScript": {content: string(authScript), expected: []string{
+			"/auth/bootstrap", "/auth/login", "/auth/recovery/login", "loginWithPasskey",
 		}},
 		"themeBootstrap": {content: string(themeBootstrap), expected: []string{
 			"mirrorrelay.theme", "prefers-color-scheme: dark", "dataset.theme",
@@ -360,7 +367,7 @@ func TestFrontendHardeningAndFixes(t *testing.T) {
 	}
 
 	cluster := read("js/pages/cluster.js")
-	if !strings.Contains(cluster, "stateLabel(node.health_status") || !strings.Contains(cluster, "stateLabel(node.config_status") {
+	if !strings.Contains(cluster, "healthBadge(node.health_status") || !strings.Contains(cluster, "stateLabel(node.config_status") {
 		t.Error("cluster.js does not use stateLabel for edge node statuses")
 	}
 
@@ -393,5 +400,32 @@ func TestFrontendHardeningAndFixes(t *testing.T) {
 	}
 	if !strings.Contains(cache, "title=\"${esc(job.error_message || '')}\"") {
 		t.Error("cache.js does not expose error_message tooltip on warmup status badge")
+	}
+}
+
+func TestEmbeddedUIRoutesPagesThroughLocationHash(t *testing.T) {
+	read := func(name string) string {
+		t.Helper()
+		value, err := fs.ReadFile(FS(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(value)
+	}
+	router := read("js/router.js")
+	for _, expected := range []string{"hashchange", "history.replaceState", "canAccess", "isCurrentNavigation"} {
+		if !strings.Contains(router, expected) {
+			t.Fatalf("router.js missing %q", expected)
+		}
+	}
+	api := read("js/api.js")
+	for _, expected := range []string{"AbortController", "response.status === 401", "onUnauthorized"} {
+		if !strings.Contains(api, expected) {
+			t.Fatalf("api.js missing %q", expected)
+		}
+	}
+	style := read("app.css")
+	if !strings.Contains(style, "#notice {\n  position: fixed;") {
+		t.Fatal("toasts must not shift the page layout")
 	}
 }

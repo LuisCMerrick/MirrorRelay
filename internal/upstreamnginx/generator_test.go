@@ -282,3 +282,26 @@ func TestCustomConfigurationRejectsInvalidRepositoryAssociation(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateRejectsNginxVariableInterpolation(t *testing.T) {
+	cfg := config.Default()
+	resolver := fixedResolver{"repo.example": {netip.MustParseAddr("8.8.8.8")}}
+	base := model.Mirror{
+		ID: 9, Name: "Packages", Slug: "packages", Type: "generic", Enabled: true,
+		PublicMode: "path", PublicPath: "/packages/", ProxyMode: "transparent",
+		Upstreams: []model.Upstream{{ID: 90, URL: "https://repo.example/", Host: "repo.example", Enabled: true}},
+	}
+	for name, mutate := range map[string]func(*model.Mirror){
+		"header value":  func(m *model.Mirror) { m.HeaderAdd = map[string]string{"X-Token": "$http_cookie"} },
+		"upstream path": func(m *model.Mirror) { m.Upstreams[0].URL = "https://repo.example/$http_x_path/" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			repository := base
+			repository.Upstreams = append([]model.Upstream(nil), base.Upstreams...)
+			mutate(&repository)
+			if _, err := NewGenerator(cfg, resolver).Generate(context.Background(), []model.Mirror{repository}, nil); err == nil {
+				t.Fatal("generator rendered a value that Nginx would expand as a variable")
+			}
+		})
+	}
+}

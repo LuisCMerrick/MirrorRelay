@@ -261,7 +261,11 @@ export default {
     "disabled": "Disabled",
     "restarting": "Restarting",
     "idle": "Idle",
-    "cancelled": "Cancelled"
+    "cancelled": "Cancelled",
+    "external": "External (not managed)",
+    "degraded": "Degraded",
+    "stopped": "Stopped",
+    "starting": "Starting"
 },
   duration: function(days, hours, minutes) {
     return days + 'd ' + hours + 'h ' + minutes + 'm';
@@ -967,6 +971,39 @@ export default {
     "WebAuthn / Passkey is not supported in this browser.": "WebAuthn / Passkey is not supported in this browser.",
     "No passkey credential returned.": "No passkey credential returned.",
     "Passkey registration cancelled.": "Passkey registration cancelled.",
-    "Passkey names must not exceed 128 bytes.": "Passkey names must not exceed 128 bytes."
+    "Passkey names must not exceed 128 bytes.": "Passkey names must not exceed 128 bytes.",
+    "Request timed out.": "Request timed out.",
+    "Invalid JSON response from %s.": "Invalid JSON response from %s.",
+    "Duplicate upstream URL: %s": "Duplicate upstream URL: %s",
+    "Menu": "Menu",
+    "Your session has expired. Sign in again to continue.": "Your session has expired. Sign in again to continue.",
+    "Repository #%s": "Repository #%s",
+    "No purge jobs yet.": "No purge jobs yet.",
+    "Invalidate the entire cache of this repository?": "Invalidate the entire cache of this repository?",
+    "Control plane": "Control plane",
+    "Offline": "Offline",
+    "HTTP(S) policy": "HTTP(S) policy",
+    "req": "req",
+    "No data available": "No data available",
+    "max": "max",
+    "2xx OK": "2xx OK",
+    "3xx Redirect": "3xx Redirect",
+    "4xx Client error": "4xx Client error",
+    "5xx Upstream error": "5xx Upstream error",
+    "No traffic yet": "No traffic yet",
+    "Total": "Total",
+    "Cache HIT": "Cache HIT",
+    "Cache MISS": "Cache MISS",
+    "%s in 24 h · %s in 7 days": "%s in 24 h · %s in 7 days",
+    "No matching audit entries.": "No matching audit entries.",
+    "No audit entries yet.": "No audit entries yet.",
+    "This repository no longer exists. The list has been refreshed.": "This repository no longer exists. The list has been refreshed.",
+    "No repositories match the search.": "No repositories match the search.",
+    "Current account": "Current account",
+    "Delete the account %s? Its sessions are revoked immediately.": "Delete the account %s? Its sessions are revoked immediately.",
+    "Enter an absolute HTTP or HTTPS URL without credentials, query, fragment or shell special characters.": "Enter an absolute HTTP or HTTPS URL without credentials, query, fragment or shell special characters.",
+    "Confirm": "Confirm",
+    "OK": "OK",
+    "Online": "Online"
 }
 };

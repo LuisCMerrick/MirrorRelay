@@ -538,7 +538,11 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request, session auth
 		return
 	}
 	if err := s.store.DeleteUser(r.Context(), id); err != nil {
-		writeError(w, 404, "user not found")
+		if database.IsNotFound(err) {
+			writeError(w, 404, "user not found")
+		} else {
+			writeInternal(w, err)
+		}
 		return
 	}
 	_ = s.audit(r, session.Username, "user_delete", "user", strconv.FormatInt(id, 10), true)
@@ -652,7 +656,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.store.UserByName(r.Context(), username)
-	if err != nil || !auth.VerifyPassword(user.PasswordHash, in.Password) {
+	passwordHash := user.PasswordHash
+	if err != nil {
+		passwordHash = auth.DummyPasswordHash()
+	}
+	if !auth.VerifyPassword(passwordHash, in.Password) || err != nil {
 		release(false)
 		_ = s.audit(r, in.Username, "login", "session", "invalid credentials", false)
 		time.Sleep(250 * time.Millisecond)

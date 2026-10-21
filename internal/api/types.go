@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -46,6 +47,10 @@ func decodeJSONLimit(w http.ResponseWriter, r *http.Request, out any, maximum in
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
+		if tooLarge := (*http.MaxBytesError)(nil); errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("request body exceeds %d bytes", maximum))
+			return err
+		}
 		writeError(w, 400, "invalid JSON: "+err.Error())
 		return err
 	}

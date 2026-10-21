@@ -7,6 +7,7 @@ import { date } from '../format.js';
 import { nestedValue, parseList, setNestedValue } from '../forms.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { confirmDialog } from '../ui.js';
 import { triggerRestart } from '../restart.js';
 import { settingsGroups } from '../settings-schema.js';
 import { state } from '../state.js';
@@ -653,7 +654,7 @@ export async function loadSettings() {
       tbody.querySelectorAll('.rollback-history-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           const ver = btn.dataset.version;
-          if (!confirm(L('Confirm rollback to version %s?', ver))) return;
+          if (!await confirmDialog(L('Confirm rollback to version %s?', ver))) return;
           try {
             btn.disabled = true;
             btn.setAttribute('aria-busy', 'true');
@@ -731,7 +732,11 @@ export async function loadSettings() {
       if (input.disabled) return;
       let value;
       if (input.dataset.settingType === 'boolean') value = input.checked;
-      else if (input.dataset.settingType === 'number') value = Number(input.value);
+      else if (input.dataset.settingType === 'number') {
+        // A cleared number field keeps the saved value instead of becoming 0.
+        if (input.value.trim() === '') return;
+        value = Number(input.value);
+      }
       else if (input.dataset.settingType === 'list') value = parseList(input.value);
       else value = input.value.trim();
       if (input.dataset.redacted === 'true' && value === '') return;
@@ -762,8 +767,8 @@ export async function loadSettings() {
   });
 
   $('#reset-settings').addEventListener('click', async event => {
-    if (!confirm(L('Discard the Web UI override and restore YAML values after restart?'))) return;
     const button = event.currentTarget;
+    if (!await confirmDialog(L('Discard the Web UI override and restore YAML values after restart?'), {danger: true})) return;
     try {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');

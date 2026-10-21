@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- **Web UI architecture**:
+  - Hash-based router (`#/mirrors`, `#/cache`, ...): reloads, bookmarks and
+    browser history keep the current page; pages above the session role fall
+    back to the dashboard; stale page loads no longer raise notices on the
+    page the administrator moved to.
+  - Central API client with request timeouts, typed errors and expired-session
+    handling that returns to the sign-in form instead of failing silently.
+  - Sign-in flow extracted into `js/auth.js`; shared health badges, busy-state
+    and empty-row helpers in `js/ui.js`; collapsible navigation on narrow
+    screens; toasts float above the content so they no longer shift layout
+    under the pointer.
+  - Native `confirm`/`prompt` replaced by a themed, localized in-page dialog
+    (`confirmDialog`/`promptDialog`); the locale verifier now rejects native
+    blocking dialogs.
+- **Web UI fixes**:
+  - Editing a repository no longer resets upstream weight and enabled flags;
+    duplicate upstream URLs are rejected before submission.
+  - Unknown health is shown as a warning rather than a failure; unchecked
+    upstreams show no fake `0 ms` latency; zero Go timestamps render as `—`.
+  - Purging a whole repository cache from the detail dialog or the Cache page
+    now asks for confirmation; warm-up and purge forms ignore double submits.
+  - The current account can no longer be offered for deletion; a cleared
+    numeric setting keeps its saved value instead of becoming `0`.
+  - Client setup one-liners refuse base URLs containing shell metacharacters.
+  - Translation arguments containing `$&`-style sequences are inserted
+    literally; dashboard charts, legends, units, cache terms and health
+    states (`external`, `degraded`, ...) are fully localized.
+- **Backend hardening**:
+  - Reject `$` in upstream paths and header values, and narrow header names to
+    nginx-safe tokens, so user input cannot expand Nginx variables or alter
+    directive parsing in generated configuration.
+  - Unknown usernames now perform Argon2id work to avoid timing-based user
+    enumeration.
+  - Empty user, audit and purge-job lists encode as `[]`; oversized JSON
+    bodies answer `413`; storage failures are no longer masked as `404`.
+
 ## v0.0.22 - 2026-09-16
 
 - **Repository proxy security boundaries**:

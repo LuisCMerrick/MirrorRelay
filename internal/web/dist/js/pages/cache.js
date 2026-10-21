@@ -8,9 +8,10 @@ import { bytes, date, duration, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
 import { state } from '../state.js';
+import { confirmDialog, emptyRow, withBusy } from '../ui.js';
 
 export async function loadCache() {
-  const [cache, dashboard, repositories, warmupStatus, warmupJobs] = await Promise.all([
+  const [cache, dashboard, repositoryValues, warmupStatus, warmupJobs] = await Promise.all([
     api('/cache'),
     api('/stats'),
     api('/mirrors'),
@@ -18,7 +19,9 @@ export async function loadCache() {
     api('/warmup/jobs').catch(() => [])
   ]);
 
-  const jobs = cache.purge_jobs || [], maximum = cache.maximum_bytes || cache.max_bytes || 0, byRepository = dashboard.stats.by_mirror || {};
+  const repositories = repositoryValues || [];
+  state.mirrors = repositories;
+  const jobs = cache.purge_jobs || [], maximum = cache.maximum_bytes || cache.max_bytes || 0, byRepository = dashboard?.stats?.by_mirror || {};
   const usagePercent = maximum ? Math.min(100, 100 * cache.bytes / maximum) : 0;
   const canManage = state.role === 'admin' || state.role === 'operator';
 
@@ -29,7 +32,7 @@ export async function loadCache() {
     const statusClass = isRunning ? 'badge blue' : (isOk ? 'badge ok' : (isFailed ? 'badge bad' : 'badge'));
     return `<tr>
       <td><strong>${esc(job.name)}</strong></td>
-      <td><span class="badge blue">${esc(job.mirror_name || job.mirror_slug || `Repo #${job.mirror_id}`)}</span></td>
+      <td><span class="badge blue">${esc(job.mirror_name || job.mirror_slug || L('Repository #%s', job.mirror_id))}</span></td>
       <td><code>${esc(job.cron_expression || L('Manual only'))}</code></td>
       <td>
         <span class="${statusClass}" title="${esc(job.error_message || '')}">
@@ -220,6 +223,7 @@ export async function loadCache() {
             </tr>
           </thead>
           <tbody>
+            ${jobs.length ? '' : emptyRow(7, L('No purge jobs yet.'))}
             ${jobs.map(job => `<tr>
               <td>${date(job.created_at)}</td>
               <td>${esc(job.scope)} ${job.repository_id || ''}</td>
@@ -238,8 +242,12 @@ export async function loadCache() {
       </div>
     </div>`;
 
-  $('#create-warmup-form')?.addEventListener('submit', async event => {
+  $('#create-warmup-form')?.addEventListener('submit', event => {
     event.preventDefault();
+    return withBusy(event.target.querySelector('button[type="submit"]'), () => createWarmup(event));
+  });
+
+  async function createWarmup(event) {
     const mirrorId = Number($('#warmup-repo-select').value);
     const name = $('#warmup-name-input').value.trim();
     const cron = $('#warmup-cron-input').value.trim();
@@ -262,13 +270,19 @@ export async function loadCache() {
     } catch (error) {
       notice(error.message, true);
     }
+  }
+
+  $('#targeted-purge-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    return withBusy(event.target.querySelector('button[type="submit"]'), () => targetedPurge());
   });
 
-  $('#targeted-purge-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
+  async function targetedPurge() {
     const repoId = Number($('#purge-repo-select').value);
     const path = $('#purge-path-input').value.trim();
     const resBox = $('#targeted-purge-result');
+    if (!repoId) return;
+    if (!path && !await confirmDialog(L('Invalidate the entire cache of this repository?'), {danger: true})) return;
 
     try {
       const result = path
@@ -288,10 +302,10 @@ export async function loadCache() {
     } catch (err) {
       notice(err.message, true);
     }
-  });
+  }
 
   $('#clear-cache')?.addEventListener('click', async () => {
-    if (!confirm(L('Invalidate every existing cache namespace?'))) return;
+    if (!await confirmDialog(L('Invalidate every existing cache namespace?'), {danger: true})) return;
     try {
       const result = await api('/cache', {method: 'DELETE'});
       notice(L('Logical purge completed; physical reclaim is %s.', result.physical_reclaim));
@@ -323,7 +337,7 @@ registerAction('cancel-warmup', async button => {
 });
 
 registerAction('delete-warmup', async button => {
-  if (!confirm(L('Delete this warm-up task?'))) return;
+  if (!await confirmDialog(L('Delete this warm-up task?'), {danger: true})) return;
   try {
     await api(`/warmup/jobs/${Number(button.dataset.id)}`, {method: 'DELETE'});
     notice(L('Warm-up task deleted.'));

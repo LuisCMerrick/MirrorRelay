@@ -84,8 +84,12 @@ func (s *Server) mirrorAction(w http.ResponseWriter, r *http.Request, session au
 		return
 	}
 	m, err := s.store.Mirror(r.Context(), id)
-	if err != nil {
+	if database.IsNotFound(err) {
 		writeError(w, 404, "mirror not found")
+		return
+	}
+	if err != nil {
+		writeInternal(w, err)
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {

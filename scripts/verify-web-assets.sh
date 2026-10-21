@@ -6,3 +6,4 @@ find internal/web/dist -type f -name '*.js' -print0 |
   xargs -0 -n 1 node --check
 
 node scripts/verify-web-locales.mjs
+node scripts/verify-web-behavior.mjs

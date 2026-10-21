@@ -4,6 +4,7 @@ import { registerAction } from '../actions.js';
 import { $, copyText, esc, notice } from '../dom.js';
 import { number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
+import { confirmDialog, emptyRow, healthBadge } from '../ui.js';
 import { L } from '../i18n.js';
 import { activeUpstreamFor, getBasePath, healthFor, publicURL } from '../repositories.js';
 import { state } from '../state.js';
@@ -32,7 +33,6 @@ function renderMirrorsTable() {
   const rows = filtered.map(repository => {
     const active = activeUpstreamFor(repository);
     const health = healthFor(repository);
-    const isHealthy = health === 'healthy';
     const helpBtn = repository.help?.enabled && repository.help?.template
       ? `<a class="button-link" href="${getBasePath()}/help/${esc(repository.slug)}/" target="_blank" rel="noopener noreferrer" title="${L('Help documentation')}">${icon('help', 13)} ${L('Help')}</a>`
       : '';
@@ -46,7 +46,7 @@ function renderMirrorsTable() {
       </td>
       <td>
         <span class="badge blue">${esc(repository.type)}</span>
-        <small>${esc(repository.profile_name || 'Custom')} ${esc(repository.profile_version || '')}</small>
+        <small>${esc(repository.profile_name || L('Custom'))} ${esc(repository.profile_version || '')}</small>
       </td>
       <td>
         <div class="code-copy-row">
@@ -60,10 +60,7 @@ function renderMirrorsTable() {
         <span class="upstream-pill">${esc((active.url || '').replace(/^https?:\/\//, '').slice(0, 36) || '—')}</span>
       </td>
       <td>
-        <span class="badge ${isHealthy ? 'ok' : (health === 'disabled' ? '' : (health === 'unknown' ? 'yellow' : 'bad'))}">
-          ${health === 'disabled' ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
-          ${esc(stateLabel(health))}
-        </span>
+        ${healthBadge(health)}
         <small>${active.latency_ms && health !== 'disabled' ? `${number(active.latency_ms)} ms` : '—'}</small>
       </td>
       <td>
@@ -108,7 +105,7 @@ function renderMirrorsTable() {
         </tr>
       </thead>
       <tbody>
-        ${rows || `<tr><td colspan="8" class="empty">${L('No repositories yet.')}</td></tr>`}
+        ${rows || emptyRow(8, query ? L('No repositories match the search.') : L('No repositories yet.'))}
       </tbody>
     </table>
   </div>`;
@@ -128,7 +125,7 @@ registerAction('copy-repository-url', async button => {
 registerAction('check-mirror', async button => {
   notice(L('Checking upstreams…'));
   try {
-    const results = await api(`/mirrors/${Number(button.dataset.id)}/check`, {method: 'POST'});
+    const results = (await api(`/mirrors/${Number(button.dataset.id)}/check`, {method: 'POST'})) || [];
     const healthy = results.length > 0 && results.every(result => result.healthy);
     notice(healthy ? L('All upstreams are healthy.') : L('One or more upstreams are unhealthy.'), !healthy);
     await loadMirrors();
@@ -149,7 +146,7 @@ registerAction('toggle-mirror', async button => {
 });
 
 registerAction('delete-mirror', async button => {
-  if (!confirm(L('Delete this repository and logically invalidate its cache? This cannot be undone.'))) return;
+  if (!await confirmDialog(L('Delete this repository and logically invalidate its cache? This cannot be undone.'), {danger: true})) return;
   try {
     await api(`/mirrors/${Number(button.dataset.id)}`, {method: 'DELETE'});
     notice(L('Repository deleted.'));

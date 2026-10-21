@@ -5,7 +5,10 @@ import { $, copyText, esc, notice } from '../dom.js';
 import { date } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { confirmDialog, promptDialog } from '../ui.js';
 import { state } from '../state.js';
+import { registerPasskey } from '../passkey.js';
+import { navigate } from '../router.js';
 
 export async function loadUsers() {
   const users = (await api('/users')) || [];
@@ -64,9 +67,11 @@ export async function loadUsers() {
               <td><code>${date(user.created_at)}</code></td>
               <td><code>${date(user.updated_at)}</code></td>
               <td>
-                <button class="danger small" data-action="delete-user" data-id="${user.id}">
+                ${user.username === state.username
+                  ? `<span class="text-muted">${L('Current account')}</span>`
+                  : `<button class="danger small" data-action="delete-user" data-id="${user.id}" data-name="${esc(user.username)}">
                   ${icon('trash', 12)} ${L('Delete')}
-                </button>
+                </button>`}
               </td>
             </tr>`;
             }).join('')}
@@ -91,19 +96,22 @@ export async function loadUsers() {
         })
       });
       notice(L('User created.'));
+      event.target.reset();
       await loadUsers();
     } catch (error) {
       $('#user-error').textContent = error.message;
       $('#user-error').focus();
     } finally {
-      submitButton.disabled = false;
-      submitButton.removeAttribute('aria-busy');
+      if (submitButton.isConnected) {
+        submitButton.disabled = false;
+        submitButton.removeAttribute('aria-busy');
+      }
     }
   });
 }
 
 registerAction('delete-user', async button => {
-  if (!confirm(L('Delete this administrator account?'))) return;
+  if (!await confirmDialog(L('Delete the account %s? Its sessions are revoked immediately.', button.dataset.name || ''), {danger: true})) return;
   try {
     await api(`/users/${Number(button.dataset.id)}`, {method: 'DELETE'});
     notice(L('User deleted.'));
@@ -113,12 +121,11 @@ registerAction('delete-user', async button => {
   }
 });
 
-import { registerPasskey } from '../passkey.js';
 
 registerAction('rename-passkey', async button => {
   const id = button.dataset.id;
   const currentName = button.dataset.name;
-  const newName = prompt(L('Enter new passkey name:'), currentName);
+  const newName = await promptDialog(L('Enter new passkey name:'), {value: currentName, maxLength: 128, confirmLabel: L('Rename')});
   if (!newName || newName.trim() === '' || newName === currentName) return;
   try {
     await api('/account/passkeys/' + id, {
@@ -134,7 +141,7 @@ registerAction('rename-passkey', async button => {
 
 registerAction('delete-passkey', async button => {
   const id = button.dataset.id;
-  if (!confirm(L('Are you sure you want to delete this passkey?'))) return;
+  if (!await confirmDialog(L('Are you sure you want to delete this passkey?'), {danger: true})) return;
   try {
     await api('/account/passkeys/' + id, { method: 'DELETE' });
     notice(L('Passkey deleted.'));
@@ -262,13 +269,13 @@ export async function loadAccount() {
   });
 
   $('#add-passkey-btn')?.addEventListener('click', async event => {
-    const name = prompt(L('Enter a name for this Passkey (e.g. MacBook Touch ID, YubiKey):'), 'Passkey');
+    const button = event.currentTarget;
+    const name = await promptDialog(L('Enter a name for this Passkey (e.g. MacBook Touch ID, YubiKey):'), {value: 'Passkey', maxLength: 128, confirmLabel: L('Add Passkey')});
     if (name === null) return;
     if (new TextEncoder().encode(name.trim()).length > 128) {
       notice(L('Passkey names must not exceed 128 bytes.'), true);
       return;
     }
-    const button = event.currentTarget;
     try {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
@@ -287,13 +294,13 @@ export async function loadAccount() {
 
   $('#configure-passkey-btn')?.addEventListener('click', () => {
     state.settingsSection = 'passkey';
-    document.querySelector('nav button[data-page="settings"]')?.click();
+    navigate('settings');
   });
 
   let generatedCodes = [];
   $('#generate-recovery-btn')?.addEventListener('click', async event => {
-    if (!confirm(L('Generating new recovery codes will invalidate any existing codes. Continue?'))) return;
     const button = event.currentTarget;
+    if (!await confirmDialog(L('Generating new recovery codes will invalidate any existing codes. Continue?'), {danger: true})) return;
     try {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
@@ -318,8 +325,8 @@ export async function loadAccount() {
   });
 
   $('#copy-recovery-codes-btn')?.addEventListener('click', async event => {
-    if (generatedCodes.length > 0) {
       const button = event.currentTarget;
+    if (generatedCodes.length > 0) {
       try {
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');

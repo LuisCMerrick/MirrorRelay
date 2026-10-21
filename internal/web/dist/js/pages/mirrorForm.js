@@ -24,6 +24,8 @@ function applyProfile(profile) {
   $('#html-rewrite-enabled').checked = Boolean(profile.html_rewrite_enabled);
   $('#rewrite-profile').value = profile.rewrite_profile || '';
   $('#rewrite-hosts').value = (profile.rewrite_hosts || []).join('\n');
+  $('#header-add').value = Object.entries(profile.header_add || {}).map(([name, value]) => `${name}: ${value}`).join('\n');
+  $('#header-remove').value = (profile.header_remove || []).join('\n');
   $('#auth-mode').value = profile.auth_mode || 'direct';
   $('#blob-redirect').value = profile.blob_redirect_mode || 'full_proxy';
   $('#connect-timeout').value = profile.connect_timeout_sec || 10;
@@ -47,7 +49,10 @@ function applyProfile(profile) {
   }
 }
 
+let editingUpstreams = [];
+
 function openMirrorForm(repository = null) {
+  editingUpstreams = repository?.upstreams || [];
   $('#mirror-form').reset();
   const set = (selector, value) => { $(selector).value = value ?? ''; };
   set('#mirror-id', repository?.id || '');
@@ -89,6 +94,7 @@ async function submitMirrorForm(event) {
   const id = $('#mirror-id').value;
   const templateValue = $('#template').value;
   const selectedProfile = templateValue === '' ? null : state.profiles[Number(templateValue)];
+  if (submitButton.getAttribute('aria-busy') === 'true') return;
   try {
     submitButton.disabled = true;
     submitButton.setAttribute('aria-busy', 'true');
@@ -98,7 +104,7 @@ async function submitMirrorForm(event) {
       enabled: $('#mirror-enabled').checked, description: $('#mirror-description').value,
       public_mode: $('#public-mode').value, public_host: $('#public-host').value, public_path: $('#public-path').value,
       access_policy: $('#access-policy').value, proxy_mode: $('#proxy-mode').value, redirect_mode: $('#redirect-mode').value,
-      upstreams: parseUpstreams($('#upstream-list').value), strip_prefix: $('#strip-prefix').value, add_prefix: $('#add-prefix').value, host_rewrite: $('#host-rewrite').value,
+      upstreams: parseUpstreams($('#upstream-list').value, editingUpstreams), strip_prefix: $('#strip-prefix').value, add_prefix: $('#add-prefix').value, host_rewrite: $('#host-rewrite').value,
       header_add: parseHeaders($('#header-add').value), header_remove: parseList($('#header-remove').value),
       connect_timeout_sec: Number($('#connect-timeout').value), read_timeout_sec: Number($('#read-timeout').value), send_timeout_sec: Number($('#send-timeout').value),
       cache_enabled: $('#cache-enabled').checked, cache_profile: $('#cache-profile').value, cache_authenticated: $('#cache-authenticated').checked,
@@ -122,7 +128,7 @@ async function submitMirrorForm(event) {
     await api(id ? `/mirrors/${id}` : '/mirrors', {method: id ? 'PUT' : 'POST', body: JSON.stringify(body)});
     $('#mirror-dialog').close();
     notice(L('Candidate validated and activated with a graceful reload.'));
-    await Promise.all([loadMirrors(), loadDashboard()]);
+    await (state.currentPage === 'dashboard' ? loadDashboard() : loadMirrors());
   } catch (error) {
     $('#form-error').textContent = error.message;
     $('#form-error').focus();
@@ -147,9 +153,26 @@ export function initMirrorForm() {
   $('#mirror-form').addEventListener('submit', submitMirrorForm);
 }
 
-registerAction('edit-mirror', button => openMirrorForm(state.mirrors.find(repository => repository.id === Number(button.dataset.id))));
+// editExisting re-reads the repository before opening the form so the dialog
+// never edits a stale copy (the list may be from another page or tab).
+async function editExisting(id) {
+  let repository;
+  try {
+    repository = await api(`/mirrors/${id}`);
+  } catch (error) {
+    if (error.status !== 404) repository = state.mirrors.find(value => value.id === id);
+  }
+  if (!repository) {
+    notice(L('This repository no longer exists. The list has been refreshed.'), true);
+    await loadMirrors();
+    return;
+  }
+  openMirrorForm(repository);
+}
+
+registerAction('edit-mirror', button => editExisting(Number(button.dataset.id)));
 
 registerAction('edit-mirror-from-detail', button => {
   $('#detail-dialog').close();
-  return openMirrorForm(state.mirrors.find(repository => repository.id === Number(button.dataset.id)));
+  return editExisting(Number(button.dataset.id));
 });

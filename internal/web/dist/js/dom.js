@@ -15,9 +15,11 @@ export function notice(message, bad = false) {
   item.className = `notice${bad ? ' error' : ''}`;
   item.textContent = String(message ?? '');
   target.replaceChildren(item);
+  item.setAttribute('role', bad ? 'alert' : 'status');
+  // Errors stay longer so they can be read before they disappear.
   noticeTimer = setTimeout(() => {
     if (target.firstChild === item) target.replaceChildren();
-  }, 4500);
+  }, bad ? 9000 : 4500);
 }
 
 export async function copyText(value) {

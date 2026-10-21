@@ -67,3 +67,13 @@ func TestLoginLimiterAtomicAcquire(t *testing.T) {
 	}
 	rel5(true)
 }
+
+func TestDummyPasswordHashUsesProductionParameters(t *testing.T) {
+	hash := DummyPasswordHash()
+	if !strings.HasPrefix(hash, "$argon2id$v=19$m=65536,t=3,") {
+		t.Fatalf("placeholder hash does not use production Argon2id parameters: %s", hash)
+	}
+	if VerifyPassword(hash, "anything at all") {
+		t.Fatal("placeholder hash accepted an arbitrary password")
+	}
+}

@@ -10,7 +10,8 @@ export function renderAreaChart({
   gradientId = 'area-grad',
   unit = '',
   height = 160,
-  emptyText = 'No data available'
+  emptyText = 'No data available',
+  maxLabel = 'max'
 }) {
   if (!data || data.length === 0) {
     return `<div class="chart-box">
@@ -74,7 +75,7 @@ export function renderAreaChart({
   return `<div class="chart-box">
     <div class="chart-header">
       <strong>${esc(title)}</strong>
-      <span class="chart-max">${esc(Math.round(maxVal))} ${esc(unit)} max</span>
+      <span class="chart-max">${esc(Math.round(maxVal))} ${esc(unit)} ${esc(maxLabel)}</span>
     </div>
     <div class="chart-svg-wrap">
       <svg viewBox="0 0 ${w} ${h}" class="chart-svg" preserveAspectRatio="none">
@@ -97,13 +98,15 @@ export function renderAreaChart({
 export function renderDonutChart({
   title = '',
   slices = [], // [{ label, value, color }]
-  size = 140
+  size = 140,
+  emptyText = 'No traffic yet',
+  totalLabel = 'Total'
 }) {
   const total = slices.reduce((acc, s) => acc + (s.value || 0), 0);
   if (total === 0) {
     return `<div class="chart-box donut-box">
       <div class="chart-header"><strong>${esc(title)}</strong></div>
-      <div class="chart-empty">No traffic yet</div>
+      <div class="chart-empty">${esc(emptyText)}</div>
     </div>`;
   }
 
@@ -132,7 +135,7 @@ export function renderDonutChart({
     <div class="donut-legend-item">
       <svg class="donut-legend-dot" viewBox="0 0 8 8" aria-hidden="true" focusable="false"><circle cx="4" cy="4" r="4" fill="${esc(s.color)}"></circle></svg>
       <span class="donut-legend-label">${esc(s.label)}</span>
-      <strong class="donut-legend-val">${s.value}</strong>
+      <strong class="donut-legend-val">${esc(s.value)}</strong>
     </div>
   `).join('');
 
@@ -142,7 +145,7 @@ export function renderDonutChart({
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="donut-svg">
         ${paths}
         <text x="${cx}" y="${cy - 3}" text-anchor="middle" fill="var(--text-primary)" font-size="13" font-weight="700" font-family="ui-monospace, monospace">${total}</text>
-        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--chart-label)" font-size="9" text-transform="uppercase">Total</text>
+        <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--chart-label)" font-size="9" text-transform="uppercase">${esc(totalLabel)}</text>
       </svg>
       <div class="donut-legend">${legend}</div>
     </div>

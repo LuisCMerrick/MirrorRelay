@@ -109,7 +109,7 @@
           <small data-i18n="Repository Gateway">Repository Gateway</small>
         </div>
       </div>
-      <nav aria-label="Primary navigation">
+      <nav id="primary-navigation" aria-label="Primary navigation">
         <div class="nav-section-title" data-i18n="Core">Core</div>
         <button data-page="dashboard" class="active" aria-current="page">
           <svg aria-hidden="true" focusable="false" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
@@ -209,9 +209,14 @@
 
     <section class="content">
       <header>
+        <div class="header-lead">
+        <button id="nav-toggle" type="button" class="nav-toggle" aria-controls="primary-navigation" aria-expanded="false" aria-label="Menu">
+          <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+        </button>
         <div class="header-title-block">
-          <h1 id="page-title">Dashboard</h1>
+          <h1 id="page-title" tabindex="-1">Dashboard</h1>
           <p id="page-subtitle">Live service status</p>
+        </div>
         </div>
         <div class="header-actions">
           <div class="theme-switch" data-theme-switch role="group" aria-label="Theme">
@@ -554,6 +559,22 @@
         <div id="import-error" class="error" role="alert" tabindex="-1"></div>
         <button type="button" class="secondary" id="import-preview-btn" data-i18n="Validate & Preview Diff">Validate &amp; Preview Diff</button>
         <button type="button" class="btn-primary hidden" id="import-apply-btn" data-i18n="Apply configuration">Apply configuration</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="ask-dialog" class="ask-dialog" aria-labelledby="ask-title" aria-describedby="ask-message">
+    <form id="ask-form" method="dialog">
+      <header>
+        <h2 id="ask-title">Confirm</h2>
+      </header>
+      <div class="dialog-scroll-body">
+        <p id="ask-message" class="ask-message"></p>
+        <label id="ask-input-group" class="hidden"><span id="ask-input-label"></span><input id="ask-input" type="text" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <footer>
+        <button type="button" class="secondary" id="ask-cancel" data-i18n="cancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="ask-confirm">OK</button>
       </footer>
     </form>
   </dialog>

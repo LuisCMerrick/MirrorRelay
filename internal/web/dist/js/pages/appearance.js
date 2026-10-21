@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { $, esc, notice } from '../dom.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { confirmDialog } from '../ui.js';
 import { applyInstanceAppearance } from '../instance-appearance.js';
 
 export async function loadAppearance() {
@@ -112,8 +113,8 @@ export async function loadAppearance() {
   });
 
   $('#reset-appearance-btn').addEventListener('click', async event => {
-    if (!confirm(L('Reset appearance settings to default values?'))) return;
     const button = event.currentTarget;
+    if (!await confirmDialog(L('Reset appearance settings to default values?'), {danger: true})) return;
     $('#appearance-error').textContent = '';
     try {
       button.disabled = true;

@@ -3,7 +3,11 @@ import { currentLanguage, getLocale, L } from './i18n.js';
 
 export function locale() { return getLocale().locale || (currentLanguage() === 'zh' ? 'zh-CN' : 'en-US'); }
 export function number(value = 0) { return new Intl.NumberFormat(locale()).format(value); }
-export function date(value) { return value ? new Date(value).toLocaleString(locale()) : '—'; }
+export function date(value) {
+  if (!value || String(value).startsWith('0001-01-01')) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString(locale());
+}
 export function bytes(value = 0) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let index = 0, amount = Number(value) || 0;

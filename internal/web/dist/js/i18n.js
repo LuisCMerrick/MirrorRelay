@@ -48,8 +48,10 @@ export function L(english, ...args) {
       str = english;
     }
   }
+  // A replacer function keeps '$&'-style sequences in arguments (error
+  // messages, paths) from being interpreted as replacement patterns.
   for (const arg of args) {
-    str = str.replace('%s', arg);
+    str = str.replace('%s', () => String(arg));
   }
   return str;
 }

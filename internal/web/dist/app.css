@@ -751,9 +751,24 @@ button.link {
 /* --------------------------------------------------------------------------
    7. Notification Toasts & Alerts
    -------------------------------------------------------------------------- */
+/* Toasts float above the content so showing or clearing one never shifts the
+   layout under the pointer (a click aimed at a row could land on another). */
 #notice {
-  padding: 0 24px;
-  margin-top: 12px;
+  position: fixed;
+  top: 68px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+#notice .notice {
+  pointer-events: auto;
+  margin-bottom: 0;
+  box-shadow: var(--shadow-md, var(--shadow-sm));
 }
 
 .notice {
@@ -1346,6 +1361,11 @@ button.link {
 
 .pulse-dot.blue {
   background: var(--primary);
+}
+
+.pulse-dot.yellow {
+  background: var(--warning);
+  box-shadow: 0 0 6px var(--warning-glow);
 }
 
 .ratio-chip {
@@ -2127,7 +2147,46 @@ code {
   }
 }
 
+/* Mobile navigation toggle; hidden on wide layouts. */
+.nav-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 6px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.header-lead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+#page-title:focus {
+  outline: none;
+}
+
 @media (max-width: 768px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+  body:not(.nav-open) aside nav,
+  body:not(.nav-open) aside .sidebar-foot {
+    display: none;
+  }
+  .content > header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    height: auto;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+  }
   .shell {
     flex-direction: column;
   }
@@ -2188,4 +2247,32 @@ code {
   header {
     padding: 0 16px;
   }
+}
+
+/* In-app confirmation and text prompt (replaces window.confirm/prompt). */
+.ask-dialog {
+  width: min(460px, 95vw);
+}
+
+.ask-message {
+  margin: 0 0 12px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.ask-dialog .btn-primary.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+input[aria-invalid="true"],
+input:user-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.18);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
 }

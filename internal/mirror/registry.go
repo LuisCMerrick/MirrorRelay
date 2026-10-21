@@ -254,7 +254,11 @@ func clone(m model.Mirror) model.Mirror {
 }
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
-var headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9A-Za-z-]+$`)
+
+// headerNamePattern is deliberately narrower than the RFC 9110 token grammar:
+// names are rendered unquoted into nginx.conf, where '#', quotes, '$' and
+// backticks change how the directive is parsed.
+var headerNamePattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z_.-]*$`)
 
 var repositoryTypes = map[string]bool{
 	"generic": true, "apt": true, "rpm": true, "apk": true, "opkg": true,
@@ -488,6 +492,11 @@ func NormalizeAndValidate(m *model.Mirror, allowHTTP, globallyAllowPrivate bool)
 		if escapedPath != "/" {
 			escapedPath += "/"
 		}
+		if strings.Contains(escapedPath, "$") {
+			// Nginx expands "$name" in rewrite replacements; a literal dollar sign
+			// must be percent-encoded so it cannot reference request variables.
+			return fmt.Errorf("upstream %d path must not contain a literal '$'; encode it as %%24", i+1)
+		}
 		decodedPath, decodeErr := url.PathUnescape(escapedPath)
 		if decodeErr != nil {
 			return fmt.Errorf("upstream %d has an invalid escaped path", i+1)
@@ -634,8 +643,13 @@ func normalizeHeaders(m *model.Mirror) error {
 		if name == "" || !headerNamePattern.MatchString(name) || denied[lower] || strings.HasPrefix(lower, "x-mirror-internal-") {
 			return fmt.Errorf("header_add contains forbidden header %q", rawName)
 		}
-		if strings.ContainsAny(value, "\x00\r\n") {
+		if strings.ContainsFunc(value, func(r rune) bool { return (r < 0x20 && r != '\t') || r == 0x7f }) {
 			return fmt.Errorf("header_add %s contains control characters", name)
+		}
+		if strings.Contains(value, "$") {
+			// Nginx expands "$name" in proxy_set_header values and offers no
+			// escape, so a literal dollar sign would read request variables.
+			return fmt.Errorf("header_add %s must not contain '$'", name)
 		}
 		add[name] = value
 	}

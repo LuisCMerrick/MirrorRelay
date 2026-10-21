@@ -5,6 +5,7 @@ import { card, disclosure, kv } from '../components.js';
 import { $, esc, notice } from '../dom.js';
 import { date, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
+import { confirmDialog, healthBadge, withBusy } from '../ui.js';
 import { L } from '../i18n.js';
 import { state } from '../state.js';
 
@@ -32,16 +33,15 @@ export async function loadCluster() {
   })}`;
 
   const nodeRows = (nodes || []).map(node => {
-    const isHealthy = node.health_status === 'healthy';
     const isMatch = node.config_status === 'match';
     return `<tr>
       <td><strong>${esc(node.name)}</strong></td>
       <td><code>${esc(node.url)}</code></td>
       <td>${esc(node.region)}${node.country ? ` <span class="badge">${esc(node.country)}</span>` : ''}</td>
       <td><code>${node.priority} / ${node.weight}</code></td>
-      <td><span class="badge ${isHealthy ? 'ok' : 'bad'}"><span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>${esc(stateLabel(node.health_status || 'unknown'))}</span></td>
+      <td>${node.enabled ? healthBadge(node.health_status) : healthBadge('disabled')}</td>
       <td><span class="badge ${isMatch ? 'ok' : 'bad'}">${esc(stateLabel(node.config_status || 'unknown'))}</span></td>
-      <td><code title="${esc(node.config_fingerprint)}">${esc((node.config_fingerprint || '').slice(0, 15))}...</code></td>
+      <td>${node.config_fingerprint ? `<code title="${esc(node.config_fingerprint)}">${esc(node.config_fingerprint.slice(0, 15))}${node.config_fingerprint.length > 15 ? '…' : ''}</code>` : '—'}</td>
       <td>${node.last_check ? date(node.last_check) : '—'}</td>
       ${canOperate ? `<td>
         <div class="actions">
@@ -92,7 +92,7 @@ export function initCluster() {
   $('#close-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
   $('#cancel-node-dialog')?.addEventListener('click', () => $('#node-dialog').close());
 
-  $('#sync-all-nodes')?.addEventListener('click', async () => {
+  $('#sync-all-nodes')?.addEventListener('click', event => withBusy(event.currentTarget, async () => {
     try {
       notice(L('Synchronizing all cluster nodes...'));
       const results = await api('/cluster/sync', {method: 'POST'});
@@ -102,7 +102,7 @@ export function initCluster() {
     } catch (error) {
       notice(error.message, true);
     }
-  });
+  }));
 
   $('#node-form')?.addEventListener('submit', async event => {
     event.preventDefault();
@@ -143,7 +143,7 @@ export function initCluster() {
   });
 
   $('#reset-cluster-fp')?.addEventListener('click', async () => {
-    if (!confirm(L('Reset the cluster configuration fingerprint? It will reinitialize from active nodes.'))) return;
+    if (!await confirmDialog(L('Reset the cluster configuration fingerprint? It will reinitialize from active nodes.'), {danger: true})) return;
     try {
       await api('/cluster/fingerprint/reset', {method: 'POST'});
       notice(L('Cluster fingerprint reset.'));
@@ -215,7 +215,7 @@ registerAction('toggle-node', async button => {
 });
 
 registerAction('delete-node', async button => {
-  if (!confirm(L('Delete this edge node?'))) return;
+  if (!await confirmDialog(L('Delete this edge node?'), {danger: true})) return;
   try {
     await api(`/cluster/nodes/${Number(button.dataset.id)}`, {method: 'DELETE'});
     notice(L('Node deleted.'));

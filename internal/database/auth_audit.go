@@ -51,7 +51,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var users []model.User
+	users := []model.User{}
 	for rows.Next() {
 		var user model.User
 		var disabled int
@@ -189,7 +189,7 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]model.AuditEntry, e
 		return nil, err
 	}
 	defer rows.Close()
-	var out []model.AuditEntry
+	out := []model.AuditEntry{}
 	for rows.Next() {
 		var a model.AuditEntry
 		var at string

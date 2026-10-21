@@ -4,6 +4,7 @@ import { registerAction } from '../actions.js';
 import { $, esc, notice } from '../dom.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { confirmDialog } from '../ui.js';
 import { state } from '../state.js';
 
 export async function loadCustom() {
@@ -94,7 +95,7 @@ export function initCustom() {
 registerAction('edit-custom', button => openCustom(state.customConfigs.find(value => value.id === Number(button.dataset.id))));
 
 registerAction('delete-custom', async button => {
-  if (!confirm(L('Delete this custom configuration and reload Managed Upstream Nginx?'))) return;
+  if (!await confirmDialog(L('Delete this custom configuration and reload Managed Upstream Nginx?'), {danger: true})) return;
   try {
     await api(`/custom-configs/${Number(button.dataset.id)}`, {method: 'DELETE'});
     notice(L('Custom configuration deleted.'));

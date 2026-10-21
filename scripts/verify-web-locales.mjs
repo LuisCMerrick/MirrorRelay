@@ -44,6 +44,7 @@ for (const path of sourceFiles) {
   const source = fs.readFileSync(path, 'utf8');
   if (source.includes('style="')) fail(`inline style conflicts with the administration CSP in ${path}`);
   if (/setInterval\s*\(\s*async\b/.test(source)) fail(`overlapping asynchronous interval polling in ${path}`);
+  if (/(?<![\w.])(?:window\.)?(?:confirm|prompt|alert)\s*\(/.test(source)) fail(`native blocking dialog used in ${path}; use confirmDialog/promptDialog from ui.js`);
   for (const match of source.matchAll(/\bL\(\s*(['"])(.*?)\1/g)) {
     const key = match[2];
     if (!(key in en.strings) || !(key in zh.strings)) fail(`missing runtime translation ${JSON.stringify(key)} used by ${path}`);

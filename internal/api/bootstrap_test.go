@@ -122,3 +122,75 @@ func TestInitialAdministratorRegistrationValidatesConfirmationAndAdminCIDR(t *te
 		t.Fatalf("password mismatch created a user: count=%d err=%v", count, err)
 	}
 }
+
+func TestLoginUnknownUserPerformsPasswordHashWork(t *testing.T) {
+	store, handler := newBootstrapTestHandler(t, nil)
+	defer store.Close()
+	hash, err := auth.HashPassword("correct horse battery staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	auth.VerifyPassword(hash, "wrong password value")
+	verifyCost := time.Since(started)
+
+	body := []byte(`{"username":"no-such-user","password":"wrong password value"}`)
+	request := httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/auth/login", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	started = time.Now()
+	handler.ServeHTTP(recorder, request)
+	elapsed := time.Since(started)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if minimum := 250*time.Millisecond + verifyCost/2; elapsed < minimum {
+		t.Fatalf("unknown-user login took %s, want at least %s so usernames cannot be enumerated by timing", elapsed, minimum)
+	}
+}
+
+func TestDecodeJSONRejectsOversizedBodyWith413(t *testing.T) {
+	body := append([]byte(`{"username":"`), bytes.Repeat([]byte("a"), 2<<20)...)
+	body = append(body, []byte(`"}`)...)
+	request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	recorder := httptest.NewRecorder()
+	var decoded loginRequest
+	if err := decodeJSON(recorder, request, &decoded); err == nil {
+		t.Fatal("oversized body was accepted")
+	}
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status=%d body=%s, want 413", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestMissingMirrorAndUserAreNotFound(t *testing.T) {
+	store, handler := newBootstrapTestHandler(t, nil)
+	defer store.Close()
+	body := []byte(`{"username":"site-admin","password":"correct horse battery staple","password_confirmation":"correct horse battery staple"}`)
+	register := httptest.NewRecorder()
+	handler.ServeHTTP(register, httptest.NewRequest(http.MethodPost, "https://mirror.example/admin/api/v1/auth/bootstrap", bytes.NewReader(body)))
+	if register.Code != http.StatusCreated {
+		t.Fatalf("registration status=%d body=%s", register.Code, register.Body.String())
+	}
+	var session struct {
+		CSRF string `json:"csrf_token"`
+	}
+	if err := json.Unmarshal(register.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	do := func(method, path string) int {
+		request := httptest.NewRequest(method, "https://mirror.example/admin/api/v1"+path, nil)
+		request.Header.Set("X-CSRF-Token", session.CSRF)
+		for _, cookie := range register.Result().Cookies() {
+			request.AddCookie(cookie)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	if code := do(http.MethodGet, "/mirrors/4242"); code != http.StatusNotFound {
+		t.Fatalf("missing mirror status=%d, want 404", code)
+	}
+	if code := do(http.MethodDelete, "/users/4242"); code != http.StatusNotFound {
+		t.Fatalf("missing user status=%d, want 404", code)
+	}
+}

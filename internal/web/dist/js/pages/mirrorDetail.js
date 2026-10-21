@@ -6,6 +6,7 @@ import { card, disclosure, kv, showPreview } from '../components.js';
 import { $, copyText, esc, notice } from '../dom.js';
 import { bytes, date, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
+import { confirmDialog, healthBadge, promptDialog } from '../ui.js';
 import { L } from '../i18n.js';
 import { publicURL } from '../repositories.js';
 import { state } from '../state.js';
@@ -14,7 +15,7 @@ import { loadMirrors } from './mirrors.js';
 function repositorySummary(repository) {
   const blocked = (repository.blocked_packages || []).length > 0 ? `${(repository.blocked_packages || []).length} ${L('rules')}` : L('None');
   const allowed = (repository.allowed_packages || []).length > 0 ? `${(repository.allowed_packages || []).length} ${L('rules')}` : L('All permitted');
-  return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || 'Custom'} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${kv(L('Blocked packages (Blacklist)'), blocked)}${kv(L('Allowed packages (Whitelist)'), allowed)}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
+  return `${kv(L('Public URL'), publicURL(repository))}${kv(L('Type / mode'), `${repository.type} / ${repository.proxy_mode}`)}${kv(L('Profile'), `${repository.profile_name || L('Custom')} ${repository.profile_version || ''}`)}${kv(L('Cache'), repository.cache_enabled ? `${repository.cache_profile} · ${repository.cache_authenticated ? L('authenticated enabled') : L('anonymous only')}` : L('Disabled'))}${kv(L('Browsable HTML URL rewrite'), repository.html_rewrite_enabled ? L('Enabled') : L('Disabled'))}${kv(L('Rewrite hosts'), (repository.rewrite_hosts || []).join(', ') || '—')}${kv(L('Blocked packages (Blacklist)'), blocked)}${kv(L('Allowed packages (Whitelist)'), allowed)}${repository.config_error ? `<div class="notice error">${esc(repository.config_error)}</div>` : ''}`;
 }
 
 function generateClientPlayground(repository, currentBaseUrl) {
@@ -125,6 +126,8 @@ function generateClientPlayground(repository, currentBaseUrl) {
 
   return { variants, formats, defaultVariant, baseUrl, slug, type };
 }
+
+const SHELL_SAFE_URL = /^[A-Za-z0-9._~:\/%@+=,-]+$/;
 
 function shellQuote(value) {
   return "'" + String(value).replace(/'/g, "'\"'\"'") + "'";
@@ -345,7 +348,8 @@ async function showRepository(id) {
           ${formatControl}
           <label>
             <span>${L('Target Base URL')}</span>
-            <input id="playground-url" type="url" required value="${esc(playgroundData.baseUrl)}" />
+            <input id="playground-url" type="url" required value="${esc(playgroundData.baseUrl)}" aria-describedby="playground-url-error" />
+            <small id="playground-url-error" class="field-error" role="alert"></small>
           </label>
         </div>
 
@@ -396,12 +400,8 @@ async function showRepository(id) {
               ${(desired.upstreams || []).map(upstream => `<tr>
                 <td><span class="badge blue">${upstream.priority}</span></td>
                 <td><code>${esc(upstream.url)}</code></td>
-                <td>
-                  <span class="badge ${upstream.health_status === 'healthy' ? 'ok' : 'bad'}">
-                    ${esc(stateLabel(upstream.health_status))}
-                  </span>
-                </td>
-                <td><code>${number(upstream.latency_ms)} ms</code></td>
+                <td>${upstream.enabled === false ? healthBadge('disabled') : healthBadge(upstream.health_status)}</td>
+                <td><code>${upstream.latency_ms ? `${number(upstream.latency_ms)} ms` : '—'}</code></td>
                 <td>${date(upstream.last_check)}</td>
               </tr>`).join('')}
             </tbody>
@@ -420,9 +420,17 @@ async function showRepository(id) {
         const parsed = new URL(requestedURL);
         if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('invalid URL');
         bUrl = parsed.toString().replace(/\/+$/, '');
+        // The generated one-liners interpolate the URL into shell commands
+        // unquoted; restrict it to characters a shell treats literally.
+        if (!SHELL_SAFE_URL.test(bUrl)) throw new Error('unsafe URL');
         urlInput?.setCustomValidity('');
+        urlInput?.removeAttribute('aria-invalid');
+        $('#playground-url-error').textContent = '';
       } catch (_) {
-        urlInput?.setCustomValidity(L('Enter a valid absolute HTTP or HTTPS URL.'));
+        const message = L('Enter an absolute HTTP or HTTPS URL without credentials, query, fragment or shell special characters.');
+        urlInput?.setCustomValidity(message);
+        urlInput?.setAttribute('aria-invalid', 'true');
+        $('#playground-url-error').textContent = message;
         return;
       }
       const out = computePlaygroundOutput(desired.type, vId, bUrl, format, desired.slug);
@@ -515,10 +523,12 @@ registerAction('preview-profile-upgrade', async button => {
 
 registerAction('purge-repository', async button => {
   const id = Number(button.dataset.id);
-  const path = prompt(L('Optional object path. Leave empty to purge the whole repository cache.'), '');
+  const path = await promptDialog(L('Optional object path. Leave empty to purge the whole repository cache.'), {title: L('Purge cache'), placeholder: '/dists/bookworm/Release', confirmLabel: L('Purge cache')});
   if (path === null) return;
+  if (!path.trim() && !await confirmDialog(L('Invalidate the entire cache of this repository?'), {danger: true})) return;
   try {
-    const result = path ? await api(`/mirrors/${id}/cache/purge`, {method: 'POST', body: JSON.stringify({path, query: ''})}) : await api(`/mirrors/${id}/cache`, {method: 'DELETE'});
+    const objectPath = path.trim();
+    const result = objectPath ? await api(`/mirrors/${id}/cache/purge`, {method: 'POST', body: JSON.stringify({path: objectPath, query: ''})}) : await api(`/mirrors/${id}/cache`, {method: 'DELETE'});
     notice(L('Logical purge completed; physical reclaim: %s.', result.physical_reclaim));
   } catch (error) {
     notice(error.message, true);

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -904,5 +905,35 @@ func TestPasskeysAndRecoveryCodes(t *testing.T) {
 	total, err := store.CountPasskeysByUserID(ctx, user.ID)
 	if err != nil || total != 0 {
 		t.Fatalf("expected 0 passkeys after delete, got %d", total)
+	}
+}
+
+func TestEmptyListsEncodeAsJSONArrays(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "mirrorrelay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	audit, err := store.ListAudit(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := store.ListPurgeJobs(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]any{"audit": audit, "purge jobs": jobs, "users": users} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(encoded) != "[]" {
+			t.Fatalf("empty %s list encoded as %s, want []", name, encoded)
+		}
 	}
 }

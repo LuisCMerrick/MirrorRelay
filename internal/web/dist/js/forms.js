@@ -14,11 +14,25 @@ export function parseHeaders(value) {
   return result;
 }
 
-export function parseUpstreams(value) {
+// parseUpstreams reads "priority URL" lines. Attributes the textarea does not
+// expose (weight, enabled) are carried over from the existing upstream with the
+// same URL so editing a repository never silently resets them.
+export function parseUpstreams(value, existing = []) {
+  const previous = new Map((existing || []).map(upstream => [upstream.url, upstream]));
+  const seen = new Set();
   return value.split(/\n+/).filter(line => line.trim()).map(line => {
     const match = line.trim().match(/^(\d+)\s+(https?:\/\/\S+)$/);
     if (!match) throw new Error(L('Invalid upstream line: %s', line));
-    return {url: match[2], priority: Number(match[1]), weight: 1, enabled: true};
+    const url = match[2];
+    if (seen.has(url)) throw new Error(L('Duplicate upstream URL: %s', url));
+    seen.add(url);
+    const before = previous.get(url);
+    return {
+      url,
+      priority: Number(match[1]),
+      weight: before?.weight > 0 ? before.weight : 1,
+      enabled: before ? before.enabled !== false : true
+    };
   });
 }
 
@@ -29,6 +43,9 @@ export function nestedValue(object, path) {
 export function setNestedValue(object, path, value) {
   const parts = path.split('.');
   const final = parts.pop();
-  const parent = parts.reduce((value, part) => value[part], object);
+  const parent = parts.reduce((value, part) => {
+    if (value[part] === null || typeof value[part] !== 'object') value[part] = {};
+    return value[part];
+  }, object);
   parent[final] = value;
 }

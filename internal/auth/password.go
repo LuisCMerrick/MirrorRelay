@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -103,3 +104,16 @@ func VerifyPassword(encoded, password string) bool {
 	got := argon2.IDKey([]byte(password), salt, uint32(iterations), uint32(memory), uint8(threads), uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
+
+var dummyPasswordHash = sync.OnceValue(func() string {
+	hash, err := HashPassword("mirrorrelay-unknown-account-placeholder")
+	if err != nil {
+		panic(fmt.Sprintf("generate placeholder password hash: %v", err))
+	}
+	return hash
+})
+
+// DummyPasswordHash returns a valid Argon2id hash with production parameters.
+// Verifying against it for unknown accounts keeps login timing independent of
+// whether the username exists.
+func DummyPasswordHash() string { return dummyPasswordHash() }

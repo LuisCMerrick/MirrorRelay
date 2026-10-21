@@ -7,6 +7,7 @@ import { $, copyText, esc, notice } from '../dom.js';
 import { date, duration, exitSummary, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
+import { confirmDialog } from '../ui.js';
 import { state } from '../state.js';
 import { loadMirrors } from './mirrors.js';
 
@@ -178,7 +179,7 @@ export async function loadUpstreamNginx() {
 
 registerAction('rollback-config', async button => {
   const version = Number(button.dataset.version);
-  if (!confirm(L('Rollback repositories and custom configuration to v%s?', version))) return;
+  if (!await confirmDialog(L('Rollback repositories and custom configuration to v%s?', version))) return;
   try {
     await api(`/upstream-nginx/history/${version}/rollback`, {method: 'POST'});
     notice(L('Rolled back through a validated graceful reload.'));

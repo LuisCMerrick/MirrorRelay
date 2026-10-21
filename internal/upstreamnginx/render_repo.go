@@ -27,6 +27,9 @@ func (g *Generator) repository(ctx context.Context, repository model.Mirror, cus
 	if _, err := activeUpstream(repository.Upstreams); err != nil {
 		return "", "", err
 	}
+	if err := validateRepositoryInterpolation(repository); err != nil {
+		return "", "", err
+	}
 	var route strings.Builder
 	var groups strings.Builder
 	fmt.Fprintf(&route, "        # BEGIN REPOSITORY: %s [GENERATED]\n", repository.Name)
@@ -325,4 +328,27 @@ func effectiveLimit(global, repository int64) int64 {
 		return global
 	}
 	return repository
+}
+
+// validateRepositoryInterpolation rejects stored values that Nginx would
+// expand as variables inside generated directives.
+func validateRepositoryInterpolation(repository model.Mirror) error {
+	for name, value := range repository.HeaderAdd {
+		if strings.Contains(value, "$") {
+			return fmt.Errorf("repository %d header %s contains '$', which Nginx would expand as a variable", repository.ID, name)
+		}
+	}
+	for _, upstream := range repository.Upstreams {
+		if !upstream.Enabled {
+			continue
+		}
+		parsed, err := url.Parse(upstream.URL)
+		if err != nil {
+			return fmt.Errorf("upstream %d: invalid URL", upstream.ID)
+		}
+		if strings.Contains(parsed.EscapedPath(), "$") {
+			return fmt.Errorf("upstream %d path contains '$', which Nginx would expand as a variable", upstream.ID)
+		}
+	}
+	return nil
 }

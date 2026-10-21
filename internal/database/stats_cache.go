@@ -90,7 +90,7 @@ func (s *Store) ListPurgeJobs(ctx context.Context, limit int) ([]model.PurgeJob,
 		return nil, err
 	}
 	defer rows.Close()
-	var jobs []model.PurgeJob
+	jobs := []model.PurgeJob{}
 	for rows.Next() {
 		var job model.PurgeJob
 		var created, updated string

@@ -3,6 +3,7 @@
 export const state = {
   csrf: '',
   role: '',
+  username: '',
   mirrors: [],
   profiles: [],
   customConfigs: [],

@@ -1,6 +1,7 @@
 // Access and audit log pages with live stream mode and interactive filtering.
 import { api } from '../api.js';
-import { $, esc } from '../dom.js';
+import { $, esc, notice } from '../dom.js';
+import { emptyRow, withBusy } from '../ui.js';
 import { date } from '../format.js';
 import { icon } from '../icons.js';
 import { L } from '../i18n.js';
@@ -61,10 +62,14 @@ function renderAccessPage() {
     if (p) p.textContent = fl.join('\n') || L('No matching log lines.');
   });
 
-  $('#refresh-access')?.addEventListener('click', async () => {
-    rawAccessLines = (await api('/access')) || [];
-    renderAccessPage();
-  });
+  $('#refresh-access')?.addEventListener('click', event => withBusy(event.currentTarget, async () => {
+    try {
+      rawAccessLines = (await api('/access')) || [];
+      renderAccessPage();
+    } catch (error) {
+      notice(error.message, true);
+    }
+  }));
 
   $('#toggle-access-stream')?.addEventListener('click', () => {
     if (accessStreamTimer) {
@@ -119,15 +124,6 @@ function renderAuditPage() {
   const isStreaming = Boolean(auditStreamTimer);
   const filterQuery = ($('#audit-filter-input')?.value || '').toLowerCase().trim();
 
-  const filtered = rawAuditEntries.filter(entry => {
-    if (!filterQuery) return true;
-    return (entry.username || '').toLowerCase().includes(filterQuery) ||
-           (entry.client_ip || '').toLowerCase().includes(filterQuery) ||
-           (entry.action || '').toLowerCase().includes(filterQuery) ||
-           (entry.object || '').toLowerCase().includes(filterQuery) ||
-           (entry.detail || '').toLowerCase().includes(filterQuery);
-  });
-
   $('#page-audit').innerHTML = `
     <div class="panel">
       <div class="toolbar">
@@ -161,20 +157,7 @@ function renderAuditPage() {
               <th>${L('Result')}</th>
             </tr>
           </thead>
-          <tbody>
-            ${filtered.map(entry => `<tr>
-              <td><code>${date(entry.time)}</code></td>
-              <td><strong>${esc(entry.username)}</strong></td>
-              <td><code>${esc(entry.client_ip)}</code></td>
-              <td><span class="badge blue">${esc(entry.action)}</span></td>
-              <td>${esc(entry.object)} <span class="text-muted">${esc(entry.detail)}</span></td>
-              <td>
-                <span class="badge ${entry.succeeded ? 'ok' : 'bad'}">
-                  <span class="pulse-dot ${entry.succeeded ? 'green' : 'red'}"></span>
-                  ${entry.succeeded ? L('Success') : L('Failed')}
-                </span>
-              </td>
-            </tr>`).join('')}
+          <tbody>${auditRowsHTML(filterQuery)}
           </tbody>
         </table>
       </div>
@@ -182,10 +165,14 @@ function renderAuditPage() {
 
   $('#audit-filter-input')?.addEventListener('input', () => renderAuditRows());
 
-  $('#refresh-audit')?.addEventListener('click', async () => {
-    rawAuditEntries = (await api('/audit')) || [];
-    renderAuditPage();
-  });
+  $('#refresh-audit')?.addEventListener('click', event => withBusy(event.currentTarget, async () => {
+    try {
+      rawAuditEntries = (await api('/audit')) || [];
+      renderAuditPage();
+    } catch (error) {
+      notice(error.message, true);
+    }
+  }));
 
   $('#toggle-audit-stream')?.addEventListener('click', () => {
     if (auditStreamTimer) {
@@ -198,32 +185,29 @@ function renderAuditPage() {
   });
 }
 
-function renderAuditRows() {
-  const filterQuery = ($('#audit-filter-input')?.value || '').toLowerCase().trim();
-  const filtered = rawAuditEntries.filter(entry => {
-    if (!filterQuery) return true;
-    return (entry.username || '').toLowerCase().includes(filterQuery) ||
-           (entry.client_ip || '').toLowerCase().includes(filterQuery) ||
-           (entry.action || '').toLowerCase().includes(filterQuery) ||
-           (entry.object || '').toLowerCase().includes(filterQuery) ||
-           (entry.detail || '').toLowerCase().includes(filterQuery);
-  });
-  const tbody = $('#page-audit tbody');
-  if (tbody) {
-    tbody.innerHTML = filtered.map(entry => `<tr>
+function filterAudit(filterQuery) {
+  if (!filterQuery) return rawAuditEntries;
+  return rawAuditEntries.filter(entry => ['username', 'client_ip', 'action', 'object', 'detail']
+    .some(field => String(entry[field] || '').toLowerCase().includes(filterQuery)));
+}
+
+function auditRowsHTML(filterQuery) {
+  const filtered = filterAudit(filterQuery);
+  if (!filtered.length) return emptyRow(6, filterQuery ? L('No matching audit entries.') : L('No audit entries yet.'));
+  return filtered.map(entry => `<tr>
       <td><code>${date(entry.time)}</code></td>
       <td><strong>${esc(entry.username)}</strong></td>
       <td><code>${esc(entry.client_ip)}</code></td>
       <td><span class="badge blue">${esc(entry.action)}</span></td>
       <td>${esc(entry.object)} <span class="text-muted">${esc(entry.detail)}</span></td>
-      <td>
-        <span class="badge ${entry.succeeded ? 'ok' : 'bad'}">
-          <span class="pulse-dot ${entry.succeeded ? 'green' : 'red'}"></span>
-          ${entry.succeeded ? L('Success') : L('Failed')}
-        </span>
-      </td>
+      <td><span class="badge ${entry.succeeded ? 'ok' : 'bad'}"><span class="pulse-dot ${entry.succeeded ? 'green' : 'red'}"></span>${entry.succeeded ? L('Success') : L('Failed')}</span></td>
     </tr>`).join('');
-  }
+}
+
+function renderAuditRows() {
+  const filterQuery = ($('#audit-filter-input')?.value || '').toLowerCase().trim();
+  const tbody = $('#page-audit tbody');
+  if (tbody) tbody.innerHTML = auditRowsHTML(filterQuery);
 }
 
 function startAuditStream() {

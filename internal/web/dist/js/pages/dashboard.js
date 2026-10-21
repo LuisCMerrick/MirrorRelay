@@ -5,6 +5,7 @@ import { card, disclosure } from '../components.js';
 import { renderAreaChart, renderDonutChart } from '../charts.js';
 import { bytes, number, stateLabel } from '../format.js';
 import { icon } from '../icons.js';
+import { emptyRow, healthBadge } from '../ui.js';
 import { L } from '../i18n.js';
 import { activeUpstreamFor, healthFor } from '../repositories.js';
 import { state } from '../state.js';
@@ -18,20 +19,20 @@ export async function loadDashboard() {
   const repositories = repositoryValues || [];
   state.mirrors = repositories;
   const today = dashboard.stats.today, last24 = dashboard.stats.last_24_hours, last7 = dashboard.stats.last_7_days, cache = dashboard.cache;
-  const denominator = today.cache_hits + today.cache_misses;
+  const denominator = (today.cache_hits || 0) + (today.cache_misses || 0);
   const hitRate = denominator ? 100 * today.cache_hits / denominator : 0;
   const maximum = cache.maximum_bytes || cache.max_bytes || 0;
-  const cachePercent = Math.max(0, Math.min(100, maximum ? 100 * cache.bytes / maximum : 0));
+  const cachePercent = Math.max(0, Math.min(100, maximum ? 100 * (cache.bytes || 0) / maximum : 0));
 
   $('#status').textContent = `${L('Managed Upstream Nginx')} ${stateLabel(upstreamNginx.state)}`;
   $('#status').className = `status ${upstreamNginx.state === 'running' ? 'online' : ''}`;
+  $('#status').dataset.live = 'true';
 
   const perRepository = dashboard.stats.by_mirror || {};
   const repositoryRows = repositories.map(repository => {
     const counters = perRepository[repository.id] || {};
     const upstream = activeUpstreamFor(repository);
     const health = healthFor(repository);
-    const isHealthy = health === 'healthy';
     return `<tr>
       <td>
         <button class="text-button" data-action="show-repository" data-id="${repository.id}">
@@ -40,10 +41,7 @@ export async function loadDashboard() {
         <small>${esc(repository.slug)}</small>
       </td>
       <td>
-        <span class="badge ${isHealthy ? 'ok' : (health === 'disabled' ? '' : (health === 'unknown' ? 'yellow' : 'bad'))}">
-          ${health === 'disabled' ? '' : `<span class="pulse-dot ${isHealthy ? 'green' : 'red'}"></span>`}
-          ${esc(stateLabel(health))}
-        </span>
+        ${healthBadge(health)}
       </td>
       <td><strong>${number(counters.requests || 0)}</strong></td>
       <td>${bytes(counters.bytes || 0)}</td>
@@ -83,7 +81,7 @@ export async function loadDashboard() {
       <div class="node-icon-wrap primary">${icon('layers', 20)}</div>
       <div class="node-content">
         <span class="node-title">MirrorRelay</span>
-        <span class="node-sub">Control Plane v${esc(dashboard.version || '—')}</span>
+        <span class="node-sub">${L('Control plane')} v${esc(dashboard.version || '—')}</span>
       </div>
       <span class="node-protocol">TCP / Unix</span>
     </div>
@@ -93,10 +91,10 @@ export async function loadDashboard() {
     <div class="topo-node ${isNginxRunning ? 'active' : 'inactive'}">
       <div class="node-icon-wrap ${isNginxRunning ? 'success' : 'danger'}">${icon('server', 20)}</div>
       <div class="node-content">
-        <span class="node-title">Managed Upstream Nginx</span>
+        <span class="node-title">${L('Managed Upstream Nginx')}</span>
         <span class="node-sub">PID ${esc(upstreamNginx.pid || '—')}</span>
       </div>
-      <span class="node-protocol">${isNginxRunning ? 'Unix / TCP' : 'Offline'}</span>
+      <span class="node-protocol">${isNginxRunning ? 'Unix / TCP' : L('Offline')}</span>
     </div>
     <div class="topo-arrow">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -107,7 +105,7 @@ export async function loadDashboard() {
         <span class="node-title">${L('Upstream Origins')}</span>
         <span class="node-sub">${dashboard.enabled_mirrors || 0} ${L('Repositories')}</span>
       </div>
-      <span class="node-protocol">HTTP(S) policy</span>
+      <span class="node-protocol">${L('HTTP(S) policy')}</span>
     </div>
   </div>`;
 
@@ -129,7 +127,9 @@ export async function loadDashboard() {
     yValue: item => item.requests,
     color: '#38bdf8',
     gradientId: 'req-grad',
-    unit: 'req'
+    unit: L('req'),
+    emptyText: L('No data available'),
+    maxLabel: L('max')
   });
 
   const chartTrafficHTML = renderAreaChart({
@@ -139,32 +139,38 @@ export async function loadDashboard() {
     yValue: item => Math.round((item.bytes || 0) / (1024 * 1024)),
     color: '#10b981',
     gradientId: 'traf-grad',
-    unit: 'MB'
+    unit: 'MiB',
+    emptyText: L('No data available'),
+    maxLabel: L('max')
   });
 
   const statusDonutHTML = renderDonutChart({
     title: L('HTTP Status Breakdown (Today)'),
     slices: [
-      { label: '2xx OK', value: today.status_2xx || 0, color: '#10b981' },
-      { label: '3xx Redirect', value: today.status_3xx || 0, color: '#38bdf8' },
-      { label: '4xx Client Err', value: today.status_4xx || 0, color: '#f59e0b' },
-      { label: '5xx Upstream Err', value: today.status_5xx || 0, color: '#f43f5e' }
-    ]
+      { label: L('2xx OK'), value: today.status_2xx || 0, color: '#10b981' },
+      { label: L('3xx Redirect'), value: today.status_3xx || 0, color: '#38bdf8' },
+      { label: L('4xx Client error'), value: today.status_4xx || 0, color: '#f59e0b' },
+      { label: L('5xx Upstream error'), value: today.status_5xx || 0, color: '#f43f5e' }
+    ],
+    emptyText: L('No traffic yet'),
+    totalLabel: L('Total')
   });
 
   const cacheDonutHTML = renderDonutChart({
     title: L('Cache Hit Distribution (Today)'),
     slices: [
-      { label: 'Cache HIT', value: today.cache_hits || 0, color: '#10b981' },
-      { label: 'Cache MISS', value: today.cache_misses || 0, color: '#64748b' }
-    ]
+      { label: L('Cache HIT'), value: today.cache_hits || 0, color: '#10b981' },
+      { label: L('Cache MISS'), value: today.cache_misses || 0, color: '#64748b' }
+    ],
+    emptyText: L('No traffic yet'),
+    totalLabel: L('Total')
   });
 
   $('#page-dashboard').innerHTML = `<div class="cards compact-cards">
     ${card(L('Repositories / enabled'), `${dashboard.mirrors} / ${dashboard.enabled_mirrors}`, false, 'layers', L('%s healthy', dashboard.healthy_mirrors || 0))}
-    ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, dashboard.unhealthy_mirrors === 0, 'activity', dashboard.unhealthy_mirrors === 0 ? L('All systems nominal') : L('%s degraded', dashboard.unhealthy_mirrors))}
+    ${card(L('Healthy / unhealthy'), `${dashboard.healthy_mirrors || 0} / ${dashboard.unhealthy_mirrors || 0}`, !dashboard.unhealthy_mirrors, 'activity', !dashboard.unhealthy_mirrors ? L('All systems nominal') : L('%s degraded', dashboard.unhealthy_mirrors))}
     ${card(L('Requests today'), number(today.requests), false, 'trend-up', L('%s active requests', number(dashboard.stats.active_requests)))}
-    ${card(L('Traffic today'), bytes(today.bytes), false, 'ingress', `${bytes(last24.bytes)} / 24 h · ${bytes(last7.bytes)} / 7 d`)}
+    ${card(L('Traffic today'), bytes(today.bytes), false, 'ingress', L('%s in 24 h · %s in 7 days', bytes(last24.bytes), bytes(last7.bytes)))}
     ${card(L('Cache hit rate'), `${hitRate.toFixed(1)}%`, hitRate > 50, 'cache', L('%s hits / %s misses', number(today.cache_hits), number(today.cache_misses)))}
   </div>
   ${disclosure(L('Request path'), topoHTML, {
@@ -216,7 +222,7 @@ export async function loadDashboard() {
           </tr>
         </thead>
         <tbody>
-          ${repositoryRows || `<tr><td colspan="8" class="empty">${L('No repositories yet.')}</td></tr>`}
+          ${repositoryRows || emptyRow(8, L('No repositories yet.'))}
         </tbody>
       </table>
     </div>
